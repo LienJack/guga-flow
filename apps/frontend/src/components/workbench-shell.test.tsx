@@ -25,12 +25,16 @@ describe("WorkbenchShell", () => {
     const html = renderToStaticMarkup(
       <WorkbenchShell
         canvasSlot={<div>Persistent canvas</div>}
+        sidebarSlot={<div>Novel storyboard panel</div>}
         saveStateSlot={<div className="save-state">Saving</div>}
+        storyboardEnabled
       />,
     );
 
     expect(html).toContain("Persistent canvas");
+    expect(html).toContain("Novel storyboard panel");
     expect(html).toContain("Saving");
+    expect(html).toContain("tool-button active");
     expect(html).not.toContain("NovelNode");
   });
 });

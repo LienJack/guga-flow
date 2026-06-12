@@ -163,7 +163,7 @@ describe("storyboard data helpers", () => {
         durationSec: 6,
         imagePrompt: "edited image prompt",
         characterTempIds: ["char_hero"],
-        locationTempId: "loc_rooftop",
+        locationTempId: undefined,
       },
     );
 
@@ -184,6 +184,7 @@ describe("storyboard data helpers", () => {
     expect(updated.scenes[0]!.shots[0]).toMatchObject({
       durationSec: 6,
       imagePrompt: "edited image prompt",
+      locationTempId: undefined,
       vendorShotId: "shot_vendor_1",
     });
   });

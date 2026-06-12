@@ -14,16 +14,20 @@ interface WorkbenchShellProps {
   projectId?: string;
   projectTitle?: string;
   inspectorSlot?: ReactNode;
+  sidebarSlot?: ReactNode;
   canvasSlot?: ReactNode;
   saveStateSlot?: ReactNode;
+  storyboardEnabled?: boolean;
 }
 
 export function WorkbenchShell({
   projectId,
   projectTitle = "Untitled project",
   inspectorSlot,
+  sidebarSlot,
   canvasSlot,
   saveStateSlot,
+  storyboardEnabled = false,
 }: WorkbenchShellProps) {
   return (
     <main className="workbench" aria-label="guga-flow workbench">
@@ -31,7 +35,11 @@ export function WorkbenchShell({
         <div className="brand">guga-flow</div>
         <div className="project-title">{projectTitle}</div>
         <nav className="toolbar" aria-label="Primary actions">
-          <button className="tool-button" type="button" disabled>
+          <button
+            className={`tool-button ${storyboardEnabled ? "active" : ""}`}
+            type="button"
+            disabled={!storyboardEnabled}
+          >
             Storyboard
           </button>
           <button className="tool-button" type="button" disabled>
@@ -55,6 +63,7 @@ export function WorkbenchShell({
               </li>
             ))}
           </ul>
+          {sidebarSlot}
         </aside>
 
         <section className="canvas-stage" aria-label="Canvas">

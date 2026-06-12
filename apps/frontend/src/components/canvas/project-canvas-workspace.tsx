@@ -4,6 +4,7 @@ import type { CanvasEdgeRecord, CanvasNodeRecord, CanvasSaveStatus } from "@guga
 import React, { useCallback, useState } from "react";
 
 import { WorkbenchShell } from "../workbench-shell";
+import { NovelStoryboardPanel } from "../novels/novel-storyboard-panel";
 import { type CanvasSelectionState, EMPTY_CANVAS_SELECTION } from "./canvas-selection";
 import { CanvasEditor } from "./canvas-editor";
 import { CanvasInspector } from "./canvas-inspector";
@@ -43,7 +44,9 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
     <WorkbenchShell
       projectId={projectId}
       projectTitle={`Project ${projectId}`}
+      storyboardEnabled
       saveStateSlot={<CanvasSaveStatusBadge status={saveStatus} error={saveError} />}
+      sidebarSlot={<NovelStoryboardPanel projectId={projectId} />}
       canvasSlot={
         <CanvasEditor
           projectId={projectId}
