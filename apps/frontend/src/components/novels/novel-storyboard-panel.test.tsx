@@ -105,6 +105,7 @@ describe("NovelStoryboardPanel", () => {
     expect(html).toContain("Generate");
     expect(html).toContain("Save draft");
     expect(html).toContain("Mark ready");
+    expect(html).toContain("Import");
     expect(html).toContain("Opening Beat");
   });
 

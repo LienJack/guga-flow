@@ -1,10 +1,16 @@
 "use client";
 
-import type { CanvasEdgeRecord, CanvasNodeRecord, CanvasSaveStatus } from "@guga-flow/shared-types";
+import type {
+  CanvasEdgeRecord,
+  CanvasNodeRecord,
+  CanvasSaveStatus,
+  ImportStoryboardToCanvasResult,
+} from "@guga-flow/shared-types";
 import React, { useCallback, useState } from "react";
 
 import { WorkbenchShell } from "../workbench-shell";
 import { NovelStoryboardPanel } from "../novels/novel-storyboard-panel";
+import { mergeStoryboardImportGraph } from "../novels/storyboard-data";
 import { type CanvasSelectionState, EMPTY_CANVAS_SELECTION } from "./canvas-selection";
 import { CanvasEditor } from "./canvas-editor";
 import { CanvasInspector } from "./canvas-inspector";
@@ -20,6 +26,7 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
   const [canvasNodes, setCanvasNodes] = useState<CanvasNodeRecord[]>([]);
   const [canvasEdges, setCanvasEdges] = useState<CanvasEdgeRecord[]>([]);
   const [selection, setSelection] = useState<CanvasSelectionState>(EMPTY_CANVAS_SELECTION);
+  const [fitRequestKey, setFitRequestKey] = useState(0);
 
   const handleSaveStatusChange = useCallback((status: CanvasSaveStatus, error: string | null) => {
     setSaveStatus(status);
@@ -40,18 +47,35 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
     [],
   );
 
+  const handleStoryboardImported = useCallback((result: ImportStoryboardToCanvasResult) => {
+    setCanvasNodes((currentNodes) =>
+      mergeStoryboardImportGraph({ nodes: currentNodes, edges: [] }, result).nodes,
+    );
+    setCanvasEdges((currentEdges) =>
+      mergeStoryboardImportGraph({ nodes: [], edges: currentEdges }, result).edges,
+    );
+    setFitRequestKey((current) => current + 1);
+  }, []);
+
   return (
     <WorkbenchShell
       projectId={projectId}
       projectTitle={`Project ${projectId}`}
       storyboardEnabled
       saveStateSlot={<CanvasSaveStatusBadge status={saveStatus} error={saveError} />}
-      sidebarSlot={<NovelStoryboardPanel projectId={projectId} />}
+      sidebarSlot={
+        <NovelStoryboardPanel
+          canvasNodes={canvasNodes}
+          projectId={projectId}
+          onStoryboardImported={handleStoryboardImported}
+        />
+      }
       canvasSlot={
         <CanvasEditor
           projectId={projectId}
           canvasEdges={canvasEdges}
           canvasNodes={canvasNodes}
+          fitRequestKey={fitRequestKey}
           onCanvasEdgesChange={setCanvasEdges}
           onCanvasNodesChange={setCanvasNodes}
           onSelectionChange={setSelection}

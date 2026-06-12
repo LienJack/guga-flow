@@ -1,12 +1,14 @@
 "use client";
 
 import type {
+  CanvasNodeRecord,
   ImportNovelSourceInput,
+  ImportStoryboardToCanvasResult,
   NovelDocumentRecord,
   StoryboardDraftRecord,
   StoryboardResult,
 } from "@guga-flow/shared-types";
-import { CheckCircle2, FileText, Plus, RefreshCw, Save, Trash2, Upload } from "lucide-react";
+import { CheckCircle2, FileText, Import, Plus, RefreshCw, Save, Trash2, Upload, X } from "lucide-react";
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
@@ -14,6 +16,7 @@ import {
   deleteNovelDocument,
   generateStoryboardDraft,
   getActiveStoryboardDraft,
+  importStoryboardToCanvas,
   importNovelSource,
   listNovelDocuments,
   markStoryboardDraftReady,
@@ -23,22 +26,38 @@ import {
 import {
   buildStoryboardDraftUiState,
   formatStoryboardValidationIssues,
+  hasExistingStoryboardImports,
+  isStoryboardDraftImportable,
+  summarizeStoryboardImport,
   summarizeStoryboardActionError,
 } from "./storyboard-data";
 import { StoryboardEditor } from "./storyboard-editor";
 
 interface NovelStoryboardPanelProps {
   projectId: string;
+  canvasNodes?: CanvasNodeRecord[];
   initialNovels?: NovelDocumentRecord[];
   initialDraft?: StoryboardDraftRecord;
+  onStoryboardImported?: (result: ImportStoryboardToCanvasResult) => void;
 }
 
-type BusyAction = "load" | "create" | "import" | "update" | "delete" | "generate" | "draft" | null;
+type BusyAction =
+  | "load"
+  | "create"
+  | "import"
+  | "update"
+  | "delete"
+  | "generate"
+  | "draft"
+  | "canvas-import"
+  | null;
 
 export function NovelStoryboardPanel({
+  canvasNodes = [],
   projectId,
   initialNovels = [],
   initialDraft,
+  onStoryboardImported,
 }: NovelStoryboardPanelProps) {
   const [novels, setNovels] = useState<NovelDocumentRecord[]>(initialNovels);
   const [selectedNovelId, setSelectedNovelId] = useState(initialDraft?.novelDocumentId ?? initialNovels[0]?.id ?? "");
@@ -52,6 +71,7 @@ export function NovelStoryboardPanel({
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirmNewVersion, setConfirmNewVersion] = useState(false);
 
   const selectedNovel = useMemo(
     () => novels.find((novel) => novel.id === selectedNovelId),
@@ -59,6 +79,11 @@ export function NovelStoryboardPanel({
   );
   const draftState = buildStoryboardDraftUiState(
     draft && storyboard ? { ...draft, storyboard, readyForImport: draftDirty ? false : draft.readyForImport } : draft,
+  );
+  const hasPriorStoryboardImport = hasExistingStoryboardImports(canvasNodes);
+  const canImportStoryboard = isStoryboardDraftImportable(
+    draft && storyboard ? { ...draft, storyboard } : draft,
+    draftDirty,
   );
 
   useEffect(() => {
@@ -93,6 +118,7 @@ export function NovelStoryboardPanel({
   useEffect(() => {
     setSelectedTitle(selectedNovel?.title ?? "");
     setSelectedContent(selectedNovel?.content ?? "");
+    setConfirmNewVersion(false);
   }, [selectedNovel]);
 
   useEffect(() => {
@@ -100,6 +126,7 @@ export function NovelStoryboardPanel({
       setDraft(undefined);
       setStoryboard(undefined);
       setDraftDirty(false);
+      setConfirmNewVersion(false);
       return;
     }
 
@@ -107,6 +134,7 @@ export function NovelStoryboardPanel({
     setDraft(undefined);
     setStoryboard(undefined);
     setDraftDirty(false);
+    setConfirmNewVersion(false);
     getActiveStoryboardDraft(projectId, selectedNovelId)
       .then((result) => {
         if (!ignore) {
@@ -251,6 +279,33 @@ export function NovelStoryboardPanel({
       const result = await markStoryboardDraftReady(projectId, selectedNovel.id, draft.id);
       applyDraft(result.draft);
       setNotice("Storyboard ready");
+    });
+  }
+
+  async function handleImportStoryboard() {
+    if (!selectedNovel || !draft) {
+      return;
+    }
+    if (!canImportStoryboard) {
+      setError(draftDirty ? "Save the draft before importing" : "Storyboard must be ready");
+      return;
+    }
+    if (hasPriorStoryboardImport && !confirmNewVersion) {
+      setConfirmNewVersion(true);
+      setNotice("New version");
+      setError(null);
+      return;
+    }
+
+    await runAction("canvas-import", async () => {
+      const result = await importStoryboardToCanvas(projectId, {
+        novelDocumentId: selectedNovel.id,
+        storyboardDraftId: draft.id,
+        duplicatePolicy: "new_version",
+      });
+      onStoryboardImported?.(result);
+      setConfirmNewVersion(false);
+      setNotice(summarizeStoryboardImport(result.summary));
     });
   }
 
@@ -421,6 +476,31 @@ export function NovelStoryboardPanel({
               <CheckCircle2 size={13} aria-hidden="true" />
               {draftState.isReady ? "Ready" : "Draft"}
             </span>
+          </div>
+          <div className="storyboard-action-row">
+            <button
+              className={confirmNewVersion ? "primary-action compact" : "ghost-action compact"}
+              type="button"
+              onClick={() => void handleImportStoryboard()}
+              disabled={Boolean(busyAction) || !canImportStoryboard}
+            >
+              <Import size={15} aria-hidden="true" />
+              {confirmNewVersion ? "Confirm new version" : "Import"}
+            </button>
+            {confirmNewVersion ? (
+              <button
+                className="icon-action"
+                type="button"
+                title="Cancel import"
+                onClick={() => {
+                  setConfirmNewVersion(false);
+                  setNotice(null);
+                }}
+                disabled={Boolean(busyAction)}
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            ) : null}
           </div>
         </section>
       ) : null}

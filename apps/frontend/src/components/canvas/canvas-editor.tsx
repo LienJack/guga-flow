@@ -73,6 +73,7 @@ interface CanvasEditorProps {
   projectId: string;
   canvasEdges?: CanvasEdgeRecord[];
   canvasNodes?: CanvasNodeRecord[];
+  fitRequestKey?: number;
   onCanvasEdgesChange?: (edges: CanvasEdgeRecord[]) => void;
   onCanvasNodesChange?: (nodes: CanvasNodeRecord[]) => void;
   onSelectionChange?: (selection: CanvasSelectionState) => void;
@@ -179,6 +180,7 @@ function createSemanticArrowShapeId(sourceNodeId: string, targetNodeId: string):
 
 export function CanvasEditor({
   canvasEdges = [],
+  fitRequestKey,
   projectId,
   canvasNodes = [],
   onCanvasEdgesChange,
@@ -204,6 +206,7 @@ export function CanvasEditor({
     typeof createBusinessNodeGeometryScheduler
   > | null>(null);
   const knownEdgeShapeIdsRef = useRef(new Set<string>());
+  const lastFitRequestKeyRef = useRef<number | undefined>(undefined);
   const ignoredRemovedShapeIdsRef = useRef(new Set<string>());
   const ignoredRemovedEdgeShapeIdsRef = useRef(new Set<string>());
   const deletingNodeIdsRef = useRef(new Set<string>());
@@ -348,6 +351,21 @@ export function CanvasEditor({
       setNodeActionError(errorMessage(error));
     }
   }, [canvasEdges, canvasNodes, loading, reconcileCanvasEdges, scheduleSave]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || loading || fitRequestKey === undefined) {
+      return;
+    }
+    if (lastFitRequestKeyRef.current === fitRequestKey) {
+      return;
+    }
+
+    lastFitRequestKeyRef.current = fitRequestKey;
+    window.requestAnimationFrame(() => {
+      editor.zoomToFit();
+    });
+  }, [canvasEdges, canvasNodes, fitRequestKey, loading]);
 
   const loadCanvas = useCallback(() => {
     const requestId = loadRequestIdRef.current + 1;
