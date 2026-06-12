@@ -7,18 +7,31 @@ import type {
   CreateCanvasEdgeResult,
   CreateCanvasNodeInput,
   CreateCanvasNodeResult,
+  CreateNovelDocumentInput,
+  CreateNovelDocumentResult,
   CreateProjectInput,
   DeleteCanvasEdgeResult,
   DeleteCanvasNodeResult,
+  DeleteNovelDocumentResult,
+  GenerateStoryboardResult,
+  ImportNovelSourceInput,
+  ImportNovelSourceResult,
+  MarkStoryboardDraftReadyResult,
+  NovelDocumentRecord,
   ProjectDetail,
   ProjectListItem,
   SaveCanvasSnapshotInput,
   SaveCanvasSnapshotResult,
+  StoryboardDraftRecord,
+  UpdateStoryboardDraftInput,
+  UpdateStoryboardDraftResult,
   UpdateProjectInput,
   UpdateCanvasNodeGeometryInput,
   UpdateCanvasNodeGeometryResult,
   UpdateCanvasNodeInput,
   UpdateCanvasNodeResult,
+  UpdateNovelDocumentInput,
+  UpdateNovelDocumentResult,
 } from "@guga-flow/shared-types";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3002/api/v1").replace(
@@ -119,6 +132,102 @@ export function deleteAsset(projectId: string, assetId: string): Promise<{ delet
 
 export function assetPreviewUrl(projectId: string, assetId: string): string {
   return apiUrl(`/projects/${projectId}/assets/${assetId}/preview`);
+}
+
+export function listNovelDocuments(projectId: string): Promise<NovelDocumentRecord[]> {
+  return requestJson<NovelDocumentRecord[]>(`/projects/${projectId}/novels`);
+}
+
+export function createNovelDocument(
+  projectId: string,
+  input: CreateNovelDocumentInput,
+): Promise<CreateNovelDocumentResult> {
+  return requestJson<CreateNovelDocumentResult>(`/projects/${projectId}/novels`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function importNovelSource(
+  projectId: string,
+  input: ImportNovelSourceInput,
+): Promise<ImportNovelSourceResult> {
+  return requestJson<ImportNovelSourceResult>(`/projects/${projectId}/novels/import`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getNovelDocument(
+  projectId: string,
+  novelId: string,
+): Promise<NovelDocumentRecord> {
+  return requestJson<NovelDocumentRecord>(`/projects/${projectId}/novels/${novelId}`);
+}
+
+export function updateNovelDocument(
+  projectId: string,
+  novelId: string,
+  input: UpdateNovelDocumentInput,
+): Promise<UpdateNovelDocumentResult> {
+  return requestJson<UpdateNovelDocumentResult>(`/projects/${projectId}/novels/${novelId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteNovelDocument(
+  projectId: string,
+  novelId: string,
+): Promise<DeleteNovelDocumentResult> {
+  return requestJson<DeleteNovelDocumentResult>(`/projects/${projectId}/novels/${novelId}`, {
+    method: "DELETE",
+  });
+}
+
+export function generateStoryboardDraft(
+  projectId: string,
+  novelId: string,
+): Promise<GenerateStoryboardResult> {
+  return requestJson<GenerateStoryboardResult>(
+    `/projects/${projectId}/novels/${novelId}/generate-storyboard`,
+    { method: "POST" },
+  );
+}
+
+export function getActiveStoryboardDraft(
+  projectId: string,
+  novelId: string,
+): Promise<StoryboardDraftRecord> {
+  return requestJson<StoryboardDraftRecord>(
+    `/projects/${projectId}/novels/${novelId}/storyboard-draft`,
+  );
+}
+
+export function updateStoryboardDraft(
+  projectId: string,
+  novelId: string,
+  draftId: string,
+  input: UpdateStoryboardDraftInput,
+): Promise<UpdateStoryboardDraftResult> {
+  return requestJson<UpdateStoryboardDraftResult>(
+    `/projects/${projectId}/novels/${novelId}/storyboard-draft/${draftId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function markStoryboardDraftReady(
+  projectId: string,
+  novelId: string,
+  draftId: string,
+): Promise<MarkStoryboardDraftReadyResult> {
+  return requestJson<MarkStoryboardDraftReadyResult>(
+    `/projects/${projectId}/novels/${novelId}/storyboard-draft/${draftId}/ready`,
+    { method: "POST" },
+  );
 }
 
 export function getProjectCanvas(projectId: string): Promise<CanvasLoadResult> {
