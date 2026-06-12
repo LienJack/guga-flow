@@ -262,6 +262,80 @@ select {
   white-space: nowrap;
 }
 
+.semantic-bind-toolbar {
+  position: absolute;
+  top: 62px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  max-width: min(640px, calc(100% - 108px));
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 6px;
+  box-shadow: 0 8px 20px rgba(20, 32, 46, 0.1);
+}
+
+.semantic-bind-toolbar.active {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+}
+
+.semantic-bind-icon-button,
+.semantic-bind-target {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  min-width: 32px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.semantic-bind-icon-button:hover:not(:disabled),
+.semantic-bind-target:hover:not(:disabled) {
+  border-color: var(--line);
+  background: var(--panel-strong);
+}
+
+.semantic-bind-source,
+.semantic-bind-target {
+  min-width: 0;
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.semantic-bind-source {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.semantic-bind-targets {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  overflow: auto;
+}
+
+.business-node-card.semantic-source {
+  box-shadow:
+    0 12px 28px rgba(20, 32, 46, 0.12),
+    inset 0 0 0 1px color-mix(in srgb, var(--node-accent) 22%, transparent);
+}
+
+.business-node-card.semantic-target footer {
+  color: color-mix(in srgb, var(--muted) 74%, var(--node-accent));
+}
+
 .canvas-editor-state {
   position: absolute;
   inset: 0;

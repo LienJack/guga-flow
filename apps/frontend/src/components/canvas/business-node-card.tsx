@@ -21,10 +21,16 @@ export function BusinessNodeCard({
   title,
 }: BusinessNodeShapeProps) {
   const definition = getBusinessNodeDefinition(nodeType);
+  const semanticRoleClass =
+    nodeType === "character_asset" || nodeType === "location_asset"
+      ? "semantic-source"
+      : nodeType === "shot" || nodeType === "scene_frame"
+        ? "semantic-target"
+        : "";
 
   return (
     <article
-      className={`business-node-card tone-${definition.tone} type-${nodeType} status-${status}`}
+      className={`business-node-card tone-${definition.tone} type-${nodeType} status-${status} ${semanticRoleClass}`}
       aria-label={`${definition.label}: ${title}`}
     >
       <header className="business-node-card-header">

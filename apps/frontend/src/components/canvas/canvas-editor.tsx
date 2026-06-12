@@ -12,6 +12,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Tldraw, createShapeId, type Editor, type TLShape, type TLShapeId } from "tldraw";
 
 import {
+  createCanvasEdge,
   createCanvasNode,
   deleteCanvasEdge,
   deleteCanvasNode,
@@ -19,7 +20,7 @@ import {
   saveCanvasSnapshot,
   updateCanvasNodeGeometry,
 } from "../../lib/api";
-import { mergeCanvasEdgeDeleteResult } from "./canvas-edge-data";
+import { mergeCanvasEdgeCreateResult, mergeCanvasEdgeDeleteResult } from "./canvas-edge-data";
 import {
   buildCanvasEdgeArrowProjection,
   buildCanvasEdgeShapeIdMap,
@@ -33,6 +34,15 @@ import {
   isPhase3CanvasNodeType,
 } from "./business-node-data";
 import { BusinessNodeToolbar } from "./business-node-toolbar";
+import { SemanticBindToolbar } from "./semantic-bind-toolbar";
+import {
+  buildSemanticBindCreateInput,
+  canStartSemanticBind,
+  findDirectSemanticDropTarget,
+  getAvailableSemanticBindTargets,
+  semanticBindKey,
+  type SemanticBindTarget,
+} from "./semantic-bind-interactions";
 import {
   buildBusinessNodeShapeProps,
   getBusinessNodeShapeType,
@@ -146,6 +156,18 @@ function restoreCanvasEdgeShape(editor: Editor, nodes: CanvasNodeRecord[], edge:
   editor.setSelectedShapes([projection.id as TLShapeId]);
 }
 
+function createSemanticArrowShapeId(sourceNodeId: string, targetNodeId: string): string {
+  return createShapeId(
+    [
+      "semantic-edge",
+      sourceNodeId,
+      targetNodeId,
+      Date.now().toString(36),
+      Math.random().toString(36).slice(2, 8),
+    ].join("-"),
+  );
+}
+
 export function CanvasEditor({
   canvasEdges = [],
   projectId,
@@ -160,6 +182,10 @@ export function CanvasEditor({
   const [loading, setLoading] = useState(true);
   const [nodeActionError, setNodeActionError] = useState<string | null>(null);
   const [creatingNodeType, setCreatingNodeType] = useState<Phase3CanvasNodeType | null>(null);
+  const [selectionState, setSelectionState] =
+    useState<CanvasSelectionState>(EMPTY_CANVAS_SELECTION);
+  const [semanticBindSourceId, setSemanticBindSourceId] = useState<string | null>(null);
+  const [bindingBusy, setBindingBusy] = useState(false);
   const editorRef = useRef<Editor | null>(null);
   const loadRequestIdRef = useRef(0);
   const nodesRef = useRef<CanvasNodeRecord[]>(canvasNodes);
@@ -173,6 +199,7 @@ export function CanvasEditor({
   const ignoredRemovedEdgeShapeIdsRef = useRef(new Set<string>());
   const deletingNodeIdsRef = useRef(new Set<string>());
   const deletingEdgeIdsRef = useRef(new Set<string>());
+  const semanticBindingKeysInFlightRef = useRef(new Set<string>());
 
   const publishCanvasNodes = useCallback(
     (nodes: CanvasNodeRecord[]) => {
@@ -188,6 +215,14 @@ export function CanvasEditor({
       onCanvasEdgesChange?.(edges);
     },
     [onCanvasEdgesChange],
+  );
+
+  const publishSelection = useCallback(
+    (selection: CanvasSelectionState) => {
+      setSelectionState(selection);
+      onSelectionChange?.(selection);
+    },
+    [onSelectionChange],
   );
 
   useEffect(() => {
@@ -314,7 +349,7 @@ export function CanvasEditor({
     setSnapshotJson(null);
     publishCanvasNodes([]);
     publishCanvasEdges([]);
-    onSelectionChange?.(EMPTY_CANVAS_SELECTION);
+    publishSelection(EMPTY_CANVAS_SELECTION);
 
     getProjectCanvas(projectId)
       .then((result) => {
@@ -333,7 +368,7 @@ export function CanvasEditor({
         setLoadError(errorMessage(error));
         setLoading(false);
       });
-  }, [onSelectionChange, projectId, publishCanvasEdges, publishCanvasNodes]);
+  }, [projectId, publishCanvasEdges, publishCanvasNodes, publishSelection]);
 
   useEffect(() => {
     loadCanvas();
@@ -353,13 +388,13 @@ export function CanvasEditor({
 
   const emitSelection = useCallback(
     (editor: Editor) => {
-      onSelectionChange?.(
+      publishSelection(
         selectionFromShapes(editor.getSelectedShapes(), {
           edgeShapeToEdgeId: buildCanvasEdgeShapeIdMap(edgesRef.current),
         }),
       );
     },
-    [onSelectionChange],
+    [publishSelection],
   );
 
   const duplicateBusinessShape = useCallback(
@@ -414,20 +449,93 @@ export function CanvasEditor({
     [duplicateBusinessShape],
   );
 
-  const handleBusinessShapeUpdated = useCallback((shape: TLShape) => {
-    if (!isBusinessNodeShape(shape)) {
-      return;
-    }
+  const commitSemanticBinding = useCallback(
+    async (
+      sourceNode: CanvasNodeRecord,
+      target: SemanticBindTarget,
+      visualInput: { sourceShapeId?: string; targetShapeId?: string } = {},
+    ) => {
+      const input = buildSemanticBindCreateInput({
+        sourceNode,
+        target,
+        sourceShapeId: visualInput.sourceShapeId,
+        targetShapeId: visualInput.targetShapeId,
+        visualArrowShapeId: createSemanticArrowShapeId(sourceNode.id, target.node.id),
+      });
+      if (!input) {
+        return;
+      }
 
-    const node = nodesRef.current.find((candidate) => candidate.id === shape.props.nodeId);
-    geometrySchedulerRef.current?.schedule(shape.props.nodeId, {
-      x: shape.x,
-      y: shape.y,
-      width: shape.props.w,
-      height: shape.props.h,
-      zIndex: zIndexForNode(node),
-    });
-  }, []);
+      const bindKey = semanticBindKey(input.sourceNodeId, input.targetNodeId);
+      if (semanticBindingKeysInFlightRef.current.has(bindKey)) {
+        return;
+      }
+
+      semanticBindingKeysInFlightRef.current.add(bindKey);
+      setBindingBusy(true);
+      setNodeActionError(null);
+      try {
+        const result = await createCanvasEdge(projectId, input);
+        const merged = mergeCanvasEdgeCreateResult(
+          { nodes: nodesRef.current, edges: edgesRef.current },
+          result,
+        );
+        publishCanvasNodes(merged.nodes);
+        publishCanvasEdges(merged.edges);
+        setSemanticBindSourceId(null);
+      } catch (error) {
+        setNodeActionError(errorMessage(error));
+      } finally {
+        semanticBindingKeysInFlightRef.current.delete(bindKey);
+        setBindingBusy(semanticBindingKeysInFlightRef.current.size > 0);
+      }
+    },
+    [projectId, publishCanvasEdges, publishCanvasNodes],
+  );
+
+  const handleBusinessShapeUpdated = useCallback(
+    (shape: TLShape) => {
+      if (!isBusinessNodeShape(shape)) {
+        return;
+      }
+
+      const node = nodesRef.current.find((candidate) => candidate.id === shape.props.nodeId);
+      geometrySchedulerRef.current?.schedule(shape.props.nodeId, {
+        x: shape.x,
+        y: shape.y,
+        width: shape.props.w,
+        height: shape.props.h,
+        zIndex: zIndexForNode(node),
+      });
+
+      if (!node || !canStartSemanticBind(node)) {
+        return;
+      }
+
+      const movedSourceNode: CanvasNodeRecord = {
+        ...node,
+        x: shape.x,
+        y: shape.y,
+        width: shape.props.w,
+        height: shape.props.h,
+      };
+      const nodesWithMovedSource = nodesRef.current.map((candidate) =>
+        candidate.id === movedSourceNode.id ? movedSourceNode : candidate,
+      );
+      const target = findDirectSemanticDropTarget(
+        movedSourceNode,
+        nodesWithMovedSource,
+        edgesRef.current,
+      );
+      if (target) {
+        void commitSemanticBinding(movedSourceNode, target, {
+          sourceShapeId: shape.id,
+          targetShapeId: target.node.tldrawShapeId,
+        });
+      }
+    },
+    [commitSemanticBinding],
+  );
 
   const handleBusinessShapeRemoved = useCallback(
     (shape: TLShape) => {
@@ -465,7 +573,7 @@ export function CanvasEditor({
             ),
           );
           publishCanvasNodes(nodesRef.current.filter((node) => node.id !== shape.props.nodeId));
-          onSelectionChange?.(EMPTY_CANVAS_SELECTION);
+          publishSelection(EMPTY_CANVAS_SELECTION);
         })
         .catch((error: unknown) => {
           setNodeActionError(errorMessage(error));
@@ -480,7 +588,7 @@ export function CanvasEditor({
           deletingNodeIdsRef.current.delete(shape.props.nodeId);
         });
     },
-    [emitSelection, onSelectionChange, projectId, publishCanvasEdges, publishCanvasNodes, scheduleSave],
+    [emitSelection, projectId, publishCanvasEdges, publishCanvasNodes, publishSelection, scheduleSave],
   );
 
   const handleCanvasEdgeShapeRemoved = useCallback(
@@ -516,7 +624,7 @@ export function CanvasEditor({
           );
           publishCanvasNodes(merged.nodes);
           publishCanvasEdges(merged.edges);
-          onSelectionChange?.(EMPTY_CANVAS_SELECTION);
+          publishSelection(EMPTY_CANVAS_SELECTION);
         })
         .catch((error: unknown) => {
           setNodeActionError(errorMessage(error));
@@ -532,7 +640,7 @@ export function CanvasEditor({
           deletingEdgeIdsRef.current.delete(edge.id);
         });
     },
-    [emitSelection, onSelectionChange, projectId, publishCanvasEdges, publishCanvasNodes, scheduleSave],
+    [emitSelection, projectId, publishCanvasEdges, publishCanvasNodes, publishSelection, scheduleSave],
   );
 
   const handleMount = useCallback(
@@ -650,6 +758,44 @@ export function CanvasEditor({
     [emitSelection, projectId, publishCanvasNodes],
   );
 
+  const selectedBusinessNode =
+    selectionState.kind === "business-node"
+      ? canvasNodes.find((node) => node.id === selectionState.nodeId)
+      : undefined;
+  const semanticBindSourceNode = semanticBindSourceId
+    ? canvasNodes.find((node) => node.id === semanticBindSourceId)
+    : selectedBusinessNode;
+  const semanticBindSourceLabel = canStartSemanticBind(semanticBindSourceNode)
+    ? buildBusinessNodeCardModel(semanticBindSourceNode).title
+    : undefined;
+  const semanticBindTargets = semanticBindSourceNode
+    ? getAvailableSemanticBindTargets(semanticBindSourceNode, canvasNodes, canvasEdges)
+    : [];
+
+  const handleToggleSemanticBind = useCallback(() => {
+    if (semanticBindSourceId) {
+      setSemanticBindSourceId(null);
+      return;
+    }
+    if (selectedBusinessNode && canStartSemanticBind(selectedBusinessNode)) {
+      setSemanticBindSourceId(selectedBusinessNode.id);
+    }
+  }, [selectedBusinessNode, semanticBindSourceId]);
+
+  const handleCancelSemanticBind = useCallback(() => {
+    setSemanticBindSourceId(null);
+  }, []);
+
+  const handleSemanticBindTarget = useCallback(
+    (target: SemanticBindTarget) => {
+      if (!semanticBindSourceNode) {
+        return;
+      }
+      void commitSemanticBinding(semanticBindSourceNode, target);
+    },
+    [commitSemanticBinding, semanticBindSourceNode],
+  );
+
   if (loading) {
     return (
       <div className="canvas-editor-state" role="status">
@@ -677,6 +823,15 @@ export function CanvasEditor({
       <BusinessNodeToolbar
         busy={creatingNodeType !== null}
         onCreate={(type) => void handleCreateBusinessNode(type)}
+      />
+      <SemanticBindToolbar
+        active={semanticBindSourceId !== null}
+        busy={bindingBusy}
+        sourceLabel={semanticBindSourceLabel}
+        targets={semanticBindTargets}
+        onBind={handleSemanticBindTarget}
+        onCancel={handleCancelSemanticBind}
+        onToggle={handleToggleSemanticBind}
       />
       <div className="canvas-editor-controls" aria-label="Canvas controls">
         <button

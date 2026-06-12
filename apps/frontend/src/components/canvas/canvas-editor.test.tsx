@@ -22,6 +22,7 @@ vi.mock("tldraw", () => ({
 }));
 
 vi.mock("../../lib/api", () => ({
+  createCanvasEdge: vi.fn(),
   createCanvasNode: vi.fn(),
   deleteCanvasEdge: vi.fn(),
   deleteCanvasNode: vi.fn(),
