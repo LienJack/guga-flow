@@ -1,7 +1,7 @@
 ---
 title: "feat: Add novel import and storyboard draft workflow"
 type: feat
-status: active
+status: completed
 date: 2026-06-12
 origin: docs/brainstorms/2026-06-12-006-phase-5-novel-storyboard-requirements.md
 ---
@@ -455,6 +455,65 @@ flowchart TB
 - Update `docs/development.md` with Novel/Storyboard routes, mock generation workflow, validation behavior, and smoke checklist.
 - Add verification evidence to this plan before marking it completed.
 - If a reusable validation/persistence pattern emerges, capture it under `docs/solutions/architecture-patterns/`.
+
+---
+
+## Implementation Notes
+
+- U1 landed in `a13d06f feat(shared): add storyboard draft contracts`.
+  Shared-types now owns Zod-backed `StoryboardResult` validation, cross-reference checks, NovelDocument contracts, and StoryboardDraft mutation contracts.
+- U2 landed in `f24b97d feat(backend): add novel source api`.
+  Backend NovelDocument CRUD/import routes are project-scoped and preserve canvas, semantic edge, and asset state.
+- U3 landed in `7123622 feat(backend): add storyboard draft lifecycle`.
+  Backend StoryboardDraft persistence uses direct mock LLM generation, validates candidates before persistence, saves valid edits, and marks valid drafts ready without importing them to canvas.
+- U4 landed in `ea80ac3 feat(frontend): add storyboard draft data client`.
+  Frontend API functions and pure storyboard helpers cover novel source calls, draft lifecycle calls, summary state, validation issue formatting, and extension-preserving editor updates.
+- U5 landed in `3d1884b feat(frontend): add novel storyboard workbench panel`.
+  The workbench sidebar now includes novel paste/import, source edit/delete, mock generation, storyboard preview/edit/save, and mark-ready controls while preserving the canvas, Inspector, and Asset Library.
+- U6 applies final documentation and verification.
+  A ready StoryboardDraft remains a Phase 6 input contract, not a canvas mutation.
+
+## Verification Evidence
+
+- `pnpm --filter @guga-flow/shared-types run test`
+- `pnpm --filter @guga-flow/shared-types run lint`
+- `pnpm --filter @guga-flow/shared-types run build`
+- `pnpm --filter @guga-flow/provider-contracts run test`
+- `pnpm --filter @guga-flow/provider-contracts run build`
+- `pnpm --filter @guga-flow/backend run test -- src/novels/novels.service.spec.ts`
+- `pnpm --filter @guga-flow/backend run test -- test/app.e2e-spec.ts`
+- `pnpm --filter @guga-flow/backend run lint`
+- `pnpm --filter @guga-flow/backend run build`
+- `pnpm --filter @guga-flow/frontend run test -- src/lib/api.test.ts src/components/novels/storyboard-data.test.ts`
+- `pnpm --filter @guga-flow/frontend run test -- src/components/novels/novel-storyboard-panel.test.tsx src/components/novels/storyboard-editor.test.tsx src/components/workbench-shell.test.tsx src/components/novels/storyboard-data.test.ts`
+- `pnpm --filter @guga-flow/frontend run lint`
+- `pnpm --filter @guga-flow/frontend run build`
+- `pnpm run format:check`
+- `pnpm run test`
+- `pnpm run build`
+- `pnpm run mock:workflow`
+
+Smoke verification on 2026-06-12:
+
+- Applied the pending local Postgres migration with `pnpm --filter @guga-flow/backend exec prisma migrate deploy`.
+- API smoke project `cmqb3l25e0005l0svt83q5dvf` created novel `cmqb3l26p0006l0svxl2sq911` and draft `cmqb3l27p0007l0svkl0a2drv`.
+- Mock storyboard generation returned `validation=true`.
+- Edited shot duration persisted as `6` and image prompt persisted as `edited smoke image prompt`.
+- Ready mutation returned `status=ready` and `readyForImport=true`.
+- Reload returned `logline=Edited smoke logline`.
+- Canvas API returned `canvasNodes=0` and `canvasEdges=0`, confirming Phase 5 did not import drafts into canvas state.
+- Chrome smoke opened `/projects/cmqb3l25e0005l0svt83q5dvf/canvas`; Novel/Storyboard panel and canvas rendered.
+- Browser console had no application errors after field-name fix. The only remaining warning was the known tldraw zh-cn missing-message warning.
+- Code review sweep against Phase 5 base `3d1e4bd` found no unresolved blocking findings. Two review-time fixes were applied before final commit: form fields now carry `name` attributes, and novel delete state updates avoid setting state from inside another state updater.
+
+Environment note:
+
+- The current shell still reports Node `v22.22.2` while the repository target remains `>=26.3.0`. Commands completed with the expected engine warning only; the project architecture and Node target were not downgraded.
+
+## Residual Follow-Up
+
+- Phase 6 owns importing ready storyboard drafts into canvas nodes, tldraw shapes, semantic edges, auto layout, and duplicate import policy.
+- Phase 8 owns persistent GenerationJob queue execution for novel-to-storyboard or media generation.
 
 ---
 

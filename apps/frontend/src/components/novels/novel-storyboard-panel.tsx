@@ -189,11 +189,9 @@ export function NovelStoryboardPanel({
     }
     await runAction("delete", async () => {
       await deleteNovelDocument(projectId, selectedNovel.id);
-      setNovels((current) => {
-        const next = current.filter((novel) => novel.id !== selectedNovel.id);
-        setSelectedNovelId(next[0]?.id ?? "");
-        return next;
-      });
+      const nextNovels = novels.filter((novel) => novel.id !== selectedNovel.id);
+      setNovels(nextNovels);
+      setSelectedNovelId(nextNovels[0]?.id ?? "");
       setDraft(undefined);
       setStoryboard(undefined);
       setDraftDirty(false);
@@ -290,6 +288,7 @@ export function NovelStoryboardPanel({
         <label className="field-label">
           <span>Title</span>
           <input
+            name="new-novel-title"
             required
             value={newTitle}
             onChange={(event) => setNewTitle(event.target.value)}
@@ -298,6 +297,7 @@ export function NovelStoryboardPanel({
         <label className="field-label">
           <span>Content</span>
           <textarea
+            name="new-novel-content"
             required
             rows={5}
             value={newContent}
@@ -359,11 +359,16 @@ export function NovelStoryboardPanel({
           </div>
           <label className="field-label">
             <span>Title</span>
-            <input value={selectedTitle} onChange={(event) => setSelectedTitle(event.target.value)} />
+            <input
+              name="selected-novel-title"
+              value={selectedTitle}
+              onChange={(event) => setSelectedTitle(event.target.value)}
+            />
           </label>
           <label className="field-label">
             <span>Content</span>
             <textarea
+              name="selected-novel-content"
               rows={6}
               value={selectedContent}
               onChange={(event) => setSelectedContent(event.target.value)}

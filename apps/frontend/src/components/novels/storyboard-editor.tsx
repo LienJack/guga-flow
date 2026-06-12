@@ -117,6 +117,7 @@ export function StoryboardEditor({
         <label className="field-label">
           <span>Title</span>
           <input
+            name="storyboard-title"
             value={storyboard.title}
             onChange={(event) =>
               onStoryboardChange(updateStoryboardOverview(storyboard, { title: event.target.value }))
@@ -126,6 +127,7 @@ export function StoryboardEditor({
         <label className="field-label">
           <span>Logline</span>
           <textarea
+            name="storyboard-logline"
             rows={3}
             value={storyboard.logline}
             onChange={(event) =>
@@ -197,15 +199,24 @@ function CharacterEditor({
       </div>
       <label className="field-label">
         <span>Name</span>
-        <input value={character.name} onChange={(event) => onChange({ name: event.target.value })} />
+        <input
+          name={`character-${character.tempId}-name`}
+          value={character.name}
+          onChange={(event) => onChange({ name: event.target.value })}
+        />
       </label>
       <label className="field-label">
         <span>Role</span>
-        <input value={character.role} onChange={(event) => onChange({ role: event.target.value })} />
+        <input
+          name={`character-${character.tempId}-role`}
+          value={character.role}
+          onChange={(event) => onChange({ role: event.target.value })}
+        />
       </label>
       <label className="field-label">
         <span>Appearance</span>
         <textarea
+          name={`character-${character.tempId}-appearance`}
           rows={3}
           value={character.appearance}
           onChange={(event) => onChange({ appearance: event.target.value })}
@@ -214,6 +225,7 @@ function CharacterEditor({
       <label className="field-label">
         <span>Identity prompt</span>
         <textarea
+          name={`character-${character.tempId}-identity-prompt`}
           rows={3}
           value={character.identityPrompt}
           onChange={(event) => onChange({ identityPrompt: event.target.value })}
@@ -238,11 +250,16 @@ function LocationEditor({
       </div>
       <label className="field-label">
         <span>Name</span>
-        <input value={location.name} onChange={(event) => onChange({ name: event.target.value })} />
+        <input
+          name={`location-${location.tempId}-name`}
+          value={location.name}
+          onChange={(event) => onChange({ name: event.target.value })}
+        />
       </label>
       <label className="field-label">
         <span>Type</span>
         <select
+          name={`location-${location.tempId}-type`}
           value={location.type}
           onChange={(event) =>
             onChange({ type: event.target.value as StoryboardLocationType })
@@ -258,6 +275,7 @@ function LocationEditor({
       <label className="field-label">
         <span>Description</span>
         <textarea
+          name={`location-${location.tempId}-description`}
           rows={3}
           value={location.description}
           onChange={(event) => onChange({ description: event.target.value })}
@@ -266,6 +284,7 @@ function LocationEditor({
       <label className="field-label">
         <span>Lighting</span>
         <input
+          name={`location-${location.tempId}-lighting`}
           value={location.lighting}
           onChange={(event) => onChange({ lighting: event.target.value })}
         />
@@ -273,6 +292,7 @@ function LocationEditor({
       <label className="field-label">
         <span>Location prompt</span>
         <textarea
+          name={`location-${location.tempId}-prompt`}
           rows={3}
           value={location.locationPrompt}
           onChange={(event) => onChange({ locationPrompt: event.target.value })}
@@ -299,11 +319,16 @@ function SceneEditor({
       </div>
       <label className="field-label">
         <span>Scene title</span>
-        <input value={scene.title} onChange={(event) => onSceneChange({ title: event.target.value })} />
+        <input
+          name={`scene-${scene.tempId}-title`}
+          value={scene.title}
+          onChange={(event) => onSceneChange({ title: event.target.value })}
+        />
       </label>
       <label className="field-label">
         <span>Summary</span>
         <textarea
+          name={`scene-${scene.tempId}-summary`}
           rows={3}
           value={scene.summary}
           onChange={(event) => onSceneChange({ summary: event.target.value })}
@@ -311,11 +336,16 @@ function SceneEditor({
       </label>
       <label className="field-label">
         <span>Mood</span>
-        <input value={scene.mood} onChange={(event) => onSceneChange({ mood: event.target.value })} />
+        <input
+          name={`scene-${scene.tempId}-mood`}
+          value={scene.mood}
+          onChange={(event) => onSceneChange({ mood: event.target.value })}
+        />
       </label>
       <label className="field-label">
         <span>Character temp ids</span>
         <input
+          name={`scene-${scene.tempId}-character-temp-ids`}
           value={tempIdsToText(scene.characterTempIds)}
           onChange={(event) => onSceneChange({ characterTempIds: textToTempIds(event.target.value) })}
         />
@@ -323,6 +353,7 @@ function SceneEditor({
       <label className="field-label">
         <span>Location temp id</span>
         <input
+          name={`scene-${scene.tempId}-location-temp-id`}
           value={scene.locationTempId ?? ""}
           onChange={(event) => onSceneChange({ locationTempId: textToOptional(event.target.value) })}
         />
@@ -355,12 +386,17 @@ function ShotEditor({
       </div>
       <label className="field-label">
         <span>Shot title</span>
-        <input value={shot.title} onChange={(event) => onChange({ title: event.target.value })} />
+        <input
+          name={`shot-${shot.tempId}-title`}
+          value={shot.title}
+          onChange={(event) => onChange({ title: event.target.value })}
+        />
       </label>
       <label className="field-label">
         <span>Duration</span>
         <input
           min={0}
+          name={`shot-${shot.tempId}-duration`}
           step={0.5}
           type="number"
           value={shot.durationSec}
@@ -370,6 +406,7 @@ function ShotEditor({
       <label className="field-label">
         <span>Visual description</span>
         <textarea
+          name={`shot-${shot.tempId}-visual-description`}
           rows={3}
           value={shot.visualDescription}
           onChange={(event) => onChange({ visualDescription: event.target.value })}
@@ -377,11 +414,16 @@ function ShotEditor({
       </label>
       <label className="field-label">
         <span>Action</span>
-        <input value={shot.action} onChange={(event) => onChange({ action: event.target.value })} />
+        <input
+          name={`shot-${shot.tempId}-action`}
+          value={shot.action}
+          onChange={(event) => onChange({ action: event.target.value })}
+        />
       </label>
       <label className="field-label">
         <span>Camera movement</span>
         <input
+          name={`shot-${shot.tempId}-camera-movement`}
           value={shot.cameraMovement}
           onChange={(event) => onChange({ cameraMovement: event.target.value })}
         />
@@ -389,6 +431,7 @@ function ShotEditor({
       <label className="field-label">
         <span>Character temp ids</span>
         <input
+          name={`shot-${shot.tempId}-character-temp-ids`}
           value={tempIdsToText(shot.characterTempIds)}
           onChange={(event) => onChange({ characterTempIds: textToTempIds(event.target.value) })}
         />
@@ -396,6 +439,7 @@ function ShotEditor({
       <label className="field-label">
         <span>Location temp id</span>
         <input
+          name={`shot-${shot.tempId}-location-temp-id`}
           value={shot.locationTempId ?? ""}
           onChange={(event) => onChange({ locationTempId: textToOptional(event.target.value) })}
         />
@@ -403,6 +447,7 @@ function ShotEditor({
       <label className="field-label">
         <span>Image prompt</span>
         <textarea
+          name={`shot-${shot.tempId}-image-prompt`}
           rows={3}
           value={shot.imagePrompt}
           onChange={(event) => onChange({ imagePrompt: event.target.value })}
@@ -411,6 +456,7 @@ function ShotEditor({
       <label className="field-label">
         <span>Video prompt</span>
         <textarea
+          name={`shot-${shot.tempId}-video-prompt`}
           rows={3}
           value={shot.videoPrompt}
           onChange={(event) => onChange({ videoPrompt: event.target.value })}
@@ -419,6 +465,7 @@ function ShotEditor({
       <label className="field-label">
         <span>Negative prompt</span>
         <textarea
+          name={`shot-${shot.tempId}-negative-prompt`}
           rows={2}
           value={shot.negativePrompt ?? ""}
           onChange={(event) => onChange({ negativePrompt: textToOptional(event.target.value) })}

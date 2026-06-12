@@ -77,6 +77,8 @@ The initial schema preserves the hybrid persistence foundation:
 - `CanvasDocument.snapshotJson`
 - normalized `CanvasNode`
 - normalized `CanvasEdge`
+- `NovelDocument`
+- `StoryboardDraft`
 - `Asset`
 - `GenerationJob`
 - `EditorExport`
@@ -91,7 +93,7 @@ pnpm run dev
 
 This builds shared packages first and then starts all app surfaces in parallel.
 
-Open the frontend at `http://localhost:3001`. The home page is the project dashboard. Creating or opening a project routes to `/projects/:projectId/canvas`, which hosts the workbench shell, persistent tldraw canvas, business-node toolbar, save-status badge, fit-to-content control, selection-aware Inspector, and asset library.
+Open the frontend at `http://localhost:3001`. The home page is the project dashboard. Creating or opening a project routes to `/projects/:projectId/canvas`, which hosts the workbench shell, persistent tldraw canvas, business-node toolbar, save-status badge, fit-to-content control, selection-aware Inspector, asset library, and Phase 5 Novel/Storyboard panel.
 
 ## Project And Asset Workflow
 
@@ -185,6 +187,46 @@ Phase 4 browser smoke checklist:
 - Confirm the Asset Library remains visible while edge selection and deletion are available.
 - Check browser console errors. Locale warning-only messages from tldraw are acceptable if no application error is logged.
 
+## Novel And Storyboard Workflow
+
+Phase 5 supports project-scoped novel sources and reloadable storyboard drafts without importing them into the canvas yet.
+
+Backend NovelDocument API:
+
+- `GET /api/v1/projects/:projectId/novels` lists project novels.
+- `POST /api/v1/projects/:projectId/novels` creates a pasted novel source.
+- `POST /api/v1/projects/:projectId/novels/import` creates a text or markdown source from browser-read file text.
+- `GET /api/v1/projects/:projectId/novels/:novelId` reads one novel.
+- `PATCH /api/v1/projects/:projectId/novels/:novelId` updates title/content and recomputes word count when content changes.
+- `DELETE /api/v1/projects/:projectId/novels/:novelId` deletes the selected novel and cascades its storyboard drafts only.
+
+Backend StoryboardDraft API:
+
+- `POST /api/v1/projects/:projectId/novels/:novelId/generate-storyboard` calls the mock LLM provider and persists a valid storyboard draft.
+- `GET /api/v1/projects/:projectId/novels/:novelId/storyboard-draft` returns the latest draft for a novel.
+- `PATCH /api/v1/projects/:projectId/novels/:novelId/storyboard-draft/:draftId` saves edited storyboard JSON after shared validation passes.
+- `POST /api/v1/projects/:projectId/novels/:novelId/storyboard-draft/:draftId/ready` marks a valid draft ready for Phase 6 import.
+
+Frontend behavior:
+
+- The workbench sidebar can create pasted novel sources and import `.txt`, `.md`, or `.markdown` files by reading text in the browser and sending it to the backend.
+- The selected novel can be edited without changing canvas nodes, semantic edges, or assets.
+- The mock generation action creates a `StoryboardDraft` only after the shared Zod `StoryboardResult` validation passes.
+- The editor exposes overview, character, location, scene, shot, temp-reference, duration, image prompt, video prompt, and negative prompt fields.
+- Draft save and ready actions use the backend validation boundary. Invalid edited drafts stay visible in the browser but cannot be saved or marked ready.
+- A ready storyboard draft is an input artifact for Phase 6. Phase 5 does not create tldraw shapes, normalized `CanvasNode` rows, or normalized `CanvasEdge` rows from the draft.
+
+Phase 5 browser/API smoke checklist:
+
+- Apply pending migrations to local Postgres before using the real backend API.
+- Create a project and a pasted novel source.
+- Generate a mock storyboard draft and confirm validation succeeds.
+- Edit a shot duration and prompt, save the draft, reload it, and confirm the edited values persist.
+- Mark the draft ready and confirm `status=ready` and `readyForImport=true`.
+- Query the project canvas and confirm `nodes.length === 0` and `edges.length === 0` until Phase 6 import exists.
+- Open `/projects/:projectId/canvas` and confirm the Novel/Storyboard panel, canvas, and Inspector/Asset Library surfaces still render.
+- Check browser console errors. The tldraw zh-cn missing-message warning is acceptable if no application error is logged.
+
 ## Mock Workflow Verification
 
 Run the worker-owned mock media workflow:
@@ -224,6 +266,10 @@ Included:
 - semantic Character/Location edge create/delete APIs
 - semantic edge arrow projection, selection, Inspector, deletion, and reload reconciliation
 - Character-to-Shot, Location-to-Shot, and Location-to-SceneFrame reference synchronization
+- project-scoped novel source create/list/read/update/delete and text/markdown import
+- shared Zod validation for `StoryboardResult`
+- mock LLM storyboard draft generation, edit, reload, and ready-for-import state
+- workbench Novel/Storyboard panel and compact storyboard editor
 - selection-aware Inspector with type-specific business forms
 - worker mock workflow
 - shared types and provider contracts
@@ -231,7 +277,6 @@ Included:
 
 Deferred:
 
-- novel import and storyboard JSON extraction
 - storyboard import and auto layout
 - persistent generation queue
 - real provider adapters
