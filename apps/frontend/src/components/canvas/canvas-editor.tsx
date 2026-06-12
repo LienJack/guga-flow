@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Tldraw, type Editor } from "tldraw";
 
 import { getProjectCanvas, saveCanvasSnapshot } from "../../lib/api";
+import { businessNodeShapeUtils } from "./business-node-shape-utils";
 import { useCanvasAutosave } from "./use-canvas-autosave";
 
 type TldrawSnapshot = Parameters<Editor["loadSnapshot"]>[0];
@@ -144,7 +145,7 @@ export function CanvasEditor({ projectId, onSaveStatusChange }: CanvasEditorProp
 
   return (
     <div className="canvas-editor-shell">
-      <Tldraw onMount={handleMount} autoFocus />
+      <Tldraw onMount={handleMount} shapeUtils={businessNodeShapeUtils} autoFocus />
       <div className="canvas-editor-controls" aria-label="Canvas controls">
         <button
           className="canvas-control-button"

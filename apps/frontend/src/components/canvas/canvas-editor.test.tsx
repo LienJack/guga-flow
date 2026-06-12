@@ -6,7 +6,18 @@ import { CanvasEditor } from "./canvas-editor";
 import { CanvasSaveStatusBadge } from "./canvas-save-status";
 
 vi.mock("tldraw", () => ({
+  HTMLContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Rectangle2d: class Rectangle2d {
+    constructor(readonly options: unknown) {}
+  },
+  ShapeUtil: class ShapeUtil {},
+  T: {
+    literalEnum: (...values: unknown[]) => ({ values }),
+    number: { type: "number" },
+    string: { type: "string" },
+  },
   Tldraw: () => <div>Mock tldraw</div>,
+  resizeBox: (shape: unknown) => shape,
 }));
 
 vi.mock("../../lib/api", () => ({

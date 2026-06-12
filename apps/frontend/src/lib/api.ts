@@ -3,12 +3,19 @@ import type {
   AssetListItem,
   AssetPurpose,
   CanvasLoadResult,
-  SaveCanvasSnapshotInput,
-  SaveCanvasSnapshotResult,
+  CreateCanvasNodeInput,
+  CreateCanvasNodeResult,
   CreateProjectInput,
+  DeleteCanvasNodeResult,
   ProjectDetail,
   ProjectListItem,
+  SaveCanvasSnapshotInput,
+  SaveCanvasSnapshotResult,
   UpdateProjectInput,
+  UpdateCanvasNodeGeometryInput,
+  UpdateCanvasNodeGeometryResult,
+  UpdateCanvasNodeInput,
+  UpdateCanvasNodeResult,
 } from "@guga-flow/shared-types";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3002/api/v1").replace(
@@ -122,5 +129,49 @@ export function saveCanvasSnapshot(
   return requestJson<SaveCanvasSnapshotResult>(`/projects/${projectId}/canvas/snapshot`, {
     method: "PATCH",
     body: JSON.stringify(input),
+  });
+}
+
+export function createCanvasNode(
+  projectId: string,
+  input: CreateCanvasNodeInput,
+): Promise<CreateCanvasNodeResult> {
+  return requestJson<CreateCanvasNodeResult>(`/projects/${projectId}/canvas/nodes`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateCanvasNode(
+  projectId: string,
+  nodeId: string,
+  input: UpdateCanvasNodeInput,
+): Promise<UpdateCanvasNodeResult> {
+  return requestJson<UpdateCanvasNodeResult>(`/projects/${projectId}/canvas/nodes/${nodeId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateCanvasNodeGeometry(
+  projectId: string,
+  nodeId: string,
+  input: UpdateCanvasNodeGeometryInput,
+): Promise<UpdateCanvasNodeGeometryResult> {
+  return requestJson<UpdateCanvasNodeGeometryResult>(
+    `/projects/${projectId}/canvas/nodes/${nodeId}/geometry`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function deleteCanvasNode(
+  projectId: string,
+  nodeId: string,
+): Promise<DeleteCanvasNodeResult> {
+  return requestJson<DeleteCanvasNodeResult>(`/projects/${projectId}/canvas/nodes/${nodeId}`, {
+    method: "DELETE",
   });
 }
