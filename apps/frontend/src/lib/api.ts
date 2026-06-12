@@ -2,6 +2,9 @@ import type {
   AssetDetail,
   AssetListItem,
   AssetPurpose,
+  CanvasLoadResult,
+  SaveCanvasSnapshotInput,
+  SaveCanvasSnapshotResult,
   CreateProjectInput,
   ProjectDetail,
   ProjectListItem,
@@ -106,4 +109,18 @@ export function deleteAsset(projectId: string, assetId: string): Promise<{ delet
 
 export function assetPreviewUrl(projectId: string, assetId: string): string {
   return apiUrl(`/projects/${projectId}/assets/${assetId}/preview`);
+}
+
+export function getProjectCanvas(projectId: string): Promise<CanvasLoadResult> {
+  return requestJson<CanvasLoadResult>(`/projects/${projectId}/canvas`);
+}
+
+export function saveCanvasSnapshot(
+  projectId: string,
+  input: SaveCanvasSnapshotInput,
+): Promise<SaveCanvasSnapshotResult> {
+  return requestJson<SaveCanvasSnapshotResult>(`/projects/${projectId}/canvas/snapshot`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
 }
