@@ -5,14 +5,18 @@ import type {
   AssetPurpose,
   AssetType,
   CanvasDocumentRecord,
+  CanvasEdgeData,
   CanvasEdgeRecord,
   CanvasEdgeRelation,
   CanvasLoadResult,
   CanvasNodeRecord,
   CanvasNodeType,
   CanvasSnapshotJson,
+  CreateCanvasEdgeInput,
+  CreateCanvasEdgeResult,
   CreateCanvasNodeInput,
   CreateCanvasNodeResult,
+  DeleteCanvasEdgeResult,
   DeleteCanvasNodeResult,
   NodeStatus,
   SaveCanvasSnapshotInput,
@@ -22,7 +26,11 @@ import type {
   UpdateCanvasNodeInput,
   UpdateCanvasNodeResult,
 } from "@guga-flow/shared-types";
-import { NODE_STATUSES, PHASE_3_CANVAS_NODE_TYPES } from "@guga-flow/shared-types";
+import {
+  CANVAS_EDGE_RELATIONS,
+  NODE_STATUSES,
+  PHASE_3_CANVAS_NODE_TYPES,
+} from "@guga-flow/shared-types";
 
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -65,6 +73,10 @@ type CanvasEdgeModel = {
   dataJson: unknown;
   createdAt: Date | string;
 };
+
+type CanvasPrismaClient = Pick<PrismaService, "canvasEdge" | "canvasNode">;
+type CanvasEdgeDataJson = { [key: string]: CanvasSnapshotJson };
+type CanvasEdgeWriteInput = Omit<CreateCanvasEdgeInput<CanvasEdgeDataJson>, "affectedShotNodeIds">;
 
 type AssetModel = {
   id: string;
@@ -145,6 +157,20 @@ function isNodeStatus(value: unknown): value is NodeStatus {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function getStringArray(value: CanvasSnapshotJson | undefined): string[] {
+  return Array.isArray(value) && value.every((item): item is string => typeof item === "string")
+    ? uniqueStrings(value)
+    : [];
+}
+
+function getOptionalString(value: CanvasSnapshotJson | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 @Injectable()
@@ -296,6 +322,103 @@ export class CanvasService {
     return { deleted: true, nodeId: existing.id };
   }
 
+  async createEdge(
+    projectId: string,
+    input: CreateCanvasEdgeInput,
+  ): Promise<CreateCanvasEdgeResult> {
+    if (!CANVAS_EDGE_RELATIONS.includes(input.relation)) {
+      throw new BadRequestException("Canvas edge relation is invalid");
+    }
+
+    const [sourceNode, targetNode] = await Promise.all([
+      this.findProjectNode(projectId, input.sourceNodeId),
+      this.findProjectNode(projectId, input.targetNodeId),
+    ]);
+
+    if (sourceNode.canvasDocumentId !== targetNode.canvasDocumentId) {
+      throw new BadRequestException("Canvas edge nodes must belong to the same canvas");
+    }
+
+    this.validateSemanticEdge(sourceNode, targetNode, input.relation);
+    const dataJson = this.normalizeEdgeDataJson(input.dataJson);
+
+    if (input.relation === "references_location" && targetNode.type === "scene_frame") {
+      const shotNodes = await this.findProjectShotNodesByIds(
+        projectId,
+        targetNode.canvasDocumentId,
+        input.affectedShotNodeIds ?? [],
+        true,
+      );
+
+      return this.createSceneFrameLocationEdge(projectId, input, sourceNode, targetNode, shotNodes);
+    }
+
+    return this.runTransaction(async (tx) => {
+      const edge = await this.findOrCreateCanvasEdge(tx, projectId, targetNode.canvasDocumentId, {
+        ...input,
+        dataJson,
+      });
+      const updatedNode =
+        input.relation === "references_character"
+          ? await this.applyCharacterToShot(tx, targetNode, sourceNode.id)
+          : await this.applyLocationToShot(tx, targetNode, sourceNode.id);
+
+      return {
+        edge: this.toCanvasEdgeRecord(edge),
+        edges: [this.toCanvasEdgeRecord(edge)],
+        updatedNodes: [this.toCanvasNodeRecord(updatedNode)],
+      };
+    });
+  }
+
+  async deleteEdge(projectId: string, edgeId: string): Promise<DeleteCanvasEdgeResult> {
+    const edge = await this.findProjectEdge(projectId, edgeId);
+    const [sourceNode, targetNode] = await Promise.all([
+      this.findProjectNode(projectId, edge.sourceNodeId),
+      this.findProjectNode(projectId, edge.targetNodeId),
+    ]);
+    const edgeData = this.toCanvasEdgeData(edge.dataJson);
+    const batchShotNodes =
+      edge.relation === "references_location" && targetNode.type === "scene_frame"
+        ? await this.findProjectShotNodesByIds(
+            projectId,
+            edge.canvasDocumentId,
+            edgeData.appliedShotNodeIds ?? [],
+            false,
+          )
+        : [];
+
+    return this.runTransaction(async (tx) => {
+      const updatedNodes: CanvasNodeModel[] = [];
+      const deletedEdgeIds = uniqueStrings([edge.id, ...(edgeData.childEdgeIds ?? [])]);
+
+      if (edge.relation === "references_character" && targetNode.type === "shot") {
+        updatedNodes.push(await this.removeCharacterFromShot(tx, targetNode, sourceNode.id));
+      } else if (edge.relation === "references_location" && targetNode.type === "shot") {
+        updatedNodes.push(await this.removeLocationFromShot(tx, targetNode, sourceNode.id));
+      } else if (edge.relation === "references_location" && targetNode.type === "scene_frame") {
+        for (const shotNode of batchShotNodes) {
+          updatedNodes.push(await this.removeLocationFromShot(tx, shotNode, sourceNode.id));
+        }
+      }
+
+      if (deletedEdgeIds.length === 1) {
+        await tx.canvasEdge.delete({ where: { id: edge.id } });
+      } else {
+        await tx.canvasEdge.deleteMany({
+          where: { id: { in: deletedEdgeIds }, projectId },
+        });
+      }
+
+      return {
+        deleted: true,
+        edgeId: edge.id,
+        deletedEdgeIds,
+        updatedNodes: updatedNodes.map((node) => this.toCanvasNodeRecord(node)),
+      };
+    });
+  }
+
   private async getOrCreateCanvasDocument(projectId: string): Promise<CanvasDocumentModel> {
     await this.ensureProjectExists(projectId);
 
@@ -320,6 +443,258 @@ export class CanvasService {
     return node;
   }
 
+  private async findProjectEdge(projectId: string, edgeId: string): Promise<CanvasEdgeModel> {
+    await this.ensureProjectExists(projectId);
+
+    const edge = await this.prisma.canvasEdge.findFirst({
+      where: { id: edgeId, projectId },
+    });
+
+    if (!edge) {
+      throw new NotFoundException("Canvas edge not found");
+    }
+
+    return edge;
+  }
+
+  private async findProjectShotNodesByIds(
+    projectId: string,
+    canvasDocumentId: string,
+    shotNodeIds: readonly string[],
+    requireAll: boolean,
+  ): Promise<CanvasNodeModel[]> {
+    const uniqueShotNodeIds = uniqueStrings(shotNodeIds);
+    if (uniqueShotNodeIds.length === 0) {
+      return [];
+    }
+
+    const shotNodes = await this.prisma.canvasNode.findMany({
+      where: {
+        id: { in: uniqueShotNodeIds },
+        projectId,
+        canvasDocumentId,
+        type: "shot",
+      },
+    });
+    const shotNodeById = new Map(shotNodes.map((node) => [node.id, node]));
+
+    if (requireAll && shotNodeById.size !== uniqueShotNodeIds.length) {
+      throw new BadRequestException("Affected shot nodes must belong to this project canvas");
+    }
+
+    return uniqueShotNodeIds.flatMap((shotNodeId) => {
+      const shotNode = shotNodeById.get(shotNodeId);
+      return shotNode ? [shotNode] : [];
+    });
+  }
+
+  private validateSemanticEdge(
+    sourceNode: CanvasNodeModel,
+    targetNode: CanvasNodeModel,
+    relation: CanvasEdgeRelation,
+  ): void {
+    if (relation === "references_character") {
+      if (sourceNode.type !== "character_asset" || targetNode.type !== "shot") {
+        throw new BadRequestException("Character references must connect a character asset to a shot");
+      }
+      return;
+    }
+
+    if (relation === "references_location") {
+      if (
+        sourceNode.type !== "location_asset" ||
+        (targetNode.type !== "shot" && targetNode.type !== "scene_frame")
+      ) {
+        throw new BadRequestException(
+          "Location references must connect a location asset to a shot or scene frame",
+        );
+      }
+      return;
+    }
+
+    throw new BadRequestException("Canvas edge relation is not supported for semantic binding yet");
+  }
+
+  private async createSceneFrameLocationEdge(
+    projectId: string,
+    input: CreateCanvasEdgeInput,
+    sourceNode: CanvasNodeModel,
+    targetNode: CanvasNodeModel,
+    shotNodes: CanvasNodeModel[],
+  ): Promise<CreateCanvasEdgeResult> {
+    const canvasDocumentId = targetNode.canvasDocumentId;
+    const dataJson = this.normalizeEdgeDataJson(input.dataJson);
+    const affectedShotNodeIds = shotNodes.map((shotNode) => shotNode.id);
+
+    return this.runTransaction(async (tx) => {
+      let primaryEdge = await this.findOrCreateCanvasEdge(tx, projectId, canvasDocumentId, {
+        ...input,
+        dataJson: {
+          ...(dataJson ?? {}),
+          appliedShotNodeIds: affectedShotNodeIds,
+        },
+      });
+      const childEdges: CanvasEdgeModel[] = [];
+      const updatedNodes: CanvasNodeModel[] = [];
+
+      for (const shotNode of shotNodes) {
+        const childEdge = await this.findOrCreateCanvasEdge(tx, projectId, canvasDocumentId, {
+          sourceNodeId: sourceNode.id,
+          targetNodeId: shotNode.id,
+          relation: "references_location",
+          sourceShapeId: input.sourceShapeId ?? sourceNode.tldrawShapeId,
+          targetShapeId: shotNode.tldrawShapeId,
+          dataJson: { batchSourceEdgeId: primaryEdge.id },
+        });
+        childEdges.push(childEdge);
+        updatedNodes.push(await this.applyLocationToShot(tx, shotNode, sourceNode.id));
+      }
+
+      primaryEdge = await tx.canvasEdge.update({
+        where: { id: primaryEdge.id },
+        data: {
+          dataJson: {
+            ...(dataJson ?? {}),
+            appliedShotNodeIds: affectedShotNodeIds,
+            childEdgeIds: childEdges.map((childEdge) => childEdge.id),
+          },
+        },
+      });
+
+      return {
+        edge: this.toCanvasEdgeRecord(primaryEdge),
+        edges: [primaryEdge, ...childEdges].map((edge) => this.toCanvasEdgeRecord(edge)),
+        updatedNodes: updatedNodes.map((node) => this.toCanvasNodeRecord(node)),
+        appliedShotCount: updatedNodes.length,
+      };
+    });
+  }
+
+  private async findOrCreateCanvasEdge(
+    tx: CanvasPrismaClient,
+    projectId: string,
+    canvasDocumentId: string,
+    input: CanvasEdgeWriteInput,
+  ): Promise<CanvasEdgeModel> {
+    const existing = await tx.canvasEdge.findFirst({
+      where: {
+        projectId,
+        canvasDocumentId,
+        sourceNodeId: input.sourceNodeId,
+        targetNodeId: input.targetNodeId,
+        relation: input.relation,
+      },
+    });
+
+    if (existing) {
+      const data: {
+        sourceShapeId: string | null;
+        targetShapeId: string | null;
+        visualArrowShapeId: string | null;
+        dataJson?: CanvasEdgeDataJson;
+      } = {
+        sourceShapeId: input.sourceShapeId ?? existing.sourceShapeId,
+        targetShapeId: input.targetShapeId ?? existing.targetShapeId,
+        visualArrowShapeId: input.visualArrowShapeId ?? existing.visualArrowShapeId,
+      };
+      if (input.dataJson !== undefined) {
+        data.dataJson = input.dataJson;
+      }
+
+      return tx.canvasEdge.update({
+        where: { id: existing.id },
+        data,
+      });
+    }
+
+    return tx.canvasEdge.create({
+      data: {
+        projectId,
+        canvasDocumentId,
+        sourceNodeId: input.sourceNodeId,
+        targetNodeId: input.targetNodeId,
+        sourceShapeId: input.sourceShapeId ?? null,
+        targetShapeId: input.targetShapeId ?? null,
+        visualArrowShapeId: input.visualArrowShapeId ?? null,
+        relation: input.relation,
+        ...(input.dataJson !== undefined ? { dataJson: input.dataJson } : {}),
+      },
+    });
+  }
+
+  private async applyCharacterToShot(
+    tx: CanvasPrismaClient,
+    shotNode: CanvasNodeModel,
+    characterNodeId: string,
+  ): Promise<CanvasNodeModel> {
+    const dataJson = this.toNodeDataObject(shotNode.dataJson);
+    dataJson.characterAssetIds = uniqueStrings([
+      ...getStringArray(dataJson.characterAssetIds),
+      characterNodeId,
+    ]);
+
+    return tx.canvasNode.update({
+      where: { id: shotNode.id },
+      data: { dataJson },
+    });
+  }
+
+  private async applyLocationToShot(
+    tx: CanvasPrismaClient,
+    shotNode: CanvasNodeModel,
+    locationNodeId: string,
+  ): Promise<CanvasNodeModel> {
+    const dataJson = this.toNodeDataObject(shotNode.dataJson);
+    dataJson.locationAssetId = locationNodeId;
+
+    return tx.canvasNode.update({
+      where: { id: shotNode.id },
+      data: { dataJson },
+    });
+  }
+
+  private async removeCharacterFromShot(
+    tx: CanvasPrismaClient,
+    shotNode: CanvasNodeModel,
+    characterNodeId: string,
+  ): Promise<CanvasNodeModel> {
+    const dataJson = this.toNodeDataObject(shotNode.dataJson);
+    const nextCharacterIds = getStringArray(dataJson.characterAssetIds).filter(
+      (id) => id !== characterNodeId,
+    );
+
+    if (nextCharacterIds.length > 0) {
+      dataJson.characterAssetIds = nextCharacterIds;
+    } else {
+      delete dataJson.characterAssetIds;
+    }
+
+    return tx.canvasNode.update({
+      where: { id: shotNode.id },
+      data: { dataJson },
+    });
+  }
+
+  private async removeLocationFromShot(
+    tx: CanvasPrismaClient,
+    shotNode: CanvasNodeModel,
+    locationNodeId: string,
+  ): Promise<CanvasNodeModel> {
+    const dataJson = this.toNodeDataObject(shotNode.dataJson);
+    if (getOptionalString(dataJson.locationAssetId) === locationNodeId) {
+      delete dataJson.locationAssetId;
+    }
+
+    return tx.canvasNode.update({
+      where: { id: shotNode.id },
+      data: { dataJson },
+    });
+  }
+
+  private async runTransaction<T>(fn: (tx: CanvasPrismaClient) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(async (tx) => fn(tx as unknown as CanvasPrismaClient));
+  }
+
   private normalizeNodeDataJson(value: unknown): { [key: string]: CanvasSnapshotJson } {
     if (value === undefined) {
       return {};
@@ -329,6 +704,37 @@ export class CanvasService {
     }
 
     return value;
+  }
+
+  private normalizeEdgeDataJson(value: unknown): CanvasEdgeDataJson | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+    if (!isCanvasNodeDataJson(value)) {
+      throw new BadRequestException("Canvas edge data must be a JSON object");
+    }
+
+    return value;
+  }
+
+  private toNodeDataObject(value: unknown): { [key: string]: CanvasSnapshotJson } {
+    return isCanvasNodeDataJson(value) ? { ...value } : {};
+  }
+
+  private toCanvasEdgeData(value: unknown): CanvasEdgeData {
+    if (!isCanvasNodeDataJson(value)) {
+      return {};
+    }
+
+    const appliedShotNodeIds = getStringArray(value.appliedShotNodeIds);
+    const childEdgeIds = getStringArray(value.childEdgeIds);
+    const batchSourceEdgeId = getOptionalString(value.batchSourceEdgeId);
+
+    return {
+      ...(appliedShotNodeIds.length > 0 ? { appliedShotNodeIds } : {}),
+      ...(childEdgeIds.length > 0 ? { childEdgeIds } : {}),
+      ...(batchSourceEdgeId ? { batchSourceEdgeId } : {}),
+    };
   }
 
   private normalizeNodeStatus(value: unknown): NodeStatus {

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Inject, Param, Patch, Post } from "@nest
 
 import { CanvasService } from "./canvas.service";
 import {
+  CreateCanvasEdgeDto,
   CreateCanvasNodeDto,
   SaveCanvasSnapshotDto,
   UpdateCanvasNodeDto,
@@ -27,6 +28,11 @@ export class CanvasController {
     return this.canvasService.createNode(projectId, body);
   }
 
+  @Post("edges")
+  createEdge(@Param("projectId") projectId: string, @Body() body: CreateCanvasEdgeDto) {
+    return this.canvasService.createEdge(projectId, body);
+  }
+
   @Patch("nodes/:nodeId")
   updateNode(
     @Param("projectId") projectId: string,
@@ -48,5 +54,10 @@ export class CanvasController {
   @Delete("nodes/:nodeId")
   deleteNode(@Param("projectId") projectId: string, @Param("nodeId") nodeId: string) {
     return this.canvasService.deleteNode(projectId, nodeId);
+  }
+
+  @Delete("edges/:edgeId")
+  deleteEdge(@Param("projectId") projectId: string, @Param("edgeId") edgeId: string) {
+    return this.canvasService.deleteEdge(projectId, edgeId);
   }
 }

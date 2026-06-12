@@ -58,16 +58,18 @@ function createPrismaE2eMock() {
   const assets = new Map<string, Record<string, unknown>>();
   const canvasDocuments = new Map<string, Record<string, unknown>>();
   const canvasNodes = new Map<string, Record<string, unknown>>();
+  const canvasEdges = new Map<string, Record<string, unknown>>();
   let projectSequence = 1;
   let assetSequence = 1;
   let canvasSequence = 1;
   let nodeSequence = 1;
+  let edgeSequence = 1;
 
   function nextDate() {
     return new Date(`2026-06-12T00:${String(projectSequence).padStart(2, "0")}:00.000Z`);
   }
 
-  return {
+  const prisma = {
     onModuleInit: async () => undefined,
     onModuleDestroy: async () => undefined,
     user: {
@@ -124,6 +126,11 @@ function createPrismaE2eMock() {
             canvasNodes.delete(nodeId);
           }
         }
+        for (const [edgeId, edge] of canvasEdges.entries()) {
+          if (edge.projectId === where.id) {
+            canvasEdges.delete(edgeId);
+          }
+        }
         return existing;
       }),
     },
@@ -158,7 +165,9 @@ function createPrismaE2eMock() {
           .filter(
             (node) =>
               node.projectId === where.projectId &&
-              node.canvasDocumentId === where.canvasDocumentId,
+              (!where.canvasDocumentId || node.canvasDocumentId === where.canvasDocumentId) &&
+              (!where.type || node.type === where.type) &&
+              (!where.id?.in || where.id.in.includes(node.id)),
           )
           .sort(
             (left, right) =>
@@ -216,11 +225,94 @@ function createPrismaE2eMock() {
           throw new Error("Canvas node not found");
         }
         canvasNodes.delete(where.id);
+        for (const [edgeId, edge] of canvasEdges.entries()) {
+          if (edge.sourceNodeId === where.id || edge.targetNodeId === where.id) {
+            canvasEdges.delete(edgeId);
+          }
+        }
         return existing;
       }),
     },
     canvasEdge: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async ({ where }) =>
+        Array.from(canvasEdges.values())
+          .filter(
+            (edge) =>
+              edge.projectId === where.projectId &&
+              (!where.canvasDocumentId || edge.canvasDocumentId === where.canvasDocumentId),
+          )
+          .sort(
+            (left, right) =>
+              (left.createdAt as Date).getTime() - (right.createdAt as Date).getTime(),
+          ),
+      ),
+      findFirst: vi.fn(async ({ where }) => {
+        if (where.id) {
+          const edge = canvasEdges.get(where.id);
+          return edge && edge.projectId === where.projectId ? edge : null;
+        }
+
+        return (
+          Array.from(canvasEdges.values()).find(
+            (edge) =>
+              edge.projectId === where.projectId &&
+              edge.canvasDocumentId === where.canvasDocumentId &&
+              edge.sourceNodeId === where.sourceNodeId &&
+              edge.targetNodeId === where.targetNodeId &&
+              edge.relation === where.relation,
+          ) ?? null
+        );
+      }),
+      create: vi.fn(async ({ data }) => {
+        const id = `edge_${edgeSequence}`;
+        edgeSequence += 1;
+        const edge = {
+          id,
+          projectId: data.projectId,
+          canvasDocumentId: data.canvasDocumentId,
+          sourceNodeId: data.sourceNodeId,
+          targetNodeId: data.targetNodeId,
+          sourceShapeId: data.sourceShapeId ?? null,
+          targetShapeId: data.targetShapeId ?? null,
+          visualArrowShapeId: data.visualArrowShapeId ?? null,
+          relation: data.relation,
+          dataJson: data.dataJson ?? null,
+          createdAt: new Date("2026-06-12T01:00:00.000Z"),
+        };
+        canvasEdges.set(id, edge);
+        return edge;
+      }),
+      update: vi.fn(async ({ where, data }) => {
+        const existing = canvasEdges.get(where.id);
+        if (!existing) {
+          throw new Error("Canvas edge not found");
+        }
+        const updated = {
+          ...existing,
+          ...data,
+        };
+        canvasEdges.set(where.id, updated);
+        return updated;
+      }),
+      delete: vi.fn(async ({ where }) => {
+        const existing = canvasEdges.get(where.id);
+        if (!existing) {
+          throw new Error("Canvas edge not found");
+        }
+        canvasEdges.delete(where.id);
+        return existing;
+      }),
+      deleteMany: vi.fn(async ({ where }) => {
+        const edgeIds = new Set(where.id?.in ?? []);
+        let count = 0;
+        for (const [edgeId, edge] of canvasEdges.entries()) {
+          if (edgeIds.has(edgeId) && edge.projectId === where.projectId) {
+            canvasEdges.delete(edgeId);
+            count += 1;
+          }
+        }
+        return { count };
+      }),
     },
     asset: {
       findMany: vi.fn(async ({ where }) =>
@@ -265,6 +357,13 @@ function createPrismaE2eMock() {
         return asset;
       }),
     },
+  };
+
+  return {
+    ...prisma,
+    $transaction: vi.fn(async <T>(callback: (tx: typeof prisma) => Promise<T>) =>
+      callback(prisma),
+    ),
   };
 }
 
@@ -580,6 +679,169 @@ describe("project api e2e", () => {
         expect(body.nodes).toEqual([]);
         expect(body.assets).toHaveLength(1);
       });
+  });
+
+  it("creates, reloads, and deletes semantic canvas edges", async () => {
+    const createdProject = await request(app.getHttpServer())
+      .post("/api/v1/projects")
+      .send({ title: "Semantic Edge Project" })
+      .expect(201);
+    const projectId = createdProject.body.id;
+
+    const characterNode = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/nodes`)
+      .send({
+        tldrawShapeId: "shape:character-1",
+        type: "character_asset",
+        title: "Ari",
+        dataJson: { name: "Ari" },
+      })
+      .expect(201);
+    const shotNode = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/nodes`)
+      .send({
+        tldrawShapeId: "shape:shot-1",
+        type: "shot",
+        title: "Shot 001",
+        dataJson: { visualDescription: "Wide shot" },
+      })
+      .expect(201);
+
+    const characterEdge = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/edges`)
+      .send({
+        sourceNodeId: characterNode.body.node.id,
+        targetNodeId: shotNode.body.node.id,
+        relation: "references_character",
+        sourceShapeId: "shape:character-1",
+        targetShapeId: "shape:shot-1",
+        visualArrowShapeId: "shape:arrow-character-shot",
+      })
+      .expect(201);
+
+    expect(characterEdge.body.edge).toMatchObject({
+      relation: "references_character",
+      sourceNodeId: characterNode.body.node.id,
+      targetNodeId: shotNode.body.node.id,
+    });
+    expect(characterEdge.body.updatedNodes[0].dataJson).toMatchObject({
+      characterAssetIds: [characterNode.body.node.id],
+    });
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/edges`)
+      .send({
+        sourceNodeId: characterNode.body.node.id,
+        targetNodeId: shotNode.body.node.id,
+        relation: "references_character",
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.edge.id).toBe(characterEdge.body.edge.id);
+      });
+
+    const locationNode = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/nodes`)
+      .send({
+        tldrawShapeId: "shape:location-1",
+        type: "location_asset",
+        title: "Launch Site",
+        dataJson: { name: "Launch Site" },
+      })
+      .expect(201);
+    const sceneFrameNode = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/nodes`)
+      .send({
+        tldrawShapeId: "shape:frame-1",
+        type: "scene_frame",
+        title: "Frame 1",
+        dataJson: { label: "Scene 1" },
+      })
+      .expect(201);
+    const secondShotNode = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/nodes`)
+      .send({
+        tldrawShapeId: "shape:shot-2",
+        type: "shot",
+        title: "Shot 002",
+      })
+      .expect(201);
+
+    const locationEdge = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/edges`)
+      .send({
+        sourceNodeId: locationNode.body.node.id,
+        targetNodeId: sceneFrameNode.body.node.id,
+        relation: "references_location",
+        sourceShapeId: "shape:location-1",
+        targetShapeId: "shape:frame-1",
+        visualArrowShapeId: "shape:arrow-location-frame",
+        affectedShotNodeIds: [shotNode.body.node.id, secondShotNode.body.node.id],
+      })
+      .expect(201);
+
+    expect(locationEdge.body.appliedShotCount).toBe(2);
+    expect(locationEdge.body.edges).toHaveLength(3);
+    expect(locationEdge.body.edge.dataJson).toMatchObject({
+      appliedShotNodeIds: [shotNode.body.node.id, secondShotNode.body.node.id],
+    });
+    expect(locationEdge.body.updatedNodes).toEqual([
+      expect.objectContaining({
+        id: shotNode.body.node.id,
+        dataJson: expect.objectContaining({ locationAssetId: locationNode.body.node.id }),
+      }),
+      expect.objectContaining({
+        id: secondShotNode.body.node.id,
+        dataJson: expect.objectContaining({ locationAssetId: locationNode.body.node.id }),
+      }),
+    ]);
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/canvas`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.edges).toHaveLength(4);
+      });
+
+    await request(app.getHttpServer())
+      .delete(`/api/v1/projects/${projectId}/canvas/edges/${locationEdge.body.edge.id}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.deletedEdgeIds).toHaveLength(3);
+        expect(body.updatedNodes).toEqual([
+          expect.objectContaining({
+            id: shotNode.body.node.id,
+            dataJson: expect.not.objectContaining({ locationAssetId: locationNode.body.node.id }),
+          }),
+          expect.objectContaining({
+            id: secondShotNode.body.node.id,
+            dataJson: expect.not.objectContaining({ locationAssetId: locationNode.body.node.id }),
+          }),
+        ]);
+      });
+
+    await request(app.getHttpServer())
+      .delete(`/api/v1/projects/${projectId}/canvas/edges/${characterEdge.body.edge.id}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.updatedNodes[0].dataJson).not.toHaveProperty("characterAssetIds");
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/canvas`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.edges).toEqual([]);
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/edges`)
+      .send({
+        sourceNodeId: characterNode.body.node.id,
+        targetNodeId: locationNode.body.node.id,
+        relation: "references_character",
+      })
+      .expect(400);
   });
 
   it("rejects invalid business canvas node input", async () => {

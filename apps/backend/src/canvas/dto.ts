@@ -1,17 +1,25 @@
 import type {
+  CanvasEdgeRelation,
   CanvasSnapshotJson,
+  CreateCanvasEdgeInput,
   CreateCanvasNodeInput,
   NodeStatus,
   Phase3CanvasNodeType,
   UpdateCanvasNodeGeometryInput,
   UpdateCanvasNodeInput,
 } from "@guga-flow/shared-types";
-import { NODE_STATUSES, PHASE_3_CANVAS_NODE_TYPES } from "@guga-flow/shared-types";
+import {
+  CANVAS_EDGE_RELATIONS,
+  NODE_STATUSES,
+  PHASE_3_CANVAS_NODE_TYPES,
+} from "@guga-flow/shared-types";
 import { Type } from "class-transformer";
 import {
+  ArrayUnique,
   IsDefined,
   IsIn,
   IsInt,
+  IsArray,
   IsNumber,
   IsOptional,
   IsString,
@@ -72,6 +80,46 @@ export class CreateCanvasNodeDto implements CreateCanvasNodeInput {
 
   @IsOptional()
   dataJson?: CanvasSnapshotJson;
+}
+
+export class CreateCanvasEdgeDto implements CreateCanvasEdgeInput {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  sourceNodeId!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  targetNodeId!: string;
+
+  @IsIn(CANVAS_EDGE_RELATIONS)
+  relation!: CanvasEdgeRelation;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  sourceShapeId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  targetShapeId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  visualArrowShapeId?: string;
+
+  @IsOptional()
+  dataJson?: CanvasSnapshotJson;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(160, { each: true })
+  affectedShotNodeIds?: string[];
 }
 
 export class UpdateCanvasNodeDto implements UpdateCanvasNodeInput {

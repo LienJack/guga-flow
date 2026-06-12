@@ -41,6 +41,23 @@ function canvasNode(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function canvasEdge(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "edge_1",
+    projectId: "project_1",
+    canvasDocumentId: "canvas_1",
+    sourceNodeId: "character_1",
+    targetNodeId: "shot_1",
+    sourceShapeId: "shape:character-1",
+    targetShapeId: "shape:shot-1",
+    visualArrowShapeId: "shape:arrow-1",
+    relation: "references_character",
+    dataJson: null,
+    createdAt,
+    ...overrides,
+  };
+}
+
 function asset(overrides: Record<string, unknown> = {}) {
   return {
     id: "asset_1",
@@ -61,10 +78,14 @@ function asset(overrides: Record<string, unknown> = {}) {
 }
 
 type MockAsset = ReturnType<typeof asset>;
+type MockCanvasEdge = ReturnType<typeof canvasEdge>;
 type MockCanvasNode = ReturnType<typeof canvasNode>;
+type MockFindArgs = { where: Record<string, unknown> };
+type MockUpdateArgs = { where: { id: string }; data: Record<string, unknown> };
+type MockCreateArgs = { data: Record<string, unknown> };
 
 function createPrismaMock() {
-  return {
+  const prisma = {
     project: {
       findUnique: vi.fn(async (): Promise<{ id: string } | null> => ({ id: "project_1" })),
     },
@@ -72,19 +93,31 @@ function createPrismaMock() {
       upsert: vi.fn(),
     },
     canvasNode: {
-      findMany: vi.fn(async (): Promise<MockCanvasNode[]> => []),
-      findFirst: vi.fn(async (): Promise<MockCanvasNode | null> => null),
+      findMany: vi.fn(async (_args?: MockFindArgs): Promise<MockCanvasNode[]> => []),
+      findFirst: vi.fn(async (_args: MockFindArgs): Promise<MockCanvasNode | null> => null),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
     },
     canvasEdge: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async (_args?: MockFindArgs): Promise<MockCanvasEdge[]> => []),
+      findFirst: vi.fn(async (_args: MockFindArgs): Promise<MockCanvasEdge | null> => null),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
     },
     asset: {
       findMany: vi.fn(async (): Promise<MockAsset[]> => []),
       delete: vi.fn(),
     },
+  };
+
+  return {
+    ...prisma,
+    $transaction: vi.fn(async <T>(callback: (tx: typeof prisma) => Promise<T>) =>
+      callback(prisma),
+    ),
   };
 }
 
@@ -274,6 +307,257 @@ describe("CanvasService", () => {
     expect(prisma.canvasNode.delete).toHaveBeenCalledWith({ where: { id: "node_1" } });
     expect(prisma.asset.delete).not.toHaveBeenCalled();
     expect(result).toEqual({ deleted: true, nodeId: "node_1" });
+  });
+
+  it("creates character reference edges and syncs shot data", async () => {
+    const characterNode = canvasNode({
+      id: "character_1",
+      tldrawShapeId: "shape:character-1",
+      type: "character_asset",
+      title: "Ari",
+      dataJson: { name: "Ari" },
+    });
+    const shotNode = canvasNode({
+      id: "shot_1",
+      dataJson: { visualDescription: "Wide shot of the launch platform." },
+    });
+    prisma.canvasNode.findFirst.mockImplementation(async ({ where }) => {
+      if (where.id === "character_1") {
+        return characterNode;
+      }
+      if (where.id === "shot_1") {
+        return shotNode;
+      }
+      return null;
+    });
+    prisma.canvasEdge.create.mockResolvedValue(
+      canvasEdge({
+        id: "edge_1",
+        sourceNodeId: "character_1",
+        targetNodeId: "shot_1",
+        relation: "references_character",
+      }),
+    );
+    prisma.canvasNode.update.mockResolvedValue(
+      canvasNode({
+        id: "shot_1",
+        dataJson: {
+          visualDescription: "Wide shot of the launch platform.",
+          characterAssetIds: ["character_1"],
+        },
+      }),
+    );
+
+    const result = await service.createEdge("project_1", {
+      sourceNodeId: "character_1",
+      targetNodeId: "shot_1",
+      relation: "references_character",
+      sourceShapeId: "shape:character-1",
+      targetShapeId: "shape:shot-1",
+      visualArrowShapeId: "shape:arrow-1",
+    });
+
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(prisma.canvasEdge.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        canvasDocumentId: "canvas_1",
+        sourceNodeId: "character_1",
+        targetNodeId: "shot_1",
+        relation: "references_character",
+      }),
+    });
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "shot_1" },
+      data: {
+        dataJson: {
+          visualDescription: "Wide shot of the launch platform.",
+          characterAssetIds: ["character_1"],
+        },
+      },
+    });
+    expect(result.edge.relation).toBe("references_character");
+    expect(result.updatedNodes[0]?.dataJson).toMatchObject({
+      characterAssetIds: ["character_1"],
+    });
+  });
+
+  it("reuses existing semantic edges instead of duplicating them", async () => {
+    const characterNode = canvasNode({
+      id: "character_1",
+      tldrawShapeId: "shape:character-1",
+      type: "character_asset",
+    });
+    const shotNode = canvasNode({
+      id: "shot_1",
+      dataJson: { characterAssetIds: ["character_1"] },
+    });
+    prisma.canvasNode.findFirst.mockImplementation(async ({ where }) => {
+      if (where.id === "character_1") {
+        return characterNode;
+      }
+      if (where.id === "shot_1") {
+        return shotNode;
+      }
+      return null;
+    });
+    prisma.canvasEdge.findFirst.mockResolvedValue(canvasEdge({ id: "edge_existing" }));
+    prisma.canvasEdge.update.mockResolvedValue(canvasEdge({ id: "edge_existing" }));
+    prisma.canvasNode.update.mockResolvedValue(shotNode);
+
+    const result = await service.createEdge("project_1", {
+      sourceNodeId: "character_1",
+      targetNodeId: "shot_1",
+      relation: "references_character",
+    });
+
+    expect(prisma.canvasEdge.create).not.toHaveBeenCalled();
+    expect(prisma.canvasEdge.update).toHaveBeenCalledWith({
+      where: { id: "edge_existing" },
+      data: expect.objectContaining({
+        sourceShapeId: "shape:character-1",
+        targetShapeId: "shape:shot-1",
+      }),
+    });
+    expect(result.edge.id).toBe("edge_existing");
+  });
+
+  it("creates scene-frame location batch edges and syncs affected shots", async () => {
+    const locationNode = canvasNode({
+      id: "location_1",
+      tldrawShapeId: "shape:location-1",
+      type: "location_asset",
+      dataJson: { name: "Launch Site" },
+    });
+    const sceneFrameNode = canvasNode({
+      id: "frame_1",
+      tldrawShapeId: "shape:frame-1",
+      type: "scene_frame",
+      dataJson: { label: "Scene 1" },
+    });
+    const shotOne = canvasNode({
+      id: "shot_1",
+      tldrawShapeId: "shape:shot-1",
+      dataJson: { visualDescription: "Wide shot" },
+    });
+    const shotTwo = canvasNode({
+      id: "shot_2",
+      tldrawShapeId: "shape:shot-2",
+      dataJson: { visualDescription: "Close shot" },
+    });
+    let edgeSequence = 1;
+    prisma.canvasNode.findFirst.mockImplementation(async ({ where }) => {
+      if (where.id === "location_1") {
+        return locationNode;
+      }
+      if (where.id === "frame_1") {
+        return sceneFrameNode;
+      }
+      return null;
+    });
+    prisma.canvasNode.findMany.mockResolvedValue([shotOne, shotTwo]);
+    prisma.canvasEdge.create.mockImplementation(async ({ data }: MockCreateArgs) =>
+      canvasEdge({
+        id: `edge_${edgeSequence++}`,
+        ...data,
+      }),
+    );
+    prisma.canvasEdge.update.mockImplementation(async ({ where, data }: MockUpdateArgs) =>
+      canvasEdge({
+        id: where.id,
+        sourceNodeId: "location_1",
+        targetNodeId: "frame_1",
+        relation: "references_location",
+        dataJson: data.dataJson,
+      }),
+    );
+    prisma.canvasNode.update.mockImplementation(async ({ where, data }: MockUpdateArgs) =>
+      canvasNode({
+        id: where.id,
+        dataJson: data.dataJson,
+      }),
+    );
+
+    const result = await service.createEdge("project_1", {
+      sourceNodeId: "location_1",
+      targetNodeId: "frame_1",
+      relation: "references_location",
+      sourceShapeId: "shape:location-1",
+      targetShapeId: "shape:frame-1",
+      visualArrowShapeId: "shape:arrow-location-frame",
+      affectedShotNodeIds: ["shot_1", "shot_2"],
+    });
+
+    expect(prisma.canvasEdge.create).toHaveBeenCalledTimes(3);
+    expect(prisma.canvasEdge.update).toHaveBeenCalledWith({
+      where: { id: "edge_1" },
+      data: {
+        dataJson: {
+          appliedShotNodeIds: ["shot_1", "shot_2"],
+          childEdgeIds: ["edge_2", "edge_3"],
+        },
+      },
+    });
+    expect(result.edges).toHaveLength(3);
+    expect(result.appliedShotCount).toBe(2);
+    expect(result.updatedNodes).toEqual([
+      expect.objectContaining({
+        id: "shot_1",
+        dataJson: expect.objectContaining({ locationAssetId: "location_1" }),
+      }),
+      expect.objectContaining({
+        id: "shot_2",
+        dataJson: expect.objectContaining({ locationAssetId: "location_1" }),
+      }),
+    ]);
+  });
+
+  it("deletes semantic edges and rolls back shot references", async () => {
+    const characterNode = canvasNode({
+      id: "character_1",
+      type: "character_asset",
+    });
+    const shotNode = canvasNode({
+      id: "shot_1",
+      dataJson: { characterAssetIds: ["character_1", "character_2"] },
+    });
+    prisma.canvasEdge.findFirst.mockResolvedValue(
+      canvasEdge({
+        id: "edge_1",
+        sourceNodeId: "character_1",
+        targetNodeId: "shot_1",
+        relation: "references_character",
+      }),
+    );
+    prisma.canvasNode.findFirst.mockImplementation(async ({ where }) => {
+      if (where.id === "character_1") {
+        return characterNode;
+      }
+      if (where.id === "shot_1") {
+        return shotNode;
+      }
+      return null;
+    });
+    prisma.canvasNode.update.mockResolvedValue(
+      canvasNode({
+        id: "shot_1",
+        dataJson: { characterAssetIds: ["character_2"] },
+      }),
+    );
+    prisma.canvasEdge.delete.mockResolvedValue(canvasEdge({ id: "edge_1" }));
+
+    const result = await service.deleteEdge("project_1", "edge_1");
+
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "shot_1" },
+      data: { dataJson: { characterAssetIds: ["character_2"] } },
+    });
+    expect(prisma.canvasEdge.delete).toHaveBeenCalledWith({ where: { id: "edge_1" } });
+    expect(result).toMatchObject({
+      deleted: true,
+      edgeId: "edge_1",
+      deletedEdgeIds: ["edge_1"],
+    });
   });
 
   it("returns project assets using public preview metadata", async () => {
