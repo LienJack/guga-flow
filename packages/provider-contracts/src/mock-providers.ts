@@ -14,6 +14,7 @@ import { ProviderError } from "./contracts";
 import type { StoryboardResult } from "@guga-flow/shared-types";
 
 const MOCK_PROJECT_SEED = "mock";
+const STABLE_ID_BODY_MAX_LENGTH = 80;
 
 function failIfRequested(provider: string, forceFailure?: boolean): void {
   if (!forceFailure) {
@@ -30,7 +31,27 @@ function failIfRequested(provider: string, forceFailure?: boolean): void {
 
 function stableId(prefix: string, value: string): string {
   const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  return `${prefix}_${normalized || MOCK_PROJECT_SEED}`;
+  const body = normalized || MOCK_PROJECT_SEED;
+  const digest = stableDigest(value);
+  const truncated = body.slice(0, STABLE_ID_BODY_MAX_LENGTH).replace(/-+$/g, "");
+  return `${prefix}_${truncated || MOCK_PROJECT_SEED}-${digest}`;
+}
+
+function stableDigest(value: string): string {
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    first ^= code;
+    first = Math.imul(first, 0x01000193);
+    second ^= code + index;
+    second = Math.imul(second, 0x85ebca6b);
+  }
+
+  return `${(first >>> 0).toString(16).padStart(8, "0")}${(second >>> 0)
+    .toString(16)
+    .padStart(8, "0")}`.slice(0, 10);
 }
 
 export class MockLlmProvider implements LlmProvider {

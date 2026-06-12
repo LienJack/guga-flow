@@ -47,4 +47,30 @@ describe("mock providers", () => {
       retryable: true,
     } satisfies Partial<ProviderError>);
   });
+
+  it("keeps mock media storage filenames bounded for long prompts", async () => {
+    const registry = createMockProviderRegistry();
+    const prompt = [
+      "Location prompt bright control room practical lights consistency same glowing console bank",
+      "Character smoke hero identity consistent smoke hero identity consistency same face and coat",
+      "Image prompt cinematic hero at the console shot visual action camera slow dolly",
+    ].join(" ");
+
+    const image = await registry.image.generateImage({
+      projectId: "project_1",
+      prompt,
+    });
+    const video = await registry.video.generateVideo({
+      projectId: "project_1",
+      prompt,
+      sourceImageAssetId: image.assetId,
+    });
+    const imageFilename = image.storageKey.split("/").pop() ?? "";
+    const videoFilename = video.storageKey.split("/").pop() ?? "";
+
+    expect(imageFilename.length).toBeLessThanOrEqual(120);
+    expect(videoFilename.length).toBeLessThanOrEqual(120);
+    expect(image.assetId).toMatch(/-[a-f0-9]{10}$/);
+    expect(video.assetId).toMatch(/-[a-f0-9]{10}$/);
+  });
 });
