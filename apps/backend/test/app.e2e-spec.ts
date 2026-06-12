@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { ProvidersService } from "../src/providers/providers.service";
 import { LocalStorageService } from "../src/storage/local-storage.service";
 
 describe("backend health e2e", () => {
@@ -62,6 +63,7 @@ function createPrismaE2eMock() {
   const canvasEdges = new Map<string, Record<string, unknown>>();
   const novelDocuments = new Map<string, Record<string, unknown>>();
   const storyboardDrafts = new Map<string, Record<string, unknown>>();
+  const generationJobs = new Map<string, Record<string, unknown>>();
   let projectSequence = 1;
   let assetSequence = 1;
   let canvasSequence = 1;
@@ -69,6 +71,7 @@ function createPrismaE2eMock() {
   let edgeSequence = 1;
   let novelSequence = 1;
   let storyboardDraftSequence = 1;
+  let generationJobSequence = 1;
 
   function nextDate() {
     return new Date(`2026-06-12T00:${String(projectSequence).padStart(2, "0")}:00.000Z`);
@@ -260,6 +263,87 @@ function createPrismaE2eMock() {
           updatedAt: new Date("2026-06-12T00:38:00.000Z"),
         };
         storyboardDrafts.set(where.id, updated);
+        return updated;
+      }),
+    },
+    generationJob: {
+      create: vi.fn(async ({ data }) => {
+        const id = `generation_job_${generationJobSequence}`;
+        generationJobSequence += 1;
+        const job = {
+          id,
+          projectId: data.projectId,
+          operation: data.operation,
+          status: data.status,
+          provider: data.provider,
+          model: data.model ?? null,
+          sourceNodeId: data.sourceNodeId ?? null,
+          targetNodeId: data.targetNodeId ?? null,
+          providerTaskId: data.providerTaskId ?? null,
+          inputJson: data.inputJson,
+          outputJson: data.outputJson ?? null,
+          errorMessage: data.errorMessage ?? null,
+          createdAt: new Date("2026-06-12T01:05:00.000Z"),
+          updatedAt: new Date("2026-06-12T01:05:00.000Z"),
+        };
+        generationJobs.set(id, job);
+        return job;
+      }),
+      findMany: vi.fn(async ({ where, select }) => {
+        const filtered = Array.from(generationJobs.values())
+          .filter((job) => job.projectId === where.projectId)
+          .sort(
+            (left, right) =>
+              (right.createdAt as Date).getTime() - (left.createdAt as Date).getTime(),
+          );
+        if (select?.status) {
+          return filtered.map((job) => ({ status: job.status }));
+        }
+        return filtered;
+      }),
+      findFirst: vi.fn(async ({ where }) => {
+        const jobs = Array.from(generationJobs.values());
+        if (where.id) {
+          return jobs.find((job) => job.id === where.id && job.projectId === where.projectId) ?? null;
+        }
+        return (
+          jobs
+            .filter(
+              (job) =>
+                (!where.projectId || job.projectId === where.projectId) &&
+                (!where.status || job.status === where.status) &&
+                (!where.operation?.in || where.operation.in.includes(job.operation)),
+            )
+            .sort(
+              (left, right) =>
+                (left.createdAt as Date).getTime() - (right.createdAt as Date).getTime(),
+            )[0] ?? null
+        );
+      }),
+      findUnique: vi.fn(async ({ where }) => generationJobs.get(where.id) ?? null),
+      updateMany: vi.fn(async ({ where, data }) => {
+        const existing = generationJobs.get(where.id);
+        if (!existing || existing.status !== where.status) {
+          return { count: 0 };
+        }
+        generationJobs.set(where.id, {
+          ...existing,
+          ...data,
+          updatedAt: new Date("2026-06-12T01:06:00.000Z"),
+        });
+        return { count: 1 };
+      }),
+      update: vi.fn(async ({ where, data }) => {
+        const existing = generationJobs.get(where.id);
+        if (!existing) {
+          throw new Error("Generation job not found");
+        }
+        const updated = {
+          ...existing,
+          ...data,
+          updatedAt: new Date("2026-06-12T01:07:00.000Z"),
+        };
+        generationJobs.set(where.id, updated);
         return updated;
       }),
     },
@@ -509,6 +593,14 @@ function createStorageE2eMock() {
         sizeBytes: buffer.byteLength,
       };
     }),
+    writeObject: vi.fn(async ({ storageKey, buffer }) => {
+      objects.set(storageKey, Buffer.from(buffer));
+      return {
+        storageKey,
+        absolutePath: `/memory/${storageKey}`,
+        sizeBytes: buffer.byteLength,
+      };
+    }),
     readObject: vi.fn(async (storageKey: string) => {
       const object = objects.get(storageKey);
       if (!object) {
@@ -522,10 +614,72 @@ function createStorageE2eMock() {
   };
 }
 
+function createProvidersE2eMock() {
+  return {
+    getImageProviders: vi.fn(() => ({
+      providers: [
+        {
+          id: "mock-image",
+          displayName: "Mock Image",
+          enabled: true,
+          requiresApiKey: false,
+          defaultModel: "mock-image-v1",
+          models: [{ id: "mock-image-v1", displayName: "Mock Image v1", default: true }],
+          supportedModes: ["text_to_image", "multi_reference"],
+          supportsReferenceImages: true,
+          maxReferenceImages: 99,
+          supportsMultipleOutputs: false,
+          maxOutputs: 1,
+          defaultAspectRatio: "16:9",
+          supportedAspectRatios: ["9:16", "16:9", "1:1"],
+          parameters: [],
+        },
+        {
+          id: "image2",
+          displayName: "Image 2",
+          enabled: true,
+          requiresApiKey: true,
+          defaultModel: "gpt-image-2",
+          models: [{ id: "gpt-image-2", displayName: "GPT Image 2", default: true }],
+          supportedModes: ["text_to_image", "multi_reference"],
+          supportsReferenceImages: true,
+          maxReferenceImages: 4,
+          supportsMultipleOutputs: true,
+          maxOutputs: 4,
+          defaultAspectRatio: "16:9",
+          supportedAspectRatios: ["9:16", "16:9", "1:1"],
+          parameters: [
+            {
+              id: "quality",
+              label: "Quality",
+              type: "select",
+              defaultValue: "medium",
+              options: [
+                { value: "low", label: "Low" },
+                { value: "medium", label: "Medium" },
+                { value: "high", label: "High" },
+              ],
+            },
+          ],
+        },
+      ],
+    })),
+  };
+}
+
 describe("project api e2e", () => {
   let app: INestApplication;
+  let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeAll(async () => {
+    fetchMock = vi.fn(async () =>
+      new Response(new Uint8Array(Buffer.from("remote-image-two")), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -533,6 +687,8 @@ describe("project api e2e", () => {
       .useValue(createPrismaE2eMock())
       .overrideProvider(LocalStorageService)
       .useValue(createStorageE2eMock())
+      .overrideProvider(ProvidersService)
+      .useValue(createProvidersE2eMock())
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -543,6 +699,7 @@ describe("project api e2e", () => {
 
   afterAll(async () => {
     await app?.close();
+    vi.unstubAllGlobals();
   });
 
   it("creates, lists, updates, duplicates, and deletes projects", async () => {
@@ -651,6 +808,128 @@ describe("project api e2e", () => {
       .delete(`/api/v1/projects/${projectId}/assets/${assetId}`)
       .expect(200)
       .expect({ deleted: true });
+  });
+
+  it("completes multi-output image generation into local assets, image nodes, and generated edges", async () => {
+    const createdProject = await request(app.getHttpServer())
+      .post("/api/v1/projects")
+      .send({ title: "Generation Project" })
+      .expect(201);
+    const projectId = createdProject.body.id;
+
+    const createdNovel = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels`)
+      .send({
+        title: "Generation Source",
+        content:
+          "A hero watches the city lights before choosing the next shot. An ally joins with a warning.",
+      })
+      .expect(201);
+
+    const generated = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels/${createdNovel.body.novel.id}/generate-storyboard`)
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(
+        `/api/v1/projects/${projectId}/novels/${createdNovel.body.novel.id}/storyboard-draft/${generated.body.draft.id}/ready`,
+      )
+      .expect(201);
+    const imported = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/import-storyboard`)
+      .send({
+        novelDocumentId: createdNovel.body.novel.id,
+        storyboardDraftId: generated.body.draft.id,
+        duplicatePolicy: "new_version",
+      })
+      .expect(201);
+    const shotNode = (imported.body.nodes as CanvasNodeRecord[]).find((node) => node.type === "shot");
+    expect(shotNode).toBeDefined();
+
+    const createdJob = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/generation/jobs`)
+      .send({
+        operation: "shot_to_image",
+        sourceNodeId: shotNode?.id,
+        provider: "image2",
+        model: "gpt-image-2",
+        aspectRatio: "16:9",
+        count: 2,
+        providerParams: { quality: "high" },
+      })
+      .expect(201);
+    expect(createdJob.body.job.inputJson).toMatchObject({
+      provider: "image2",
+      model: "gpt-image-2",
+      count: 2,
+      providerParams: { quality: "high" },
+    });
+
+    const claimed = await request(app.getHttpServer())
+      .post("/api/v1/worker/generation/jobs/claim")
+      .expect(201);
+    expect(claimed.body.job.id).toBe(createdJob.body.job.id);
+    expect(claimed.body.job.status).toBe("running");
+
+    const providerOutputs = [
+      {
+        storageKey: "providers/image2/project_1/generated-one.png",
+        mimeType: "image/png",
+        provider: "image2",
+        model: "gpt-image-2",
+        prompt: "generated one",
+        referenceAssetIds: [],
+        bytesBase64: Buffer.from("inline-image-one").toString("base64"),
+      },
+      {
+        storageKey: "providers/image2/project_1/generated-two.png",
+        mimeType: "image/png",
+        provider: "image2",
+        model: "gpt-image-2",
+        prompt: "generated two",
+        referenceAssetIds: [],
+        remoteUrl: "https://cdn.example.test/generated-two.png",
+      },
+    ];
+
+    const completed = await request(app.getHttpServer())
+      .post(`/api/v1/worker/generation/jobs/${createdJob.body.job.id}/succeed`)
+      .send({
+        providerOutput: providerOutputs[0],
+        providerOutputs,
+      })
+      .expect(201);
+    expect(completed.body.status).toBe("succeeded");
+    expect(completed.body.outputJson.targets).toHaveLength(2);
+
+    const targetAssetId = completed.body.outputJson.targets[1].assetId;
+    await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/assets/${targetAssetId}/preview`)
+      .expect(200)
+      .expect("Content-Type", /image\/png/)
+      .expect((response) => {
+        expect(Buffer.from(response.body).toString("utf8")).toBe("remote-image-two");
+      });
+    expect(fetchMock).toHaveBeenCalledWith(new URL("https://cdn.example.test/generated-two.png"));
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/canvas`)
+      .expect(200)
+      .expect(({ body }) => {
+        const imageNodes = (body.nodes as CanvasNodeRecord[]).filter(
+          (node) =>
+            node.type === "image" &&
+            (node.dataJson as { generationJobId?: string }).generationJobId ===
+              createdJob.body.job.id,
+        );
+        const generatedEdges = (body.edges as CanvasEdgeRecord[]).filter(
+          (edge) =>
+            edge.relation === "generated_image" &&
+            (edge.dataJson as { generationJobId?: string }).generationJobId ===
+              createdJob.body.job.id,
+        );
+        expect(imageNodes).toHaveLength(2);
+        expect(generatedEdges).toHaveLength(2);
+      });
   });
 
   it("rejects unsupported upload file types", async () => {

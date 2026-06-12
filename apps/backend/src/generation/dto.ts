@@ -1,13 +1,32 @@
 import type {
   CreateGenerationJobInput,
+  CanvasSnapshotJson,
   GeneratedMediaProviderOutput,
+  ImageProviderId,
   Phase8GenerationOperation,
+  ProjectAspectRatio,
   ProviderFailure,
   WorkerGenerationJobFailInput,
   WorkerGenerationJobSucceedInput,
 } from "@guga-flow/shared-types";
-import { PHASE_8_GENERATION_OPERATIONS } from "@guga-flow/shared-types";
-import { IsBoolean, IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import {
+  IMAGE_PROVIDER_IDS,
+  PHASE_8_GENERATION_OPERATIONS,
+  PROJECT_ASPECT_RATIOS,
+} from "@guga-flow/shared-types";
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from "class-validator";
 
 export class CreateGenerationJobDto implements CreateGenerationJobInput {
   @IsIn(PHASE_8_GENERATION_OPERATIONS)
@@ -21,6 +40,30 @@ export class CreateGenerationJobDto implements CreateGenerationJobInput {
   @IsOptional()
   @IsBoolean()
   forceFailure?: boolean;
+
+  @IsOptional()
+  @IsIn(IMAGE_PROVIDER_IDS)
+  @MaxLength(80)
+  provider?: ImageProviderId;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  model?: string;
+
+  @IsOptional()
+  @IsIn(PROJECT_ASPECT_RATIOS)
+  aspectRatio?: ProjectAspectRatio;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(4)
+  count?: number;
+
+  @IsOptional()
+  @IsObject()
+  providerParams?: CanvasSnapshotJson;
 }
 
 export class WorkerGenerationJobFailDto implements WorkerGenerationJobFailInput {
@@ -31,4 +74,9 @@ export class WorkerGenerationJobFailDto implements WorkerGenerationJobFailInput 
 export class WorkerGenerationJobSucceedDto implements WorkerGenerationJobSucceedInput {
   @IsObject()
   providerOutput!: GeneratedMediaProviderOutput;
+
+  @IsOptional()
+  @IsArray()
+  @IsObject({ each: true })
+  providerOutputs?: GeneratedMediaProviderOutput[];
 }

@@ -3,10 +3,12 @@ import type {
   CanvasEdgeRecord,
   CanvasLoadResult,
   CanvasNodeRecord,
+  ImageProviderCatalogResult,
   ImageNodeData,
   ProviderFailure,
   ShotPromptCompositionResult,
   ShotNodeData,
+  ShotToImageJobInput,
 } from "@guga-flow/shared-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,6 +16,7 @@ import { AssetsService } from "../assets/assets.service";
 import { CanvasService } from "../canvas/canvas.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PromptService } from "../prompt/prompt.service";
+import { ProvidersService } from "../providers/providers.service";
 import { GenerationService } from "./generation.service";
 
 const createdAt = new Date("2026-06-12T00:00:00.000Z");
@@ -115,21 +118,91 @@ function createPromptServiceMock() {
 }
 
 function createAssetsServiceMock() {
+  let assetSequence = 1;
   return {
-    createGeneratedAsset: vi.fn(async () => ({
-      id: "asset_generated_1",
-      projectId: "project_1",
-      type: "image",
-      purpose: "shot_keyframe",
-      storageKey: "mock/images/generated.png",
-      mimeType: "image/png",
-      originalFilename: "generated.png",
-      sizeBytes: 68,
-      metadataJson: {},
-      previewKind: "image",
-      previewUrl: "/api/v1/projects/project_1/assets/asset_generated_1/preview",
-      createdAt: createdAt.toISOString(),
-    })),
+    createGeneratedAsset: vi.fn(
+      async (_projectId: string, input: { providerOutput: { storageKey: string; mimeType: string } }) => {
+        const id = `asset_generated_${assetSequence}`;
+        assetSequence += 1;
+        const isImage = input.providerOutput.mimeType.startsWith("image/");
+        return {
+          id,
+          projectId: "project_1",
+          type: isImage ? "image" : "video",
+          purpose: isImage ? "shot_keyframe" : "shot_clip",
+          storageKey: input.providerOutput.storageKey,
+          mimeType: input.providerOutput.mimeType,
+          originalFilename: input.providerOutput.storageKey.split("/").pop() ?? "generated",
+          sizeBytes: 68,
+          metadataJson: {},
+          previewKind: isImage ? "image" : "video",
+          previewUrl: `/api/v1/projects/project_1/assets/${id}/preview`,
+          createdAt: createdAt.toISOString(),
+        };
+      },
+    ),
+  };
+}
+
+function createProvidersServiceMock() {
+  return {
+    getImageProviders: vi.fn(() => imageProviderCatalogFixture(false)),
+  };
+}
+
+function enableImage2(providersService: ReturnType<typeof createProvidersServiceMock>) {
+  providersService.getImageProviders.mockReturnValue(imageProviderCatalogFixture(true));
+}
+
+function imageProviderCatalogFixture(image2Enabled: boolean): ImageProviderCatalogResult {
+  return {
+    providers: [
+      {
+        id: "mock-image",
+        displayName: "Mock Image",
+        enabled: true,
+        requiresApiKey: false,
+        defaultModel: "mock-image-v1",
+        models: [{ id: "mock-image-v1", displayName: "Mock Image v1", default: true }],
+        supportedModes: ["text_to_image", "multi_reference"],
+        supportsReferenceImages: true,
+        maxReferenceImages: 99,
+        supportsMultipleOutputs: false,
+        maxOutputs: 1,
+        defaultAspectRatio: "16:9",
+        supportedAspectRatios: ["9:16", "16:9", "1:1"],
+        parameters: [],
+      },
+      {
+        id: "image2",
+        displayName: "Image 2",
+        enabled: image2Enabled,
+        disabledReason: image2Enabled ? undefined : "Image 2 server-side key is not configured",
+        requiresApiKey: true,
+        defaultModel: "gpt-image-2",
+        models: [{ id: "gpt-image-2", displayName: "GPT Image 2", default: true }],
+        supportedModes: ["text_to_image", "multi_reference"],
+        supportsReferenceImages: true,
+        maxReferenceImages: 4,
+        supportsMultipleOutputs: true,
+        maxOutputs: 4,
+        defaultAspectRatio: "16:9",
+        supportedAspectRatios: ["9:16", "16:9", "1:1"],
+        parameters: [
+          {
+            id: "quality",
+            label: "Quality",
+            type: "select",
+            defaultValue: "medium",
+            options: [
+              { value: "low", label: "Low" },
+              { value: "medium", label: "Medium" },
+              { value: "high", label: "High" },
+            ],
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -138,6 +211,7 @@ describe("GenerationService", () => {
   let assetsService: ReturnType<typeof createAssetsServiceMock>;
   let canvasService: ReturnType<typeof createCanvasServiceMock>;
   let promptService: ReturnType<typeof createPromptServiceMock>;
+  let providersService: ReturnType<typeof createProvidersServiceMock>;
   let service: GenerationService;
 
   beforeEach(() => {
@@ -145,11 +219,13 @@ describe("GenerationService", () => {
     assetsService = createAssetsServiceMock();
     canvasService = createCanvasServiceMock();
     promptService = createPromptServiceMock();
+    providersService = createProvidersServiceMock();
     service = new GenerationService(
       prisma as unknown as PrismaService,
       assetsService as unknown as AssetsService,
       canvasService as unknown as CanvasService,
       promptService as unknown as PromptService,
+      providersService as unknown as ProvidersService,
     );
   });
 
@@ -185,6 +261,47 @@ describe("GenerationService", () => {
       referenceAssetIds: ["asset_ref_1"],
     });
     expect(result.queueSummary).toMatchObject({ queued: 1, running: 1, failed: 1 });
+  });
+
+  it("rejects disabled real image providers without mutating jobs or node state", async () => {
+    await expect(
+      service.createJob("project_1", {
+        operation: "shot_to_image",
+        sourceNodeId: "shot_1",
+        provider: "image2",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.generationJob.create).not.toHaveBeenCalled();
+    expect(prisma.canvasNode.update).not.toHaveBeenCalled();
+  });
+
+  it("stores selected image provider settings in shot-to-image job input", async () => {
+    enableImage2(providersService);
+
+    await service.createJob("project_1", {
+      operation: "shot_to_image",
+      sourceNodeId: "shot_1",
+      provider: "image2",
+      model: "gpt-image-2",
+      aspectRatio: "9:16",
+      count: 3,
+      providerParams: { quality: "high", ignored: "secretless" },
+    });
+
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        provider: "image2",
+        model: "gpt-image-2",
+        inputJson: expect.objectContaining({
+          provider: "image2",
+          model: "gpt-image-2",
+          aspectRatio: "9:16",
+          count: 3,
+          providerParams: { quality: "high" },
+        }),
+      }),
+    });
   });
 
   it("creates an image-to-video job from an ImageNode and parent Shot context", async () => {
@@ -398,6 +515,125 @@ describe("GenerationService", () => {
     expect(result.targetNodeId).toBe("image_1");
   });
 
+  it("completes multi-output shot-to-image jobs with one asset, node, and edge per output", async () => {
+    const image2Input = shotToImageInput({
+      provider: "image2",
+      model: "gpt-image-2",
+      aspectRatio: "16:9",
+      count: 3,
+      providerParams: { quality: "high" },
+    });
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        status: "running",
+        provider: "image2",
+        model: "gpt-image-2",
+        inputJson: image2Input,
+      }),
+    );
+    prisma.canvasNode.findFirst.mockResolvedValue(
+      canvasNode<ShotNodeData>("shot_1", "shot", "Shot 01", {
+        imagePrompt: "hero at console",
+      }),
+    );
+    prisma.canvasNode.create
+      .mockResolvedValueOnce(canvasNode<ImageNodeData>("image_1", "image", "Shot 01 Image", {}))
+      .mockResolvedValueOnce(canvasNode<ImageNodeData>("image_2", "image", "Shot 01 Image 2", {}))
+      .mockResolvedValueOnce(canvasNode<ImageNodeData>("image_3", "image", "Shot 01 Image 3", {}));
+    prisma.canvasEdge.create
+      .mockResolvedValueOnce(canvasEdge("edge_1", "shot_1", "image_1", "generated_image"))
+      .mockResolvedValueOnce(canvasEdge("edge_2", "shot_1", "image_2", "generated_image"))
+      .mockResolvedValueOnce(canvasEdge("edge_3", "shot_1", "image_3", "generated_image"));
+    prisma.generationJob.update.mockImplementation(async (args: MockUpdateArgs) =>
+      generationJob({
+        id: args.where.id,
+        status: args.data.status,
+        targetNodeId: args.data.targetNodeId,
+        outputJson: args.data.outputJson,
+      }),
+    );
+    const providerOutputs = [1, 2, 3].map((index) => ({
+      assetId: `provider_asset_${index}`,
+      storageKey: `providers/image2/project_1/generated_${index}.png`,
+      mimeType: "image/png",
+      provider: "image2",
+      model: "gpt-image-2",
+      prompt: `Image prompt ${index}`,
+      referenceAssetIds: ["asset_ref_1"],
+      bytesBase64: Buffer.from(`image-${index}`).toString("base64"),
+    }));
+
+    const result = await service.succeedJob("job_1", providerOutputs[0]!, providerOutputs);
+
+    expect(assetsService.createGeneratedAsset).toHaveBeenCalledTimes(3);
+    expect(prisma.canvasNode.create).toHaveBeenCalledTimes(3);
+    expect(prisma.canvasEdge.create).toHaveBeenCalledTimes(3);
+    expect(prisma.canvasNode.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tldrawShapeId: "shape:generated-job_1-image-2",
+          title: "Shot 01 Image 2",
+          x: 800,
+          y: 40,
+        }),
+      }),
+    );
+
+    const updateCall = prisma.generationJob.update.mock.calls.at(-1)?.[0] as MockUpdateArgs;
+    expect(updateCall.data).toMatchObject({
+      status: "succeeded",
+      targetNodeId: "image_1",
+    });
+    expect(updateCall.data.outputJson).toMatchObject({
+      operation: "shot_to_image",
+      targetNodeId: "image_1",
+      assetId: "asset_generated_1",
+      edgeId: "edge_1",
+      targets: [
+        expect.objectContaining({ targetNodeId: "image_1", assetId: "asset_generated_1" }),
+        expect.objectContaining({ targetNodeId: "image_2", assetId: "asset_generated_2" }),
+        expect.objectContaining({ targetNodeId: "image_3", assetId: "asset_generated_3" }),
+      ],
+    });
+    expect(result.targetNodeId).toBe("image_1");
+  });
+
+  it("rejects completion when generated asset persistence fails without graph side effects", async () => {
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        status: "running",
+        provider: "image2",
+        model: "gpt-image-2",
+        inputJson: shotToImageInput({ provider: "image2", model: "gpt-image-2" }),
+      }),
+    );
+    prisma.canvasNode.findFirst.mockResolvedValue(
+      canvasNode<ShotNodeData>("shot_1", "shot", "Shot 01", {
+        imagePrompt: "hero at console",
+      }),
+    );
+    assetsService.createGeneratedAsset.mockRejectedValueOnce(
+      new BadRequestException("Generated asset remote download failed with 404"),
+    );
+
+    await expect(
+      service.succeedJob("job_1", {
+        storageKey: "providers/image2/project_1/remote.png",
+        mimeType: "image/png",
+        provider: "image2",
+        model: "gpt-image-2",
+        prompt: "remote image",
+        referenceAssetIds: [],
+        remoteUrl: "https://cdn.example.test/missing.png",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.canvasNode.create).not.toHaveBeenCalled();
+    expect(prisma.canvasEdge.create).not.toHaveBeenCalled();
+    expect(prisma.generationJob.update).not.toHaveBeenCalled();
+  });
+
   it("rejects provider outputs that do not match the active job operation", async () => {
     prisma.generationJob.findUnique.mockResolvedValue(generationJob({ status: "running" }));
 
@@ -416,10 +652,20 @@ describe("GenerationService", () => {
   });
 
   it("retries failed jobs by creating a new queued job", async () => {
+    const failedInput = shotToImageInput({
+      provider: "image2",
+      model: "gpt-image-2",
+      aspectRatio: "9:16",
+      count: 3,
+      providerParams: { quality: "high" },
+    });
     prisma.generationJob.findFirst.mockResolvedValue(
       generationJob({
         id: "failed_job",
         status: "failed",
+        provider: "image2",
+        model: "gpt-image-2",
+        inputJson: failedInput,
         errorMessage: "provider failed",
       }),
     );
@@ -438,7 +684,14 @@ describe("GenerationService", () => {
         operation: "shot_to_image",
         status: "queued",
         sourceNodeId: "shot_1",
-        inputJson: expect.objectContaining({ operation: "shot_to_image" }),
+        inputJson: expect.objectContaining({
+          operation: "shot_to_image",
+          provider: "image2",
+          model: "gpt-image-2",
+          aspectRatio: "9:16",
+          count: 3,
+          providerParams: { quality: "high" },
+        }),
       }),
     });
     expect(result.originalJob.status).toBe("failed");
@@ -447,7 +700,7 @@ describe("GenerationService", () => {
   });
 });
 
-function shotToImageInput() {
+function shotToImageInput(overrides: Partial<ShotToImageJobInput> = {}): ShotToImageJobInput {
   return {
     operation: "shot_to_image",
     projectId: "project_1",
@@ -468,6 +721,7 @@ function shotToImageInput() {
     provider: "mock-image",
     model: "mock-image-v1",
     providerParams: {},
+    ...overrides,
   };
 }
 

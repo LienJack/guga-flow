@@ -1,10 +1,13 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type {
   AssetDetail,
+  CanvasSnapshotJson,
   CanvasLoadResult,
   CanvasNodeRecord,
   CanvasNodeType,
+  CreateGenerationJobInput,
   GeneratedMediaJobOutput,
+  GeneratedMediaJobTargetOutput,
   GeneratedMediaProviderOutput,
   GenerationJobInput,
   GenerationJobListResult,
@@ -13,11 +16,13 @@ import type {
   GenerationJobStatusCounts,
   GenerationOperation,
   GenerationQueueSummary,
+  ImageProviderCatalogItem,
   ImageNodeData,
   ImageToVideoJobInput,
   NodeStatus,
   Phase8GenerationOperation,
   ProviderFailure,
+  ProjectAspectRatio,
   RetryGenerationJobResult,
   ShotNodeData,
   ShotToImageJobInput,
@@ -33,6 +38,7 @@ import { AssetsService } from "../assets/assets.service";
 import { CanvasService } from "../canvas/canvas.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PromptService } from "../prompt/prompt.service";
+import { ProvidersService } from "../providers/providers.service";
 
 type GenerationPrismaClient = Pick<
   PrismaService,
@@ -112,6 +118,24 @@ function dataObject(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function isJsonValue(value: unknown): value is CanvasSnapshotJson {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every(isJsonValue);
+  }
+  if (typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).every(isJsonValue);
+  }
+  return false;
+}
+
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
@@ -149,11 +173,12 @@ export class GenerationService {
     @Inject(AssetsService) private readonly assetsService: AssetsService,
     @Inject(CanvasService) private readonly canvasService: CanvasService,
     @Inject(PromptService) private readonly promptService: PromptService,
+    @Inject(ProvidersService) private readonly providersService: ProvidersService,
   ) {}
 
   async createJob(
     projectId: string,
-    input: { operation: unknown; sourceNodeId?: string; forceFailure?: boolean },
+    input: CreateGenerationJobInput & { operation: unknown },
   ): Promise<GenerationJobRecordResult> {
     if (!isPhase8GenerationOperation(input.operation)) {
       throw new BadRequestException("Generation operation is not supported yet");
@@ -164,7 +189,7 @@ export class GenerationService {
 
     const jobInput =
       input.operation === "shot_to_image"
-        ? await this.buildShotToImageInput(projectId, input.sourceNodeId, input.forceFailure)
+        ? await this.buildShotToImageInput(projectId, input.sourceNodeId, input)
         : await this.buildImageToVideoInput(projectId, input.sourceNodeId, input.forceFailure);
 
     const job = await this.runTransaction(async (tx) => {
@@ -307,6 +332,7 @@ export class GenerationService {
   async succeedJob(
     jobId: string,
     providerOutput: GeneratedMediaProviderOutput,
+    providerOutputs?: GeneratedMediaProviderOutput[],
   ): Promise<GenerationJobRecord<GenerationJobInput, GeneratedMediaJobOutput>> {
     const existing = (await this.prisma.generationJob.findUnique({
       where: { id: jobId },
@@ -319,55 +345,97 @@ export class GenerationService {
     }
 
     const input = assertJobInput(existing.inputJson);
-    this.validateProviderOutput(existing, input, providerOutput);
+    const completionOutputs = this.normalizeCompletionOutputs(input, providerOutput, providerOutputs);
+    completionOutputs.forEach((output) => this.validateProviderOutput(existing, input, output));
 
     const completed = await this.runTransaction(async (tx) => {
       const sourceNode = await this.findSourceNode(tx, existing);
-      const asset = await this.assetsService.createGeneratedAsset(
-        existing.projectId,
-        {
-          purpose: input.operation === "shot_to_image" ? "shot_keyframe" : "shot_clip",
-          providerOutput,
-          metadataJson: {
-            generationJobId: existing.id,
-            operation: input.operation,
-            sourceNodeId: sourceNode.id,
+      const targets: Array<{
+        asset: AssetDetail;
+        edge: CanvasEdgeModel;
+        node: CanvasNodeModel;
+        providerOutput: GeneratedMediaProviderOutput;
+      }> = [];
+
+      for (let outputIndex = 0; outputIndex < completionOutputs.length; outputIndex += 1) {
+        const output = completionOutputs[outputIndex] as GeneratedMediaProviderOutput;
+        const asset = await this.assetsService.createGeneratedAsset(
+          existing.projectId,
+          {
+            purpose: input.operation === "shot_to_image" ? "shot_keyframe" : "shot_clip",
+            providerOutput: output,
+            metadataJson: {
+              generationJobId: existing.id,
+              operation: input.operation,
+              sourceNodeId: sourceNode.id,
+              outputIndex,
+            },
           },
-        },
-        tx,
-      );
-      const targetNode = await this.createGeneratedNode(tx, existing, input, providerOutput, asset, sourceNode);
-      const edge = await this.createGeneratedEdge(tx, existing, input, sourceNode, targetNode, asset);
+          tx,
+        );
+        const targetNode = await this.createGeneratedNode(
+          tx,
+          existing,
+          input,
+          output,
+          asset,
+          sourceNode,
+          outputIndex,
+        );
+        const edge = await this.createGeneratedEdge(tx, existing, input, sourceNode, targetNode, asset);
+        targets.push({ asset, edge, node: targetNode, providerOutput: output });
+      }
+
+      const firstTarget = targets[0];
+      if (!firstTarget) {
+        throw new BadRequestException("Generation completion requires at least one output");
+      }
+      const targetOutputs: GeneratedMediaJobTargetOutput[] = targets.map((target) => ({
+        targetNodeId: target.node.id,
+        assetId: target.asset.id,
+        edgeId: target.edge.id,
+        providerOutput: target.providerOutput,
+      }));
       const output: GeneratedMediaJobOutput = {
         operation: input.operation,
         sourceNodeId: sourceNode.id,
-        targetNodeId: targetNode.id,
-        assetId: asset.id,
-        edgeId: edge.id,
-        provider: providerOutput.provider,
-        model: providerOutput.model,
-        prompt: providerOutput.prompt,
-        referenceAssetIds: providerOutput.referenceAssetIds,
-        providerOutput,
+        targetNodeId: firstTarget.node.id,
+        assetId: firstTarget.asset.id,
+        edgeId: firstTarget.edge.id,
+        provider: firstTarget.providerOutput.provider,
+        model: firstTarget.providerOutput.model,
+        prompt: firstTarget.providerOutput.prompt,
+        referenceAssetIds: firstTarget.providerOutput.referenceAssetIds,
+        providerOutput: firstTarget.providerOutput,
+        targets: targetOutputs.length > 1 ? targetOutputs : undefined,
         completedAt: new Date().toISOString(),
       };
 
-      await tx.canvasNode.update({
-        where: { id: targetNode.id },
-        data: {
-          status: "succeeded",
-          dataJson: jsonValue(
-            this.generatedNodeData(existing.id, input, providerOutput, asset, output, sourceNode),
-          ),
-        },
-      });
+      for (const target of targets) {
+        await tx.canvasNode.update({
+          where: { id: target.node.id },
+          data: {
+            status: "succeeded",
+            dataJson: jsonValue(
+              this.generatedNodeData(
+                existing.id,
+                input,
+                target.providerOutput,
+                target.asset,
+                output,
+                sourceNode,
+              ),
+            ),
+          },
+        });
+      }
       await this.updateNodeStatus(tx, sourceNode.id, "succeeded");
 
       return (await tx.generationJob.update({
         where: { id: existing.id },
         data: {
           status: "succeeded",
-          targetNodeId: targetNode.id,
+          targetNodeId: firstTarget.node.id,
           outputJson: jsonValue(output),
           errorMessage: null,
         },
@@ -380,9 +448,15 @@ export class GenerationService {
   private async buildShotToImageInput(
     projectId: string,
     shotNodeId: string,
-    forceFailure: boolean | undefined,
+    input: CreateGenerationJobInput,
   ): Promise<ShotToImageJobInput> {
     const composition = await this.promptService.composeShotPrompt(projectId, shotNodeId);
+    const providerSettings = this.resolveImageProviderSettings(input);
+    const referenceLimit = providerSettings.provider.supportsReferenceImages
+      ? providerSettings.provider.maxReferenceImages
+      : 0;
+    const referenceAssetIds = composition.referenceAssetIds.slice(0, referenceLimit);
+    const omittedReferenceAssetIds = composition.referenceAssetIds.slice(referenceLimit);
 
     return {
       operation: "shot_to_image",
@@ -391,14 +465,20 @@ export class GenerationService {
       shotNodeId,
       prompt: composition.image.prompt,
       negativePrompt: composition.negativePrompt,
-      referenceAssetIds: composition.referenceAssetIds,
+      referenceAssetIds,
       sourceNodeIds: composition.sourceNodeIds,
       debugParts: composition.debugParts,
       missingContext: composition.missingContext,
-      provider: "mock-image",
-      model: "mock-image-v1",
-      providerParams: {},
-      forceFailure,
+      provider: providerSettings.provider.id,
+      model: providerSettings.model,
+      aspectRatio: providerSettings.aspectRatio,
+      count: providerSettings.count,
+      providerParams: providerSettings.providerParams,
+      omittedReferenceAssetIds: omittedReferenceAssetIds.length ? omittedReferenceAssetIds : undefined,
+      referenceOmissionReason: omittedReferenceAssetIds.length
+        ? `${providerSettings.provider.displayName} accepts up to ${referenceLimit} reference images.`
+        : undefined,
+      forceFailure: input.forceFailure,
     };
   }
 
@@ -504,6 +584,99 @@ export class GenerationService {
     }
   }
 
+  private normalizeCompletionOutputs(
+    input: GenerationJobInput,
+    providerOutput: GeneratedMediaProviderOutput,
+    providerOutputs: GeneratedMediaProviderOutput[] | undefined,
+  ): GeneratedMediaProviderOutput[] {
+    if (input.operation === "image_to_video") {
+      if (providerOutputs && providerOutputs.length > 1) {
+        throw new BadRequestException("Image video generation supports only one provider output");
+      }
+      return [providerOutput];
+    }
+
+    const outputs = providerOutputs?.length ? providerOutputs : [providerOutput];
+    if (outputs.length < 1) {
+      throw new BadRequestException("Shot image generation requires at least one provider output");
+    }
+
+    return outputs;
+  }
+
+  private resolveImageProviderSettings(input: CreateGenerationJobInput): {
+    provider: ImageProviderCatalogItem;
+    model: string;
+    aspectRatio: ProjectAspectRatio;
+    count: number;
+    providerParams: CanvasSnapshotJson;
+  } {
+    const providers = this.providersService.getImageProviders().providers;
+    const providerId = input.provider ?? "mock-image";
+    const provider = providers.find((candidate) => candidate.id === providerId);
+    if (!provider) {
+      throw new BadRequestException(`Unknown image provider: ${providerId}`);
+    }
+    if (!provider.enabled) {
+      throw new BadRequestException(provider.disabledReason ?? `${provider.displayName} is disabled`);
+    }
+
+    const model = input.model ?? provider.defaultModel;
+    if (!provider.models.some((candidate) => candidate.id === model)) {
+      throw new BadRequestException(`Model ${model} is not available for ${provider.displayName}`);
+    }
+
+    const aspectRatio = input.aspectRatio ?? provider.defaultAspectRatio;
+    if (!provider.supportedAspectRatios.includes(aspectRatio)) {
+      throw new BadRequestException(
+        `Aspect ratio ${aspectRatio} is not available for ${provider.displayName}`,
+      );
+    }
+
+    const count = input.count ?? 1;
+    if (count > provider.maxOutputs || (!provider.supportsMultipleOutputs && count > 1)) {
+      throw new BadRequestException(`${provider.displayName} supports at most ${provider.maxOutputs} output(s)`);
+    }
+
+    return {
+      provider,
+      model,
+      aspectRatio,
+      count,
+      providerParams: this.normalizedProviderParams(input.providerParams, provider),
+    };
+  }
+
+  private normalizedProviderParams(
+    providerParams: CanvasSnapshotJson | undefined,
+    provider: ImageProviderCatalogItem,
+  ): CanvasSnapshotJson {
+    const raw = dataObject(providerParams);
+    const normalized: Record<string, CanvasSnapshotJson> = {};
+
+    for (const parameter of provider.parameters) {
+      const value = raw[parameter.id] ?? parameter.defaultValue;
+      if (value === undefined) {
+        continue;
+      }
+      if (!isJsonValue(value)) {
+        throw new BadRequestException(`Provider parameter ${parameter.id} must be JSON-compatible`);
+      }
+      if (
+        parameter.type === "select" &&
+        parameter.options &&
+        !parameter.options.some((option) => option.value === value)
+      ) {
+        throw new BadRequestException(
+          `Provider parameter ${parameter.id} is not available for ${provider.displayName}`,
+        );
+      }
+      normalized[parameter.id] = value;
+    }
+
+    return normalized;
+  }
+
   private async findSourceNode(
     tx: GenerationPrismaClient,
     job: GenerationJobModel,
@@ -532,6 +705,7 @@ export class GenerationService {
     providerOutput: GeneratedMediaProviderOutput,
     asset: AssetDetail,
     sourceNode: CanvasNodeModel,
+    outputIndex = 0,
   ): Promise<CanvasNodeModel> {
     const targetType: Extract<CanvasNodeType, "image" | "video"> =
       input.operation === "shot_to_image" ? "image" : "video";
@@ -542,15 +716,19 @@ export class GenerationService {
       throw new BadRequestException("Image video completion requires an Image source node");
     }
 
+    const outputOrdinal = outputIndex + 1;
     return (await tx.canvasNode.create({
       data: {
         projectId: job.projectId,
         canvasDocumentId: sourceNode.canvasDocumentId,
-        tldrawShapeId: `shape:generated-${job.id}-${targetType}`,
+        tldrawShapeId:
+          outputIndex === 0
+            ? `shape:generated-${job.id}-${targetType}`
+            : `shape:generated-${job.id}-${targetType}-${outputOrdinal}`,
         type: targetType,
-        title: this.generatedNodeTitle(sourceNode, targetType),
-        x: sourceNode.x + sourceNode.width + 120,
-        y: sourceNode.y,
+        title: this.generatedNodeTitle(sourceNode, targetType, outputOrdinal),
+        x: sourceNode.x + sourceNode.width + 120 + outputIndex * 360,
+        y: sourceNode.y + outputIndex * 40,
         width: 320,
         height: targetType === "image" ? 220 : 180,
         zIndex: sourceNode.zIndex + 1,
@@ -565,6 +743,7 @@ export class GenerationService {
           generatedFromNodeId: sourceNode.id,
           sourceNodeIds: this.sourceNodeIdsForInput(input),
           referenceAssetIds: providerOutput.referenceAssetIds,
+          outputIndex,
           inputJson: input,
         }),
       },
@@ -623,9 +802,14 @@ export class GenerationService {
     };
   }
 
-  private generatedNodeTitle(sourceNode: CanvasNodeModel, targetType: "image" | "video"): string {
+  private generatedNodeTitle(
+    sourceNode: CanvasNodeModel,
+    targetType: "image" | "video",
+    outputOrdinal = 1,
+  ): string {
     const sourceTitle = sourceNode.title?.trim() || sourceNode.type;
-    return targetType === "image" ? `${sourceTitle} Image` : `${sourceTitle} Video`;
+    const suffix = targetType === "image" ? "Image" : "Video";
+    return outputOrdinal === 1 ? `${sourceTitle} ${suffix}` : `${sourceTitle} ${suffix} ${outputOrdinal}`;
   }
 
   private sourceNodeIdsForInput(input: GenerationJobInput): string[] {

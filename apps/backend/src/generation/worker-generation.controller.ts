@@ -19,6 +19,6 @@ export class WorkerGenerationController {
 
   @Post(":jobId/succeed")
   succeedJob(@Param("jobId") jobId: string, @Body() body: WorkerGenerationJobSucceedDto) {
-    return this.generationService.succeedJob(jobId, body.providerOutput);
+    return this.generationService.succeedJob(jobId, body.providerOutput, body.providerOutputs);
   }
 }

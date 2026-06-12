@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  Optional,
+} from "@nestjs/common";
 import {
   UPLOADABLE_ASSET_MIME_TYPES,
   type AssetDetail,
@@ -14,6 +20,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import { LocalStorageService } from "../storage/local-storage.service";
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+export const ASSET_FETCH = Symbol("ASSET_FETCH");
+type FetchLike = typeof fetch;
 
 type AssetModel = {
   id: string;
@@ -112,11 +120,17 @@ function generatedPlaceholderBuffer(output: GeneratedMediaProviderOutput): Buffe
   );
 }
 
+function base64ToBuffer(value: string): Buffer {
+  const dataUrlMatch = /^data:[^;]+;base64,(?<payload>.+)$/s.exec(value);
+  return Buffer.from(dataUrlMatch?.groups?.payload ?? value, "base64");
+}
+
 @Injectable()
 export class AssetsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LocalStorageService) private readonly storage: LocalStorageService,
+    @Optional() @Inject(ASSET_FETCH) private readonly fetchImpl: FetchLike = fetch,
   ) {}
 
   async listAssets(projectId: string): Promise<AssetListItem[]> {
@@ -172,9 +186,10 @@ export class AssetsService {
 
     const output = input.providerOutput;
     const type = assetTypeForGeneratedMime(output.mimeType);
+    const buffer = await this.generatedAssetBuffer(output);
     const stored = await this.storage.writeObject({
       storageKey: output.storageKey,
-      buffer: generatedPlaceholderBuffer(output),
+      buffer,
     });
     const asset = await client.asset.create({
       data: {
@@ -198,6 +213,44 @@ export class AssetsService {
     });
 
     return this.toAssetRecord(asset);
+  }
+
+  private async generatedAssetBuffer(output: GeneratedMediaProviderOutput): Promise<Buffer> {
+    if (output.bytesBase64) {
+      return this.validateGeneratedBytes(base64ToBuffer(output.bytesBase64));
+    }
+    if (output.remoteUrl) {
+      return this.downloadGeneratedRemoteUrl(output.remoteUrl);
+    }
+
+    return generatedPlaceholderBuffer(output);
+  }
+
+  private async downloadGeneratedRemoteUrl(remoteUrl: string): Promise<Buffer> {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(remoteUrl);
+    } catch {
+      throw new BadRequestException("Generated asset remote URL is invalid");
+    }
+    if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
+      throw new BadRequestException("Generated asset remote URL must use http or https");
+    }
+
+    const response = await this.fetchImpl(parsedUrl);
+    if (!response.ok) {
+      throw new BadRequestException(`Generated asset remote download failed with ${response.status}`);
+    }
+
+    return this.validateGeneratedBytes(Buffer.from(await response.arrayBuffer()));
+  }
+
+  private validateGeneratedBytes(buffer: Buffer): Buffer {
+    if (buffer.byteLength > MAX_UPLOAD_BYTES) {
+      throw new BadRequestException("Generated asset is too large");
+    }
+
+    return buffer;
   }
 
   async getAsset(projectId: string, assetId: string): Promise<AssetDetail> {

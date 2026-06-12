@@ -77,14 +77,17 @@ function createStorageMock() {
 describe("AssetsService", () => {
   let prisma: ReturnType<typeof createPrismaMock>;
   let storage: ReturnType<typeof createStorageMock>;
+  let fetchImpl: ReturnType<typeof vi.fn>;
   let service: AssetsService;
 
   beforeEach(() => {
     prisma = createPrismaMock();
     storage = createStorageMock();
+    fetchImpl = vi.fn();
     service = new AssetsService(
       prisma as unknown as PrismaService,
       storage as unknown as LocalStorageService,
+      fetchImpl as unknown as typeof fetch,
     );
   });
 
@@ -189,6 +192,97 @@ describe("AssetsService", () => {
       purpose: "shot_keyframe",
       previewKind: "image",
     });
+  });
+
+  it("creates generated asset records from inline base64 bytes", async () => {
+    prisma.asset.create.mockResolvedValue(
+      asset({
+        type: "image",
+        purpose: "shot_keyframe",
+        storageKey: "providers/image2/generated.png",
+        mimeType: "image/png",
+        originalFilename: "generated.png",
+      }),
+    );
+
+    await service.createGeneratedAsset("project_1", {
+      purpose: "shot_keyframe",
+      providerOutput: {
+        assetId: "provider_asset_1",
+        storageKey: "providers/image2/generated.png",
+        mimeType: "image/png",
+        provider: "image2",
+        model: "gpt-image-2",
+        prompt: "hero at console",
+        referenceAssetIds: [],
+        bytesBase64: Buffer.from("real-image-bytes").toString("base64"),
+      },
+    });
+
+    expect(storage.writeObject).toHaveBeenCalledWith({
+      storageKey: "providers/image2/generated.png",
+      buffer: Buffer.from("real-image-bytes"),
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("downloads remote generated asset bytes server-side before creating the asset", async () => {
+    fetchImpl.mockResolvedValue(
+      new Response(new Uint8Array(Buffer.from("remote-image-bytes")), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    prisma.asset.create.mockResolvedValue(
+      asset({
+        type: "image",
+        purpose: "shot_keyframe",
+        storageKey: "providers/image2/remote.png",
+        mimeType: "image/png",
+        originalFilename: "remote.png",
+      }),
+    );
+
+    await service.createGeneratedAsset("project_1", {
+      purpose: "shot_keyframe",
+      providerOutput: {
+        storageKey: "providers/image2/remote.png",
+        mimeType: "image/png",
+        provider: "image2",
+        model: "gpt-image-2",
+        prompt: "hero at console",
+        referenceAssetIds: [],
+        remoteUrl: "https://cdn.example.test/generated.png",
+      },
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(new URL("https://cdn.example.test/generated.png"));
+    expect(storage.writeObject).toHaveBeenCalledWith({
+      storageKey: "providers/image2/remote.png",
+      buffer: Buffer.from("remote-image-bytes"),
+    });
+  });
+
+  it("rejects failed remote downloads before creating an asset record", async () => {
+    fetchImpl.mockResolvedValue(new Response("not found", { status: 404 }));
+
+    await expect(
+      service.createGeneratedAsset("project_1", {
+        purpose: "shot_keyframe",
+        providerOutput: {
+          storageKey: "providers/image2/missing.png",
+          mimeType: "image/png",
+          provider: "image2",
+          model: "gpt-image-2",
+          prompt: "hero at console",
+          referenceAssetIds: [],
+          remoteUrl: "https://cdn.example.test/missing.png",
+        },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(storage.writeObject).not.toHaveBeenCalled();
+    expect(prisma.asset.create).not.toHaveBeenCalled();
   });
 
   it("returns text previews for document assets", async () => {
