@@ -1,7 +1,7 @@
 ---
 title: "feat: Add project management and asset library"
 type: feat
-status: active
+status: completed
 date: 2026-06-12
 origin: docs/brainstorms/2026-06-12-002-phase-1-project-management-assets-requirements.md
 ---
