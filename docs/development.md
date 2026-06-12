@@ -81,7 +81,7 @@ The initial schema preserves the hybrid persistence foundation:
 - `GenerationJob`
 - `EditorExport`
 
-Project, asset, and canvas snapshot APIs are available. The visual canvas source of truth is `CanvasDocument.snapshotJson`; normalized `CanvasNode` and `CanvasEdge` records are kept for later business-shape phases.
+Project, asset, canvas snapshot, and business `CanvasNode` APIs are available. The visual canvas source of truth is `CanvasDocument.snapshotJson`; normalized `CanvasNode` records own business facts and geometry for custom business shapes, while `CanvasEdge` remains ready for later semantic binding phases.
 
 ## Development Servers
 
@@ -91,7 +91,7 @@ pnpm run dev
 
 This builds shared packages first and then starts all app surfaces in parallel.
 
-Open the frontend at `http://localhost:3001`. The home page is the project dashboard. Creating or opening a project routes to `/projects/:projectId/canvas`, which hosts the workbench shell, persistent tldraw canvas, save-status badge, fit-to-content control, and asset library inspector.
+Open the frontend at `http://localhost:3001`. The home page is the project dashboard. Creating or opening a project routes to `/projects/:projectId/canvas`, which hosts the workbench shell, persistent tldraw canvas, business-node toolbar, save-status badge, fit-to-content control, selection-aware Inspector, and asset library.
 
 ## Project And Asset Workflow
 
@@ -116,17 +116,27 @@ Uploaded files are stored under `UPLOAD_STORAGE_DIR` and exposed through backend
 
 ## Project Canvas Workflow
 
-Phase 2 supports a project-scoped tldraw canvas on `/projects/:projectId/canvas`.
+Phase 2 and Phase 3 support a project-scoped tldraw canvas on `/projects/:projectId/canvas`.
 
 Backend API:
 
 - `GET /api/v1/projects/:projectId/canvas` creates or resolves the project's canvas document and returns the saved visual snapshot, normalized nodes, normalized edges, and project asset metadata.
 - `PATCH /api/v1/projects/:projectId/canvas/snapshot` saves the latest visual snapshot to `CanvasDocument.snapshotJson`.
+- `POST /api/v1/projects/:projectId/canvas/nodes` creates a normalized Phase 3 business node for a tldraw business shape.
+- `PATCH /api/v1/projects/:projectId/canvas/nodes/:nodeId` updates business node title, status, and `dataJson`.
+- `PATCH /api/v1/projects/:projectId/canvas/nodes/:nodeId/geometry` updates normalized position and size after supported canvas moves or resizes.
+- `DELETE /api/v1/projects/:projectId/canvas/nodes/:nodeId` deletes the normalized business node. Related future edges can cascade through the schema; unrelated assets are preserved.
 
 Frontend behavior:
 
 - The canvas loads the saved tldraw snapshot before user edits are listened to.
+- Business shapes are reconciled from normalized `CanvasNode` records after snapshot load, so card summaries follow the business record.
+- The business toolbar creates Novel, Scene Frame, Scene, Shot, Character, Location, Image, Video, and Editor Package cards.
+- tldraw shape types use a `business_*` prefix, while shape props retain the PRD business `nodeType`.
 - User-originated canvas changes are autosaved with debounce.
+- Business-shape move and resize events debounce a normalized geometry patch.
+- Removing a business shape deletes the matching normalized `CanvasNode` without deleting project assets.
+- Selecting a business node opens a type-aware Inspector form. Shot, Character, and Location forms include the richer consistency and production fields needed by later phases.
 - The topbar save badge shows `Ready`, `Saving`, `Saved`, or `Failed`.
 - Failed saves keep the latest local edit visible and expose a retry action.
 - The `Fit to content` control calls tldraw's zoom-to-fit path for saved or newly created content.
@@ -139,6 +149,16 @@ Phase 2 browser smoke checklist:
 - Move the shape, wait for `Saved`, refresh, and confirm the updated position restores.
 - Confirm the asset library still lists and previews uploaded image/video/text/markdown assets from the inspector.
 - Check browser console errors and backend API responses before marking the module verified.
+
+Phase 3 browser smoke checklist:
+
+- Create one project and manually create every MVP business node type from the canvas toolbar.
+- Confirm `GET /api/v1/projects/:projectId/canvas` returns nine normalized nodes with these types: `novel`, `scene_frame`, `scene`, `shot`, `character_asset`, `location_asset`, `image`, `video`, and `editor_package`.
+- In a project with a selected Shot node, edit Visual Description, Action, and Camera Movement in the Inspector, save, and confirm the visible card summary updates.
+- Refresh the page and confirm the Shot card and Inspector data restore from normalized `CanvasNode.dataJson`.
+- Move the Shot card and confirm `CanvasNode.x/y/width/height` update after debounce.
+- Upload or retain a project asset, delete the Shot card, refresh or re-query the API, and confirm the node is gone while the asset remains.
+- Check browser console errors.
 
 ## Mock Workflow Verification
 
@@ -174,13 +194,15 @@ Included:
 - local asset upload and preview
 - persistent project-scoped tldraw canvas snapshot load/save
 - debounced canvas autosave with visible save, failed, and retry states
+- business custom shapes for all Phase 3 MVP node types
+- normalized business node create/update/geometry/delete APIs
+- selection-aware Inspector with type-specific business forms
 - worker mock workflow
 - shared types and provider contracts
 - local infra and quality gates
 
 Deferred:
 
-- custom business shapes
 - semantic asset binding
 - persistent generation queue
 - real provider adapters

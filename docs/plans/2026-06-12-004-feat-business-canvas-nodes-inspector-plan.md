@@ -1,6 +1,6 @@
 # Phase 3 Business Canvas Nodes and Inspector Plan
 
-Status: Active  
+Status: Completed  
 Date: 2026-06-12  
 Origin: docs/brainstorms/2026-06-12-004-phase-3-business-custom-shapes-inspector-requirements.md  
 PRD phase: Phase 3, Business Custom Shapes and Inspector
@@ -429,3 +429,41 @@ The backend model already contains the needed normalized tables and cascade beha
 - All paths are repo-relative.
 - Risky sync points are covered by tests and browser acceptance.
 - The Node engine warning is handled as an environment issue to fix by upgrading Node, not by lowering project architecture.
+
+## Implementation Notes
+
+- The tldraw shape type for business nodes uses a `business_*` prefix, such as `business_shot` and `business_video`, to avoid collisions with tldraw built-in shape types like `video`.
+- Shape props keep only render summary fields and `nodeId`; editable business facts remain in normalized `CanvasNode.dataJson`.
+- Snapshot load is followed by normalized-node reconciliation so missing business shapes are recreated and stale card summaries are refreshed from `CanvasNode`.
+- Inspector saves call the backend first and then update local node state, which updates the selected business shape props.
+- Business shape deletion is driven by tldraw removal events and deletes the normalized `CanvasNode`; project assets remain untouched.
+- Business shape duplication creates a new normalized `CanvasNode` for the duplicated shape instead of sharing the original `nodeId`.
+
+## Verification Evidence
+
+Targeted checks:
+
+- `pnpm --filter @guga-flow/shared-types run test`
+- `pnpm --filter @guga-flow/shared-types run lint`
+- `pnpm --filter @guga-flow/backend run test -- src/canvas/canvas.service.spec.ts test/app.e2e-spec.ts`
+- `pnpm --filter @guga-flow/backend run lint`
+- `pnpm --filter @guga-flow/frontend run test -- src/components/canvas`
+- `pnpm --filter @guga-flow/frontend run test`
+- `pnpm --filter @guga-flow/frontend run lint`
+
+Full checks:
+
+- `pnpm run format:check`
+- `pnpm run test`
+- `pnpm run build`
+- `pnpm run mock:workflow`
+
+Browser verification:
+
+- Project `cmqazkuj00000gxsvhb6cnd4f` created all nine Phase 3 MVP business node types from the canvas toolbar. Backend `GET /api/v1/projects/:projectId/canvas` returned `nodeCount: 9` and types `novel`, `scene_frame`, `scene`, `shot`, `character_asset`, `location_asset`, `image`, `video`, and `editor_package`.
+- Project `cmqaznf1s000cgxsv7v51fmbz` created a selected Shot node, edited Visual Description to `Moonlit rooftop close-up with blue rim light and drifting mist.`, Action to `Ari raises the signal flare and looks toward the skyline.`, and Camera Movement to `Slow dolly in` through the Inspector.
+- The Shot card summary updated immediately after save, and backend `CanvasNode.dataJson` contained the edited fields.
+- After refresh, the Shot card and Inspector restored the edited visual description and camera movement from normalized node data.
+- Dragging the Shot card in the browser updated normalized geometry from `x: 96, y: 96` to `x: 287.875, y: -21.3125`.
+- A markdown asset was uploaded to the Shot project. Deleting the selected Shot removed the business node while backend canvas load still returned `assetCount: 1`.
+- Browser console error check returned no error messages.
