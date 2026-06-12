@@ -938,6 +938,113 @@ describe("project api e2e", () => {
       });
   });
 
+  it("composes Shot prompts from imported graph, edited assets, and latest node data", async () => {
+    const createdProject = await request(app.getHttpServer())
+      .post("/api/v1/projects")
+      .send({ title: "Prompt Composer Project" })
+      .expect(201);
+    const projectId = createdProject.body.id;
+
+    const createdNovel = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels`)
+      .send({
+        title: "Prompt Composer Source",
+        content:
+          "A hero watches the city lights before choosing the next shot. An ally joins with a warning and points to the next signal.",
+      })
+      .expect(201);
+    const novelId = createdNovel.body.novel.id;
+
+    const generated = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels/${novelId}/generate-storyboard`)
+      .expect(201);
+    const draftId = generated.body.draft.id;
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels/${novelId}/storyboard-draft/${draftId}/ready`)
+      .expect(201);
+
+    const imported = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/import-storyboard`)
+      .send({
+        novelDocumentId: novelId,
+        storyboardDraftId: draftId,
+      })
+      .expect(201);
+
+    const importedNodes = imported.body.nodes as CanvasNodeRecord[];
+    const shotNode = importedNodes.find((node) => node.type === "shot");
+    const characterNode = importedNodes.find((node) => node.type === "character_asset");
+    const locationNode = importedNodes.find((node) => node.type === "location_asset");
+    expect(shotNode).toBeTruthy();
+    expect(characterNode).toBeTruthy();
+    expect(locationNode).toBeTruthy();
+
+    const uploadedReference = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/assets/upload`)
+      .field("purpose", "character_reference")
+      .attach("file", Buffer.from("fake image"), {
+        filename: "hero.png",
+        contentType: "image/png",
+      })
+      .expect(201);
+    const referenceAssetId = uploadedReference.body.id;
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/projects/${projectId}/canvas/nodes/${characterNode!.id}`)
+      .send({
+        dataJson: {
+          ...(characterNode!.dataJson as Record<string, unknown>),
+          identityPrompt: "edited e2e character identity",
+          referenceAssetIds: [referenceAssetId],
+        },
+      })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/projects/${projectId}/canvas/nodes/${locationNode!.id}`)
+      .send({
+        dataJson: {
+          ...(locationNode!.dataJson as Record<string, unknown>),
+          locationPrompt: "edited e2e location prompt",
+        },
+      })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/prompts/shot/${shotNode!.id}/compose`)
+      .send({
+        globalStylePrompt: "storybook ink wash",
+        modelPromptSuffix: "clean frame",
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.sourceNodeIds.shotNodeId).toBe(shotNode!.id);
+        expect(body.sourceNodeIds.characterNodeIds).toContain(characterNode!.id);
+        expect(body.sourceNodeIds.locationNodeId).toBe(locationNode!.id);
+        expect(body.image.prompt).toContain("edited e2e character identity");
+        expect(body.image.prompt).toContain("edited e2e location prompt");
+        expect(body.image.prompt).toContain("storybook ink wash");
+        expect(body.video.prompt).toContain("Video prompt");
+        expect(body.referenceAssetIds).toContain(referenceAssetId);
+        expect(body.debugParts.map((part: { kind: string }) => part.kind)).toEqual(
+          expect.arrayContaining(["scene", "character", "location", "shot"]),
+        );
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/prompts/shot/${characterNode!.id}/compose`)
+      .expect(400);
+
+    const otherProject = await request(app.getHttpServer())
+      .post("/api/v1/projects")
+      .send({ title: "Other Prompt Project" })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${otherProject.body.id}/prompts/shot/${shotNode!.id}/compose`)
+      .expect(404);
+  });
+
   it("creates, saves, and reloads project canvas snapshots", async () => {
     const createdProject = await request(app.getHttpServer())
       .post("/api/v1/projects")
