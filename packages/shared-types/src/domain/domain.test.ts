@@ -7,6 +7,8 @@ import {
   CANVAS_SAVE_STATUSES,
   GENERATION_JOB_STATUSES,
   GENERATION_OPERATIONS,
+  IMAGE_PROVIDER_IDS,
+  IMAGE_PROVIDER_MODES,
   NOVEL_LANGUAGES,
   NOVEL_SOURCE_TYPES,
   PHASE_8_GENERATION_OPERATIONS,
@@ -34,6 +36,8 @@ import {
   type DeleteCanvasNodeResult,
   type DeleteNovelDocumentResult,
   type GeneratedMediaJobOutput,
+  type ImageProviderCatalogItem,
+  type ImageProviderCatalogResult,
   type GenerationJobListResult,
   type GenerationQueueSummary,
   type ImageNodeData,
@@ -71,6 +75,8 @@ describe("shared domain constants", () => {
     expect(GENERATION_OPERATIONS).toContain("novel_to_storyboard");
     expect(GENERATION_OPERATIONS).toContain("editor_export");
     expect(PHASE_8_GENERATION_OPERATIONS).toEqual(["shot_to_image", "image_to_video"]);
+    expect(IMAGE_PROVIDER_IDS).toEqual(["mock-image", "image2", "banana"]);
+    expect(IMAGE_PROVIDER_MODES).toEqual(["text_to_image", "image_to_image", "multi_reference"]);
   });
 
   it("includes Phase 1 project and upload asset contracts", () => {
@@ -460,7 +466,51 @@ describe("shared domain constants", () => {
     const createInput: CreateGenerationJobInput = {
       operation: "shot_to_image",
       sourceNodeId: "shot_1",
+      provider: "image2",
+      model: "gpt-image-2",
+      aspectRatio: "16:9",
+      count: 3,
+      providerParams: { quality: "medium" },
       forceFailure: true,
+    };
+    const catalogProvider: ImageProviderCatalogItem = {
+      id: "banana",
+      displayName: "Nano Banana",
+      enabled: false,
+      disabledReason: "Server-side Gemini image key is not configured",
+      requiresApiKey: true,
+      defaultModel: "gemini-2.5-flash-image",
+      models: [
+        {
+          id: "gemini-2.5-flash-image",
+          displayName: "Gemini 2.5 Flash Image",
+          default: true,
+        },
+      ],
+      supportedModes: ["text_to_image", "multi_reference"],
+      supportsReferenceImages: true,
+      maxReferenceImages: 3,
+      supportsMultipleOutputs: false,
+      maxOutputs: 1,
+      defaultAspectRatio: "16:9",
+      supportedAspectRatios: ["9:16", "16:9", "1:1"],
+      parameters: [
+        {
+          id: "imageSize",
+          label: "Image size",
+          type: "select",
+          defaultValue: "1K",
+          options: [
+            {
+              value: "1K",
+              label: "1K",
+            },
+          ],
+        },
+      ],
+    };
+    const catalog: ImageProviderCatalogResult = {
+      providers: [catalogProvider],
     };
     const shotInput: ShotToImageJobInput = {
       operation: "shot_to_image",
@@ -488,9 +538,13 @@ describe("shared domain constants", () => {
         },
       ],
       missingContext: [],
-      provider: "mock-image",
-      model: "mock-image-v1",
+      provider: createInput.provider ?? "mock-image",
+      model: createInput.model,
+      aspectRatio: createInput.aspectRatio,
+      count: createInput.count,
       providerParams: { seed: 7 },
+      omittedReferenceAssetIds: ["asset_unsupported_ref"],
+      referenceOmissionReason: "Selected provider supports fewer reference images",
       forceFailure: true,
     };
     const videoInput: ImageToVideoJobInput = {
@@ -526,7 +580,42 @@ describe("shared domain constants", () => {
         model: "mock-image-v1",
         prompt: shotInput.prompt,
         referenceAssetIds: shotInput.referenceAssetIds,
+        remoteUrl: "https://provider.example/generated/image-1.png",
+        width: 1344,
+        height: 768,
       },
+      targets: [
+        {
+          targetNodeId: "image_1",
+          assetId: "asset_image_1",
+          edgeId: "edge_generated_image_1",
+          providerOutput: {
+            assetId: "provider_asset_image_1",
+            storageKey: "mock/images/provider_asset_image_1.png",
+            mimeType: "image/png",
+            provider: "image2",
+            model: "gpt-image-2",
+            prompt: shotInput.prompt,
+            referenceAssetIds: shotInput.referenceAssetIds,
+            remoteUrl: "https://provider.example/generated/image-1.png",
+          },
+        },
+        {
+          targetNodeId: "image_2",
+          assetId: "asset_image_2",
+          edgeId: "edge_generated_image_2",
+          providerOutput: {
+            assetId: "provider_asset_image_2",
+            storageKey: "mock/images/provider_asset_image_2.png",
+            mimeType: "image/png",
+            provider: "image2",
+            model: "gpt-image-2",
+            prompt: shotInput.prompt,
+            referenceAssetIds: shotInput.referenceAssetIds,
+            bytesBase64: "iVBORw0KGgo=",
+          },
+        },
+      ],
       completedAt: "2026-06-12T00:00:00.000Z",
     };
     const counts: GenerationQueueSummary["counts"] = {
@@ -589,11 +678,23 @@ describe("shared domain constants", () => {
     };
 
     expect(createInput.operation).toBe("shot_to_image");
+    expect(catalog.providers[0]?.disabledReason).not.toContain("key=");
+    expect(shotInput).toMatchObject({
+      provider: "image2",
+      model: "gpt-image-2",
+      aspectRatio: "16:9",
+      count: 3,
+    });
     expect(listResult.jobs.map((job) => job.operation)).toEqual(["shot_to_image", "image_to_video"]);
     expect(listResult.queueSummary).toMatchObject({ queued: 1, running: 2, failed: 1 });
     expect(imageNodeData.generationJobId).toBe("job_1");
     expect(imageNodeData.inputJson).toMatchObject({ prompt: "cinematic image prompt" });
-    expect(imageNodeData.outputJson).toMatchObject({ targetNodeId: "image_1" });
+    expect(imageNodeData.outputJson).toMatchObject({
+      targetNodeId: "image_1",
+      targets: expect.arrayContaining([
+        expect.objectContaining({ targetNodeId: "image_2", assetId: "asset_image_2" }),
+      ]),
+    });
   });
 });
 

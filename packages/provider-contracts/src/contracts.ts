@@ -1,4 +1,4 @@
-import type { StoryboardResult } from "@guga-flow/shared-types";
+import type { CanvasSnapshotJson, ProjectAspectRatio, StoryboardResult } from "@guga-flow/shared-types";
 
 export interface ProviderCapability {
   id: string;
@@ -47,7 +47,11 @@ export interface ImageGenerationInput {
   projectId: string;
   prompt: string;
   negativePrompt?: string;
+  model?: string;
+  aspectRatio?: ProjectAspectRatio;
+  count?: number;
   referenceAssetIds?: string[];
+  providerParams?: CanvasSnapshotJson;
   forceFailure?: boolean;
 }
 
@@ -66,7 +70,7 @@ export interface EditorPackageInput {
   forceFailure?: boolean;
 }
 
-export interface MockAssetOutput {
+export interface ImageProviderOutput {
   assetId: string;
   storageKey: string;
   mimeType: string;
@@ -74,6 +78,19 @@ export interface MockAssetOutput {
   model: string;
   prompt?: string;
   referenceAssetIds: string[];
+  remoteUrl?: string;
+  bytesBase64?: string;
+  width?: number;
+  height?: number;
+  providerTaskId?: string;
+  rawJson?: CanvasSnapshotJson;
+}
+
+export interface ImageProviderResult {
+  outputs: ImageProviderOutput[];
+}
+
+export interface MockAssetOutput extends ImageProviderOutput {
 }
 
 export interface MockEditorPackageOutput {
@@ -89,7 +106,7 @@ export interface LlmProvider {
 
 export interface ImageProvider {
   capability: ProviderCapability;
-  generateImage(input: ImageGenerationInput): Promise<MockAssetOutput>;
+  generateImage(input: ImageGenerationInput): Promise<ImageProviderOutput>;
 }
 
 export interface VideoProvider {

@@ -1,5 +1,6 @@
 import type { CanvasSnapshotJson } from "./canvas";
 import type { PromptDebugPart, PromptMissingContext, ShotPromptSourceNodeIds } from "./prompt-composer";
+import type { ProjectAspectRatio } from "./project";
 
 export const GENERATION_JOB_STATUSES = [
   "queued",
@@ -27,7 +28,65 @@ export type GenerationOperation = (typeof GENERATION_OPERATIONS)[number];
 export const PHASE_8_GENERATION_OPERATIONS = ["shot_to_image", "image_to_video"] as const;
 export type Phase8GenerationOperation = (typeof PHASE_8_GENERATION_OPERATIONS)[number];
 
+export const IMAGE_PROVIDER_IDS = ["mock-image", "image2", "banana"] as const;
+export type ImageProviderId = (typeof IMAGE_PROVIDER_IDS)[number];
+
+export const IMAGE_PROVIDER_MODES = ["text_to_image", "image_to_image", "multi_reference"] as const;
+export type ImageProviderMode = (typeof IMAGE_PROVIDER_MODES)[number];
+
 export type GenerationJobStatusCounts = Record<GenerationJobStatus, number>;
+
+export interface ImageProviderModelOption {
+  id: string;
+  displayName: string;
+  default?: boolean;
+}
+
+export interface ImageProviderParameterOption {
+  value: string;
+  label: string;
+}
+
+export interface ImageProviderParameterDefinition {
+  id: string;
+  label: string;
+  type: "string" | "number" | "boolean" | "select";
+  required?: boolean;
+  defaultValue?: CanvasSnapshotJson;
+  min?: number;
+  max?: number;
+  options?: ImageProviderParameterOption[];
+}
+
+export interface ImageProviderCatalogItem {
+  id: ImageProviderId;
+  displayName: string;
+  enabled: boolean;
+  disabledReason?: string;
+  requiresApiKey: boolean;
+  defaultModel: string;
+  models: ImageProviderModelOption[];
+  supportedModes: ImageProviderMode[];
+  supportsReferenceImages: boolean;
+  maxReferenceImages: number;
+  supportsMultipleOutputs: boolean;
+  maxOutputs: number;
+  defaultAspectRatio: ProjectAspectRatio;
+  supportedAspectRatios: ProjectAspectRatio[];
+  parameters: ImageProviderParameterDefinition[];
+}
+
+export interface ImageProviderCatalogResult {
+  providers: ImageProviderCatalogItem[];
+}
+
+export interface ImageGenerationSettings {
+  provider?: ImageProviderId;
+  model?: string;
+  aspectRatio?: ProjectAspectRatio;
+  count?: number;
+  providerParams?: CanvasSnapshotJson;
+}
 
 export interface GenerationQueueSummary {
   counts: GenerationJobStatusCounts;
@@ -53,7 +112,7 @@ export interface GenerationJobRecord<TInput = unknown, TOutput = unknown> {
   updatedAt: string;
 }
 
-export interface CreateGenerationJobInput {
+export interface CreateGenerationJobInput extends ImageGenerationSettings {
   operation: Phase8GenerationOperation;
   sourceNodeId: string;
   forceFailure?: boolean;
@@ -81,6 +140,7 @@ export interface ClaimGenerationJobResult<TInput = GenerationJobInput> {
 
 export interface WorkerGenerationJobSucceedInput {
   providerOutput: GeneratedMediaProviderOutput;
+  providerOutputs?: GeneratedMediaProviderOutput[];
 }
 
 export interface WorkerGenerationJobFailInput {
@@ -102,7 +162,11 @@ export interface ShotToImageJobInput {
   missingContext: PromptMissingContext[];
   provider: string;
   model?: string;
+  aspectRatio?: ProjectAspectRatio;
+  count?: number;
   providerParams?: CanvasSnapshotJson;
+  omittedReferenceAssetIds?: string[];
+  referenceOmissionReason?: string;
   forceFailure?: boolean;
 }
 
@@ -132,6 +196,19 @@ export interface GeneratedMediaProviderOutput {
   model: string;
   prompt: string;
   referenceAssetIds: string[];
+  remoteUrl?: string;
+  bytesBase64?: string;
+  width?: number;
+  height?: number;
+  providerTaskId?: string;
+  rawJson?: CanvasSnapshotJson;
+}
+
+export interface GeneratedMediaJobTargetOutput {
+  targetNodeId: string;
+  assetId: string;
+  edgeId: string;
+  providerOutput: GeneratedMediaProviderOutput;
 }
 
 export interface GeneratedMediaJobOutput {
@@ -145,6 +222,7 @@ export interface GeneratedMediaJobOutput {
   prompt: string;
   referenceAssetIds: string[];
   providerOutput: GeneratedMediaProviderOutput;
+  targets?: GeneratedMediaJobTargetOutput[];
   completedAt: string;
 }
 
