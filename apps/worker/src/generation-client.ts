@@ -11,6 +11,7 @@ export interface GenerationWorkerClient {
   succeedJob(
     jobId: string,
     providerOutput: GeneratedMediaProviderOutput,
+    providerOutputs?: GeneratedMediaProviderOutput[],
   ): Promise<GenerationJobRecord>;
   failJob(jobId: string, error: ProviderFailure): Promise<GenerationJobRecord>;
 }
@@ -31,9 +32,11 @@ export class HttpGenerationWorkerClient implements GenerationWorkerClient {
   succeedJob(
     jobId: string,
     providerOutput: GeneratedMediaProviderOutput,
+    providerOutputs?: GeneratedMediaProviderOutput[],
   ): Promise<GenerationJobRecord> {
     return this.post(`/worker/generation/jobs/${encodeURIComponent(jobId)}/succeed`, {
       providerOutput,
+      providerOutputs,
     });
   }
 

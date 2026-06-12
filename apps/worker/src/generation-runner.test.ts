@@ -20,23 +20,41 @@ function createClientMock(): GenerationWorkerClient {
 }
 
 function createRegistryMock(): GenerationExecutorRegistry {
+  const imageProvider = {
+    capability: {
+      id: "mock-image",
+      displayName: "Mock Image",
+      requiresApiKey: false,
+    },
+    generateImage: vi.fn(async () => ({
+      outputs: [
+        {
+          assetId: "provider_image_1",
+          storageKey: "mock/images/provider_image_1.png",
+          mimeType: "image/png",
+          provider: "mock-image",
+          model: "mock-image-v1",
+          prompt: "Image prompt",
+          referenceAssetIds: ["asset_ref_1"],
+        },
+        {
+          assetId: "provider_image_2",
+          storageKey: "mock/images/provider_image_2.png",
+          mimeType: "image/png",
+          provider: "mock-image",
+          model: "mock-image-v1",
+          prompt: "Image prompt",
+          referenceAssetIds: ["asset_ref_1"],
+        },
+      ],
+    })),
+  } as ImageProvider;
+
   return {
-    image: {
-      capability: {
-        id: "mock-image",
-        displayName: "Mock Image",
-        requiresApiKey: false,
-      },
-      generateImage: vi.fn(async () => ({
-        assetId: "provider_image_1",
-        storageKey: "mock/images/provider_image_1.png",
-        mimeType: "image/png",
-        provider: "mock-image",
-        model: "mock-image-v1",
-        prompt: "Image prompt",
-        referenceAssetIds: ["asset_ref_1"],
-      })),
-    } as ImageProvider,
+    imageProviders: {
+      get: vi.fn(() => imageProvider),
+      list: vi.fn(() => [imageProvider]),
+    },
     video: {
       capability: {
         id: "mock-video",
@@ -69,7 +87,7 @@ describe("generation worker runner", () => {
     const result = await runOneGenerationJob({ client, registry });
 
     expect(result).toEqual({ status: "idle" });
-    expect(registry.image.generateImage).not.toHaveBeenCalled();
+    expect(registry.imageProviders.get).not.toHaveBeenCalled();
     expect(registry.video.generateVideo).not.toHaveBeenCalled();
     expect(client.succeedJob).not.toHaveBeenCalled();
     expect(client.failJob).not.toHaveBeenCalled();
@@ -82,11 +100,17 @@ describe("generation worker runner", () => {
 
     const result = await runOneGenerationJob({ client, registry });
 
-    expect(registry.image.generateImage).toHaveBeenCalledWith({
+    const imageProvider = registry.imageProviders.get("mock-image");
+    expect(registry.imageProviders.get).toHaveBeenCalledWith("mock-image");
+    expect(imageProvider.generateImage).toHaveBeenCalledWith({
       projectId: "project_1",
       prompt: "Image prompt",
       negativePrompt: "no text",
+      model: "mock-image-v1",
+      aspectRatio: "16:9",
+      count: 2,
       referenceAssetIds: ["asset_ref_1"],
+      providerParams: { quality: "high" },
       forceFailure: undefined,
     });
     expect(client.succeedJob).toHaveBeenCalledWith(
@@ -96,6 +120,14 @@ describe("generation worker runner", () => {
         provider: "mock-image",
         prompt: "Image prompt",
       }),
+      [
+        expect.objectContaining({
+          storageKey: "mock/images/provider_image_1.png",
+        }),
+        expect.objectContaining({
+          storageKey: "mock/images/provider_image_2.png",
+        }),
+      ],
     );
     expect(result).toEqual({ status: "succeeded", jobId: "job_image" });
   });
@@ -125,6 +157,7 @@ describe("generation worker runner", () => {
         provider: "mock-video",
         prompt: "Video prompt",
       }),
+      undefined,
     );
     expect(result).toEqual({ status: "succeeded", jobId: "job_video" });
   });
@@ -133,7 +166,8 @@ describe("generation worker runner", () => {
     vi.mocked(client.claimNextJob).mockResolvedValue({
       job: jobRecord("job_image", shotInput()),
     });
-    vi.mocked(registry.image.generateImage).mockRejectedValue(
+    const imageProvider = registry.imageProviders.get("mock-image");
+    vi.mocked(imageProvider.generateImage).mockRejectedValue(
       new ProviderError({
         provider: "mock-image",
         code: "MOCK_PROVIDER_FAILURE",
@@ -182,6 +216,9 @@ function shotInput(): ShotToImageJobInput {
     missingContext: [],
     provider: "mock-image",
     model: "mock-image-v1",
+    aspectRatio: "16:9",
+    count: 2,
+    providerParams: { quality: "high" },
   };
 }
 

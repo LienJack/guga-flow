@@ -3,6 +3,7 @@ import type {
   EditorProvider,
   ImageGenerationInput,
   ImageProvider,
+  ImageProviderResult,
   LlmProvider,
   MockAssetOutput,
   MockEditorPackageOutput,
@@ -170,12 +171,12 @@ export class MockImageProvider implements ImageProvider {
     requiresApiKey: false,
   };
 
-  async generateImage(input: ImageGenerationInput): Promise<MockAssetOutput> {
+  async generateImage(input: ImageGenerationInput): Promise<ImageProviderResult> {
     failIfRequested(this.capability.id, input.forceFailure);
 
     const assetId = stableId("asset_image", `${input.projectId}-${input.prompt}`);
 
-    return {
+    const output: MockAssetOutput = {
       assetId,
       storageKey: `mock/images/${assetId}.png`,
       mimeType: "image/png",
@@ -183,6 +184,10 @@ export class MockImageProvider implements ImageProvider {
       model: "mock-image-v1",
       prompt: input.prompt,
       referenceAssetIds: input.referenceAssetIds ?? [],
+    };
+
+    return {
+      outputs: [output],
     };
   }
 }

@@ -2,7 +2,7 @@ import type { ProviderFailure } from "@guga-flow/shared-types";
 
 import type { GenerationWorkerClient } from "./generation-client";
 import {
-  createMockGenerationExecutorRegistry,
+  createGenerationExecutorRegistry,
   executeGenerationJob,
   toProviderFailure,
   type GenerationExecutorRegistry,
@@ -27,7 +27,7 @@ export interface GenerationWorkerLoopOptions extends GenerationWorkerRunnerOptio
 export async function runOneGenerationJob(
   options: GenerationWorkerRunnerOptions,
 ): Promise<GenerationWorkerRunResult> {
-  const registry = options.registry ?? createMockGenerationExecutorRegistry();
+  const registry = options.registry ?? createGenerationExecutorRegistry();
   const claim = await options.client.claimNextJob();
   const job = claim.job;
 
@@ -37,8 +37,8 @@ export async function runOneGenerationJob(
   }
 
   try {
-    const providerOutput = await executeGenerationJob(job, registry);
-    await options.client.succeedJob(job.id, providerOutput);
+    const result = await executeGenerationJob(job, registry);
+    await options.client.succeedJob(job.id, result.providerOutput, result.providerOutputs);
     options.logger?.info(`Generation job ${job.id} succeeded.`);
     return { status: "succeeded", jobId: job.id };
   } catch (error) {

@@ -1,6 +1,9 @@
 import {
   ProviderError,
+  createImageProviderRegistry,
   createMockProviderRegistry,
+  type ImageProviderOutput,
+  type ImageProviderRegistry,
   type MockAssetOutput,
   type ProviderRegistry,
 } from "@guga-flow/provider-contracts";
@@ -11,12 +14,30 @@ import type {
   ProviderFailure,
 } from "@guga-flow/shared-types";
 
-export type GenerationExecutorRegistry = Pick<ProviderRegistry, "image" | "video">;
+export interface GenerationExecutorRegistry {
+  imageProviders: ImageProviderRegistry;
+  video: ProviderRegistry["video"];
+}
+
+export interface GenerationExecutorResult {
+  providerOutput: GeneratedMediaProviderOutput;
+  providerOutputs?: GeneratedMediaProviderOutput[];
+}
+
+export function createGenerationExecutorRegistry(
+  env: Record<string, string | undefined> = process.env,
+): GenerationExecutorRegistry {
+  const registry = createMockProviderRegistry();
+  return {
+    imageProviders: createImageProviderRegistry({ env }),
+    video: registry.video,
+  };
+}
 
 export function createMockGenerationExecutorRegistry(): GenerationExecutorRegistry {
   const registry = createMockProviderRegistry();
   return {
-    image: registry.image,
+    imageProviders: createImageProviderRegistry({ env: {} }),
     video: registry.video,
   };
 }
@@ -24,18 +45,28 @@ export function createMockGenerationExecutorRegistry(): GenerationExecutorRegist
 export async function executeGenerationJob(
   job: GenerationJobRecord<GenerationJobInput>,
   registry: GenerationExecutorRegistry = createMockGenerationExecutorRegistry(),
-): Promise<GeneratedMediaProviderOutput> {
+): Promise<GenerationExecutorResult> {
   const input = job.inputJson;
 
   if (input.operation === "shot_to_image") {
-    const output = await registry.image.generateImage({
+    const provider = registry.imageProviders.get(input.provider);
+    const result = await provider.generateImage({
       projectId: input.projectId,
       prompt: input.prompt,
       negativePrompt: input.negativePrompt,
+      model: input.model,
+      aspectRatio: input.aspectRatio,
+      count: input.count,
       referenceAssetIds: input.referenceAssetIds,
+      providerParams: input.providerParams,
       forceFailure: input.forceFailure,
     });
-    return toGeneratedMediaProviderOutput(output, input.prompt);
+    const providerOutputs = result.outputs.map((output) => toGeneratedMediaProviderOutput(output, input.prompt));
+    const providerOutput = firstProviderOutput(provider.capability.id, providerOutputs);
+    return {
+      providerOutput,
+      providerOutputs: providerOutputs.length > 1 ? providerOutputs : undefined,
+    };
   }
 
   if (input.operation === "image_to_video") {
@@ -47,7 +78,9 @@ export async function executeGenerationJob(
       referenceAssetIds: input.referenceAssetIds,
       forceFailure: input.forceFailure,
     });
-    return toGeneratedMediaProviderOutput(output, input.prompt);
+    return {
+      providerOutput: toGeneratedMediaProviderOutput(output, input.prompt),
+    };
   }
 
   return Promise.reject(new Error(`Unsupported generation operation: ${job.operation}`));
@@ -72,7 +105,7 @@ export function toProviderFailure(error: unknown, provider: string): ProviderFai
 }
 
 function toGeneratedMediaProviderOutput(
-  output: MockAssetOutput,
+  output: MockAssetOutput | ImageProviderOutput,
   prompt: string,
 ): GeneratedMediaProviderOutput {
   return {
@@ -83,5 +116,28 @@ function toGeneratedMediaProviderOutput(
     model: output.model,
     prompt: output.prompt ?? prompt,
     referenceAssetIds: output.referenceAssetIds,
+    remoteUrl: output.remoteUrl,
+    bytesBase64: output.bytesBase64,
+    width: output.width,
+    height: output.height,
+    providerTaskId: output.providerTaskId,
+    rawJson: output.rawJson,
   };
+}
+
+function firstProviderOutput(
+  provider: string,
+  outputs: GeneratedMediaProviderOutput[],
+): GeneratedMediaProviderOutput {
+  const output = outputs[0];
+  if (output) {
+    return output;
+  }
+
+  throw new ProviderError({
+    provider,
+    code: "PROVIDER_EMPTY_RESPONSE",
+    message: `${provider} did not return any generated media outputs.`,
+    retryable: false,
+  });
 }

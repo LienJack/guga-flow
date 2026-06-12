@@ -11,14 +11,16 @@ describe("mock providers", () => {
       title: "Demo",
       novelText: "A hero watches the skyline.",
     });
-    const image = await registry.image.generateImage({
+    const imageResult = await registry.image.generateImage({
       projectId: "project_1",
       prompt: storyboard.scenes[0]?.shots[0]?.imagePrompt ?? "fallback",
     });
+    const image = imageResult.outputs[0];
+    expect(image).toBeDefined();
     const video = await registry.video.generateVideo({
       projectId: "project_1",
       prompt: storyboard.scenes[0]?.shots[0]?.videoPrompt ?? "fallback",
-      sourceImageAssetId: image.assetId,
+      sourceImageAssetId: image?.assetId,
     });
     const editorPackage = await registry.editor.createPackage({
       projectId: "project_1",
@@ -26,8 +28,8 @@ describe("mock providers", () => {
     });
 
     expect(storyboard.characters[0]?.tempId).toBe("char_hero");
-    expect(image.provider).toBe("mock-image");
-    expect(image.referenceAssetIds).toEqual([]);
+    expect(image?.provider).toBe("mock-image");
+    expect(image?.referenceAssetIds).toEqual([]);
     expect(video.provider).toBe("mock-video");
     expect(editorPackage.videoAssetIds).toEqual([video.assetId]);
   });
@@ -56,21 +58,23 @@ describe("mock providers", () => {
       "Image prompt cinematic hero at the console shot visual action camera slow dolly",
     ].join(" ");
 
-    const image = await registry.image.generateImage({
+    const imageResult = await registry.image.generateImage({
       projectId: "project_1",
       prompt,
     });
+    const image = imageResult.outputs[0];
+    expect(image).toBeDefined();
     const video = await registry.video.generateVideo({
       projectId: "project_1",
       prompt,
-      sourceImageAssetId: image.assetId,
+      sourceImageAssetId: image?.assetId,
     });
-    const imageFilename = image.storageKey.split("/").pop() ?? "";
+    const imageFilename = image?.storageKey.split("/").pop() ?? "";
     const videoFilename = video.storageKey.split("/").pop() ?? "";
 
     expect(imageFilename.length).toBeLessThanOrEqual(120);
     expect(videoFilename.length).toBeLessThanOrEqual(120);
-    expect(image.assetId).toMatch(/-[a-f0-9]{10}$/);
+    expect(image?.assetId).toMatch(/-[a-f0-9]{10}$/);
     expect(video.assetId).toMatch(/-[a-f0-9]{10}$/);
   });
 });

@@ -90,8 +90,7 @@ export interface ImageProviderResult {
   outputs: ImageProviderOutput[];
 }
 
-export interface MockAssetOutput extends ImageProviderOutput {
-}
+export interface MockAssetOutput extends ImageProviderOutput {}
 
 export interface MockEditorPackageOutput {
   packageAssetId: string;
@@ -106,7 +105,7 @@ export interface LlmProvider {
 
 export interface ImageProvider {
   capability: ProviderCapability;
-  generateImage(input: ImageGenerationInput): Promise<ImageProviderOutput>;
+  generateImage(input: ImageGenerationInput): Promise<ImageProviderResult>;
 }
 
 export interface VideoProvider {

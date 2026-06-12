@@ -72,12 +72,22 @@ export async function runMockMediaWorkflow(
 
   let image: MockAssetOutput;
   try {
-    image = await registry.image.generateImage({
+    const imageResult = await registry.image.generateImage({
       projectId: input.projectId,
       prompt: imagePrompt,
       referenceAssetIds: input.referenceAssetIds ?? [],
       forceFailure: input.forceFailureStage === "image",
     });
+    const firstImage = imageResult.outputs[0];
+    if (!firstImage) {
+      throw new ProviderError({
+        provider: registry.image.capability.id,
+        code: "PROVIDER_EMPTY_RESPONSE",
+        message: "Mock image provider did not return an output.",
+        retryable: false,
+      });
+    }
+    image = firstImage;
   } catch (error) {
     return {
       status: "failed",
