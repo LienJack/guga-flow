@@ -30,6 +30,10 @@ export class HealthController {
           selected: config.videoProvider,
           mockAvailable: true,
           realKeyConfigured: config.realProviderKeysConfigured.video,
+          configuredProviders: {
+            seedance: config.videoProviderKeysConfigured.seedance,
+            happyhorse: config.videoProviderKeysConfigured.happyhorse,
+          },
         },
       },
     };

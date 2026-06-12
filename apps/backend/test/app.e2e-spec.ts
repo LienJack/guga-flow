@@ -664,6 +664,59 @@ function createProvidersE2eMock() {
         },
       ],
     })),
+    getVideoProviders: vi.fn(() => ({
+      providers: [
+        {
+          id: "mock-video",
+          displayName: "Mock Video",
+          enabled: true,
+          requiresApiKey: false,
+          defaultModel: "mock-video-v1",
+          models: [{ id: "mock-video-v1", displayName: "Mock Video v1", default: true }],
+          supportedModes: ["image_to_video"],
+          supportsFirstFrame: true,
+          supportsLastFrame: false,
+          supportsReferenceImages: true,
+          maxReferenceImages: 99,
+          supportsCancel: true,
+          defaultDurationSeconds: 4,
+          supportedDurationSeconds: [4, 5, 6, 8, 10],
+          defaultResolution: "720p",
+          supportedResolutions: ["720p"],
+          defaultAspectRatio: "16:9",
+          supportedAspectRatios: ["9:16", "16:9", "1:1"],
+          parameters: [],
+        },
+        {
+          id: "seedance",
+          displayName: "Seedance",
+          enabled: true,
+          requiresApiKey: true,
+          defaultModel: "seedance-1-0-pro",
+          models: [{ id: "seedance-1-0-pro", displayName: "Seedance 1.0 Pro", default: true }],
+          supportedModes: ["text_to_video", "image_to_video"],
+          supportsFirstFrame: true,
+          supportsLastFrame: false,
+          supportsReferenceImages: true,
+          maxReferenceImages: 1,
+          supportsCancel: true,
+          defaultDurationSeconds: 5,
+          supportedDurationSeconds: [5, 10],
+          defaultResolution: "720p",
+          supportedResolutions: ["720p", "1080p"],
+          defaultAspectRatio: "16:9",
+          supportedAspectRatios: ["9:16", "16:9", "1:1"],
+          parameters: [
+            {
+              id: "cameraFixed",
+              label: "Camera fixed",
+              type: "boolean",
+              defaultValue: false,
+            },
+          ],
+        },
+      ],
+    })),
   };
 }
 
@@ -700,6 +753,26 @@ describe("project api e2e", () => {
   afterAll(async () => {
     await app?.close();
     vi.unstubAllGlobals();
+  });
+
+  it("lists image and video provider catalogs without provider secrets", async () => {
+    const imageResponse = await request(app.getHttpServer()).get("/api/v1/providers/image").expect(200);
+    const videoResponse = await request(app.getHttpServer()).get("/api/v1/providers/video").expect(200);
+
+    expect(imageResponse.body.providers.map((provider: { id: string }) => provider.id)).toContain(
+      "mock-image",
+    );
+    expect(videoResponse.body.providers.map((provider: { id: string }) => provider.id)).toEqual([
+      "mock-video",
+      "seedance",
+    ]);
+    expect(videoResponse.body.providers.find((provider: { id: string }) => provider.id === "seedance")).toMatchObject({
+      enabled: true,
+      supportsCancel: true,
+      supportedResolutions: ["720p", "1080p"],
+    });
+    expect(JSON.stringify(videoResponse.body)).not.toContain("secret");
+    expect(JSON.stringify(videoResponse.body)).not.toContain("API_KEY");
   });
 
   it("creates, lists, updates, duplicates, and deletes projects", async () => {

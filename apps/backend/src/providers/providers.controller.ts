@@ -10,4 +10,9 @@ export class ProvidersController {
   listImageProviders() {
     return this.providersService.getImageProviders();
   }
+
+  @Get("video")
+  listVideoProviders() {
+    return this.providersService.getVideoProviders();
+  }
 }

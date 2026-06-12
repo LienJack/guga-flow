@@ -26,6 +26,8 @@ import type {
   RetryGenerationJobResult,
   ShotNodeData,
   ShotToImageJobInput,
+  VideoProviderCatalogItem,
+  VideoProviderResolution,
 } from "@guga-flow/shared-types";
 import {
   GENERATION_JOB_STATUSES,
@@ -190,7 +192,7 @@ export class GenerationService {
     const jobInput =
       input.operation === "shot_to_image"
         ? await this.buildShotToImageInput(projectId, input.sourceNodeId, input)
-        : await this.buildImageToVideoInput(projectId, input.sourceNodeId, input.forceFailure);
+        : await this.buildImageToVideoInput(projectId, input.sourceNodeId, input);
 
     const job = await this.runTransaction(async (tx) => {
       const created = await tx.generationJob.create({
@@ -485,7 +487,7 @@ export class GenerationService {
   private async buildImageToVideoInput(
     projectId: string,
     imageNodeId: string,
-    forceFailure: boolean | undefined,
+    input: CreateGenerationJobInput,
   ): Promise<ImageToVideoJobInput> {
     const canvas = await this.canvasService.getCanvas(projectId);
     const imageNode = canvas.nodes.find((node) => node.id === imageNodeId);
@@ -512,9 +514,15 @@ export class GenerationService {
       optionalString(imageData.prompt) ??
       optionalString(imageData.description) ??
       "Animate the generated image into a short cinematic video.";
-    const durationSeconds =
-      optionalNumber(parentShotData.durationSeconds) ?? optionalNumber(parentShotData.durationSec) ?? 4;
-    const referenceAssetIds = parentComposition?.referenceAssetIds ?? stringArray(imageData.referenceAssetIds);
+    const sourceDurationSeconds =
+      optionalNumber(parentShotData.durationSeconds) ?? optionalNumber(parentShotData.durationSec);
+    const providerSettings = this.resolveVideoProviderSettings(input, sourceDurationSeconds);
+    const rawReferenceAssetIds =
+      parentComposition?.referenceAssetIds ?? stringArray(imageData.referenceAssetIds);
+    const referenceLimit = providerSettings.provider.supportsReferenceImages
+      ? providerSettings.provider.maxReferenceImages
+      : 0;
+    const referenceAssetIds = rawReferenceAssetIds.slice(0, referenceLimit);
     const sourceNodeIds = uniqueStrings([
       imageNode.id,
       parentShot?.id,
@@ -530,15 +538,17 @@ export class GenerationService {
       imageNodeId: imageNode.id,
       sourceImageAssetId,
       prompt,
-      durationSeconds,
+      durationSeconds: providerSettings.durationSeconds,
+      aspectRatio: providerSettings.aspectRatio,
+      resolution: providerSettings.resolution,
       parentShotNodeId: parentShot?.id,
       parentShotTitle: parentShot?.title,
       referenceAssetIds,
       sourceNodeIds,
-      provider: "mock-video",
-      model: "mock-video-v1",
-      providerParams: {},
-      forceFailure,
+      provider: providerSettings.provider.id,
+      model: providerSettings.model,
+      providerParams: providerSettings.providerParams,
+      forceFailure: input.forceFailure,
     };
   }
 
@@ -655,7 +665,7 @@ export class GenerationService {
 
   private normalizedProviderParams(
     providerParams: CanvasSnapshotJson | undefined,
-    provider: ImageProviderCatalogItem,
+    provider: Pick<ImageProviderCatalogItem, "displayName" | "parameters">,
   ): CanvasSnapshotJson {
     const raw = dataObject(providerParams);
     const normalized: Record<string, CanvasSnapshotJson> = {};
@@ -681,6 +691,68 @@ export class GenerationService {
     }
 
     return normalized;
+  }
+
+  private resolveVideoProviderSettings(
+    input: CreateGenerationJobInput,
+    fallbackDurationSeconds: number | undefined,
+  ): {
+    provider: VideoProviderCatalogItem;
+    model: string;
+    aspectRatio: ProjectAspectRatio;
+    durationSeconds: number;
+    resolution: VideoProviderResolution;
+    providerParams: CanvasSnapshotJson;
+  } {
+    const providers = this.providersService.getVideoProviders().providers;
+    const providerId = input.videoProvider ?? "mock-video";
+    const provider = providers.find((candidate) => candidate.id === providerId);
+    if (!provider) {
+      throw new BadRequestException(`Unknown video provider: ${providerId}`);
+    }
+    if (!provider.enabled) {
+      throw new BadRequestException(provider.disabledReason ?? `${provider.displayName} is disabled`);
+    }
+    if (!provider.supportedModes.includes("image_to_video")) {
+      throw new BadRequestException(`${provider.displayName} does not support image-to-video generation`);
+    }
+
+    const model = input.videoModel ?? provider.defaultModel;
+    if (!provider.models.some((candidate) => candidate.id === model)) {
+      throw new BadRequestException(`Model ${model} is not available for ${provider.displayName}`);
+    }
+
+    const aspectRatio = input.videoAspectRatio ?? provider.defaultAspectRatio;
+    if (!provider.supportedAspectRatios.includes(aspectRatio)) {
+      throw new BadRequestException(
+        `Aspect ratio ${aspectRatio} is not available for ${provider.displayName}`,
+      );
+    }
+
+    const fallbackDuration =
+      fallbackDurationSeconds && provider.supportedDurationSeconds.includes(fallbackDurationSeconds)
+        ? fallbackDurationSeconds
+        : provider.defaultDurationSeconds;
+    const durationSeconds = input.durationSeconds ?? fallbackDuration;
+    if (!provider.supportedDurationSeconds.includes(durationSeconds)) {
+      throw new BadRequestException(
+        `Duration ${durationSeconds}s is not available for ${provider.displayName}`,
+      );
+    }
+
+    const resolution = input.resolution ?? provider.defaultResolution;
+    if (!provider.supportedResolutions.includes(resolution)) {
+      throw new BadRequestException(`Resolution ${resolution} is not available for ${provider.displayName}`);
+    }
+
+    return {
+      provider,
+      model,
+      aspectRatio,
+      durationSeconds,
+      resolution,
+      providerParams: this.normalizedProviderParams(input.videoProviderParams, provider),
+    };
   }
 
   private async findSourceNode(
@@ -852,7 +924,10 @@ export class GenerationService {
       counts,
       queued: counts.queued,
       running: counts.running + counts.provider_waiting,
+      providerWaiting: counts.provider_waiting,
+      succeeded: counts.succeeded,
       failed: counts.failed,
+      cancelled: counts.cancelled,
     };
   }
 

@@ -1,5 +1,10 @@
 import { Injectable } from "@nestjs/common";
-import type { ImageProviderCatalogItem, ImageProviderCatalogResult } from "@guga-flow/shared-types";
+import type {
+  ImageProviderCatalogItem,
+  ImageProviderCatalogResult,
+  VideoProviderCatalogItem,
+  VideoProviderCatalogResult,
+} from "@guga-flow/shared-types";
 
 import type { AppConfig } from "../config/app-config";
 import { readAppConfig } from "../config/app-config";
@@ -96,9 +101,117 @@ function imageProviderCatalog(config: AppConfig): ImageProviderCatalogItem[] {
   ];
 }
 
+function videoProviderCatalog(config: AppConfig): VideoProviderCatalogItem[] {
+  return [
+    {
+      id: "mock-video",
+      displayName: "Mock Video",
+      enabled: true,
+      requiresApiKey: false,
+      defaultModel: "mock-video-v1",
+      models: [{ id: "mock-video-v1", displayName: "Mock Video v1", default: true }],
+      supportedModes: ["image_to_video"],
+      supportsFirstFrame: true,
+      supportsLastFrame: false,
+      supportsReferenceImages: true,
+      maxReferenceImages: 99,
+      supportsCancel: true,
+      defaultDurationSeconds: 4,
+      supportedDurationSeconds: [4, 5, 6, 8, 10],
+      defaultResolution: "720p",
+      supportedResolutions: ["720p"],
+      defaultAspectRatio: "16:9",
+      supportedAspectRatios: ["9:16", "16:9", "1:1"],
+      parameters: [],
+    },
+    {
+      id: "seedance",
+      displayName: "Seedance",
+      enabled: config.videoProviderKeysConfigured.seedance,
+      disabledReason: config.videoProviderKeysConfigured.seedance
+        ? undefined
+        : disabledReason("Seedance"),
+      requiresApiKey: true,
+      defaultModel: "seedance-1-0-pro",
+      models: [
+        { id: "seedance-1-0-pro", displayName: "Seedance 1.0 Pro", default: true },
+        { id: "seedance-1-0-lite", displayName: "Seedance 1.0 Lite" },
+      ],
+      supportedModes: ["text_to_video", "image_to_video"],
+      supportsFirstFrame: true,
+      supportsLastFrame: false,
+      supportsReferenceImages: true,
+      maxReferenceImages: 1,
+      supportsCancel: true,
+      defaultDurationSeconds: 5,
+      supportedDurationSeconds: [5, 10],
+      defaultResolution: "720p",
+      supportedResolutions: ["720p", "1080p"],
+      defaultAspectRatio: "16:9",
+      supportedAspectRatios: ["9:16", "16:9", "1:1"],
+      parameters: [
+        {
+          id: "cameraFixed",
+          label: "Camera fixed",
+          type: "boolean",
+          defaultValue: false,
+        },
+      ],
+    },
+    {
+      id: "happyhorse",
+      displayName: "Happy Horse",
+      enabled: config.videoProviderKeysConfigured.happyhorse,
+      disabledReason: config.videoProviderKeysConfigured.happyhorse
+        ? undefined
+        : disabledReason("Happy Horse"),
+      requiresApiKey: true,
+      defaultModel: "alibaba/happy-horse/image-to-video",
+      models: [
+        {
+          id: "alibaba/happy-horse/image-to-video",
+          displayName: "Happy Horse Image to Video",
+          default: true,
+        },
+      ],
+      supportedModes: ["image_to_video"],
+      supportsFirstFrame: true,
+      supportsLastFrame: false,
+      supportsReferenceImages: true,
+      maxReferenceImages: 1,
+      supportsCancel: true,
+      defaultDurationSeconds: 5,
+      supportedDurationSeconds: [5, 10],
+      defaultResolution: "720p",
+      supportedResolutions: ["720p", "1080p"],
+      defaultAspectRatio: "16:9",
+      supportedAspectRatios: ["9:16", "16:9", "1:1"],
+      parameters: [
+        {
+          id: "motionStrength",
+          label: "Motion strength",
+          type: "select",
+          defaultValue: "medium",
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High" },
+          ],
+        },
+      ],
+    },
+  ];
+}
+
 export function buildImageProviderCatalog(config: AppConfig): ImageProviderCatalogResult {
   return {
     providers: imageProviderCatalog(config),
+  };
+}
+
+export function buildVideoProviderCatalog(config: AppConfig): VideoProviderCatalogResult {
+  return {
+    providers: videoProviderCatalog(config),
   };
 }
 
@@ -106,5 +219,9 @@ export function buildImageProviderCatalog(config: AppConfig): ImageProviderCatal
 export class ProvidersService {
   getImageProviders(): ImageProviderCatalogResult {
     return buildImageProviderCatalog(readAppConfig());
+  }
+
+  getVideoProviders(): VideoProviderCatalogResult {
+    return buildVideoProviderCatalog(readAppConfig());
   }
 }

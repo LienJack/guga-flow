@@ -9,6 +9,7 @@ import type {
   ShotPromptCompositionResult,
   ShotNodeData,
   ShotToImageJobInput,
+  VideoProviderCatalogResult,
 } from "@guga-flow/shared-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -147,11 +148,16 @@ function createAssetsServiceMock() {
 function createProvidersServiceMock() {
   return {
     getImageProviders: vi.fn(() => imageProviderCatalogFixture(false)),
+    getVideoProviders: vi.fn(() => videoProviderCatalogFixture(false)),
   };
 }
 
 function enableImage2(providersService: ReturnType<typeof createProvidersServiceMock>) {
   providersService.getImageProviders.mockReturnValue(imageProviderCatalogFixture(true));
+}
+
+function enableSeedance(providersService: ReturnType<typeof createProvidersServiceMock>) {
+  providersService.getVideoProviders.mockReturnValue(videoProviderCatalogFixture(true));
 }
 
 function imageProviderCatalogFixture(image2Enabled: boolean): ImageProviderCatalogResult {
@@ -199,6 +205,63 @@ function imageProviderCatalogFixture(image2Enabled: boolean): ImageProviderCatal
               { value: "medium", label: "Medium" },
               { value: "high", label: "High" },
             ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function videoProviderCatalogFixture(seedanceEnabled: boolean): VideoProviderCatalogResult {
+  return {
+    providers: [
+      {
+        id: "mock-video",
+        displayName: "Mock Video",
+        enabled: true,
+        requiresApiKey: false,
+        defaultModel: "mock-video-v1",
+        models: [{ id: "mock-video-v1", displayName: "Mock Video v1", default: true }],
+        supportedModes: ["image_to_video"],
+        supportsFirstFrame: true,
+        supportsLastFrame: false,
+        supportsReferenceImages: true,
+        maxReferenceImages: 99,
+        supportsCancel: true,
+        defaultDurationSeconds: 4,
+        supportedDurationSeconds: [4, 5, 6, 8, 10],
+        defaultResolution: "720p",
+        supportedResolutions: ["720p"],
+        defaultAspectRatio: "16:9",
+        supportedAspectRatios: ["9:16", "16:9", "1:1"],
+        parameters: [],
+      },
+      {
+        id: "seedance",
+        displayName: "Seedance",
+        enabled: seedanceEnabled,
+        disabledReason: seedanceEnabled ? undefined : "Seedance server-side key is not configured",
+        requiresApiKey: true,
+        defaultModel: "seedance-1-0-pro",
+        models: [{ id: "seedance-1-0-pro", displayName: "Seedance 1.0 Pro", default: true }],
+        supportedModes: ["text_to_video", "image_to_video"],
+        supportsFirstFrame: true,
+        supportsLastFrame: false,
+        supportsReferenceImages: true,
+        maxReferenceImages: 1,
+        supportsCancel: true,
+        defaultDurationSeconds: 5,
+        supportedDurationSeconds: [5, 10],
+        defaultResolution: "720p",
+        supportedResolutions: ["720p", "1080p"],
+        defaultAspectRatio: "16:9",
+        supportedAspectRatios: ["9:16", "16:9", "1:1"],
+        parameters: [
+          {
+            id: "cameraFixed",
+            label: "Camera fixed",
+            type: "boolean",
+            defaultValue: false,
           },
         ],
       },
@@ -323,10 +386,64 @@ describe("GenerationService", () => {
           sourceImageAssetId: "asset_image_1",
           parentShotNodeId: "shot_1",
           durationSeconds: 5,
+          aspectRatio: "16:9",
+          resolution: "720p",
         }),
       }),
     });
     expect(result.job.operation).toBe("image_to_video");
+  });
+
+  it("creates an image-to-video job with enabled real video provider settings", async () => {
+    enableSeedance(providersService);
+
+    await service.createJob("project_1", {
+      operation: "image_to_video",
+      sourceNodeId: "image_1",
+      videoProvider: "seedance",
+      videoModel: "seedance-1-0-pro",
+      videoAspectRatio: "9:16",
+      durationSeconds: 10,
+      resolution: "1080p",
+      videoProviderParams: {
+        cameraFixed: true,
+        ignored: "not persisted",
+      },
+    });
+
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        provider: "seedance",
+        model: "seedance-1-0-pro",
+        inputJson: expect.objectContaining({
+          provider: "seedance",
+          model: "seedance-1-0-pro",
+          aspectRatio: "9:16",
+          durationSeconds: 10,
+          resolution: "1080p",
+          providerParams: { cameraFixed: true },
+          referenceAssetIds: ["asset_ref_1"],
+        }),
+      }),
+    });
+  });
+
+  it("rejects disabled or unsupported video provider settings", async () => {
+    await expect(
+      service.createJob("project_1", {
+        operation: "image_to_video",
+        sourceNodeId: "image_1",
+        videoProvider: "seedance",
+      }),
+    ).rejects.toThrow("Seedance server-side key is not configured");
+
+    await expect(
+      service.createJob("project_1", {
+        operation: "image_to_video",
+        sourceNodeId: "image_1",
+        durationSeconds: 15,
+      }),
+    ).rejects.toThrow("Duration 15s is not available for Mock Video");
   });
 
   it("rejects invalid image-to-video source nodes", async () => {
@@ -359,7 +476,14 @@ describe("GenerationService", () => {
     const result = await service.listJobs("project_1");
 
     expect(result.jobs.map((job) => job.id)).toEqual(["job_2", "job_1"]);
-    expect(result.queueSummary).toMatchObject({ queued: 1, running: 2, failed: 1 });
+    expect(result.queueSummary).toMatchObject({
+      queued: 1,
+      running: 2,
+      providerWaiting: 1,
+      succeeded: 0,
+      failed: 1,
+      cancelled: 0,
+    });
   });
 
   it("claims one queued job and marks its source node running", async () => {

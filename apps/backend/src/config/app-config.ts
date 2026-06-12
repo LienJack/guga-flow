@@ -21,6 +21,10 @@ export interface AppConfig {
     image2: boolean;
     banana: boolean;
   };
+  videoProviderKeysConfigured: {
+    seedance: boolean;
+    happyhorse: boolean;
+  };
 }
 
 const DEFAULT_DATABASE_URL = "postgresql://admin:admin@localhost:5432/guga_flow";
@@ -52,6 +56,12 @@ function readList(value: string | undefined, fallback: string[]): string[] {
 export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const image2KeyConfigured = Boolean(env.OPENAI_API_KEY || env.IMAGE2_API_KEY);
   const bananaKeyConfigured = Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY || env.BANANA_API_KEY);
+  const seedanceKeyConfigured = Boolean(
+    env.SEEDANCE_API_KEY || env.BYTEPLUS_API_KEY || env.ARK_API_KEY || env.MODELARK_API_KEY,
+  );
+  const happyhorseKeyConfigured = Boolean(
+    env.HAPPYHORSE_API_KEY || env.FAL_KEY || env.FAL_API_KEY || env.RUNWARE_API_KEY,
+  );
 
   return {
     port: readNumber("PORT", env.PORT, 3002),
@@ -73,11 +83,15 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     realProviderKeysConfigured: {
       llm: Boolean(env.LLM_API_KEY),
       image: Boolean(env.IMAGE_API_KEY || image2KeyConfigured || bananaKeyConfigured),
-      video: Boolean(env.VIDEO_API_KEY),
+      video: Boolean(env.VIDEO_API_KEY || seedanceKeyConfigured || happyhorseKeyConfigured),
     },
     imageProviderKeysConfigured: {
       image2: image2KeyConfigured,
       banana: bananaKeyConfigured,
+    },
+    videoProviderKeysConfigured: {
+      seedance: seedanceKeyConfigured,
+      happyhorse: happyhorseKeyConfigured,
     },
   };
 }
