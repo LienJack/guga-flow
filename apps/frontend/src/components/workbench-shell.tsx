@@ -14,12 +14,16 @@ interface WorkbenchShellProps {
   projectId?: string;
   projectTitle?: string;
   inspectorSlot?: ReactNode;
+  canvasSlot?: ReactNode;
+  saveStateSlot?: ReactNode;
 }
 
 export function WorkbenchShell({
   projectId,
   projectTitle = "Untitled project",
   inspectorSlot,
+  canvasSlot,
+  saveStateSlot,
 }: WorkbenchShellProps) {
   return (
     <main className="workbench" aria-label="guga-flow workbench">
@@ -37,7 +41,7 @@ export function WorkbenchShell({
             Export
           </button>
         </nav>
-        <div className="save-state">Saved</div>
+        {saveStateSlot ?? <div className="save-state">Saved</div>}
       </header>
 
       <section className="main-grid">
@@ -54,35 +58,37 @@ export function WorkbenchShell({
         </aside>
 
         <section className="canvas-stage" aria-label="Canvas">
-          <div className="canvas-placeholder">
-            <article className="node-preview">
-              <h2>NovelNode</h2>
-              <p>
-                {CANVAS_NODE_TYPES.length} node types are available for later canvas
-                phases.
-              </p>
-            </article>
-
-            <div className="scene-strip" aria-label="Storyboard layout preview">
+          {canvasSlot ?? (
+            <div className="canvas-placeholder">
               <article className="node-preview">
-                <h2>SceneFrame 01</h2>
-                <div className="shot-row">
-                  <div className="shot-card">
-                    <strong>S01-01</strong>
-                    <span>Draft shot</span>
-                  </div>
-                  <div className="shot-card">
-                    <strong>S01-02</strong>
-                    <span>Image pending</span>
-                  </div>
-                  <div className="shot-card">
-                    <strong>S01-03</strong>
-                    <span>Video pending</span>
-                  </div>
-                </div>
+                <h2>NovelNode</h2>
+                <p>
+                  {CANVAS_NODE_TYPES.length} node types are available for later canvas
+                  phases.
+                </p>
               </article>
+
+              <div className="scene-strip" aria-label="Storyboard layout preview">
+                <article className="node-preview">
+                  <h2>SceneFrame 01</h2>
+                  <div className="shot-row">
+                    <div className="shot-card">
+                      <strong>S01-01</strong>
+                      <span>Draft shot</span>
+                    </div>
+                    <div className="shot-card">
+                      <strong>S01-02</strong>
+                      <span>Image pending</span>
+                    </div>
+                    <div className="shot-card">
+                      <strong>S01-03</strong>
+                      <span>Video pending</span>
+                    </div>
+                  </div>
+                </article>
+              </div>
             </div>
-          </div>
+          )}
         </section>
 
         <aside className="inspector" aria-label="Inspector">

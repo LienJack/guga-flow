@@ -20,4 +20,17 @@ describe("WorkbenchShell", () => {
     expect(html).toContain("Provider mode");
     expect(html).toContain("Mock");
   });
+
+  it("renders injected canvas and save status slots", () => {
+    const html = renderToStaticMarkup(
+      <WorkbenchShell
+        canvasSlot={<div>Persistent canvas</div>}
+        saveStateSlot={<div className="save-state">Saving</div>}
+      />,
+    );
+
+    expect(html).toContain("Persistent canvas");
+    expect(html).toContain("Saving");
+    expect(html).not.toContain("NovelNode");
+  });
 });
