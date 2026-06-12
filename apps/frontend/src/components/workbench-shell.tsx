@@ -18,14 +18,17 @@ interface WorkbenchShellProps {
   sidebarSlot?: ReactNode;
   canvasSlot?: ReactNode;
   saveStateSlot?: ReactNode;
-  queueSummary?: Pick<GenerationQueueSummary, "queued" | "running" | "failed">;
+  queueSummary?: Pick<
+    GenerationQueueSummary,
+    "queued" | "running" | "failed" | "providerWaiting" | "cancelled"
+  >;
   storyboardEnabled?: boolean;
 }
 
 export function WorkbenchShell({
   projectId,
   projectTitle = "Untitled project",
-  queueSummary = { queued: 0, running: 0, failed: 0 },
+  queueSummary = { queued: 0, running: 0, providerWaiting: 0, failed: 0, cancelled: 0 },
   inspectorSlot,
   sidebarSlot,
   canvasSlot,
@@ -137,7 +140,9 @@ export function WorkbenchShell({
         <div className="queue-summary">
           <span className="queue-pill">{queueSummary.queued} queued</span>
           <span className="queue-pill">{queueSummary.running} running</span>
+          <span className="queue-pill">{queueSummary.providerWaiting ?? 0} waiting</span>
           <span className="queue-pill warning">{queueSummary.failed} failed</span>
+          <span className="queue-pill">{queueSummary.cancelled ?? 0} cancelled</span>
         </div>
       </footer>
     </main>

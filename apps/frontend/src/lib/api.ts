@@ -7,6 +7,8 @@ import type {
   CreateCanvasEdgeResult,
   CreateCanvasNodeInput,
   CreateCanvasNodeResult,
+  CreateBatchImagesToVideosJobInput,
+  CreateBatchImagesToVideosJobResult,
   CreateGenerationJobInput,
   CreateGenerationJobResult,
   CreateNovelDocumentInput,
@@ -18,7 +20,9 @@ import type {
   ComposeShotPromptInput,
   GenerateStoryboardResult,
   GenerationJobListResult,
+  GenerationJobRecord,
   ImageProviderCatalogResult,
+  VideoProviderCatalogResult,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
   ImportStoryboardToCanvasInput,
@@ -362,6 +366,23 @@ export function getImageProviderCatalog(): Promise<ImageProviderCatalogResult> {
   return requestJson<ImageProviderCatalogResult>("/providers/image");
 }
 
+export function getVideoProviderCatalog(): Promise<VideoProviderCatalogResult> {
+  return requestJson<VideoProviderCatalogResult>("/providers/video");
+}
+
+export function createBatchImagesToVideosJobs(
+  projectId: string,
+  input: CreateBatchImagesToVideosJobInput,
+): Promise<CreateBatchImagesToVideosJobResult> {
+  return requestJson<CreateBatchImagesToVideosJobResult>(
+    `/projects/${projectId}/generation/jobs/batch-images-to-videos`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 export function listGenerationJobs(projectId: string): Promise<GenerationJobListResult> {
   return requestJson<GenerationJobListResult>(`/projects/${projectId}/generation/jobs`);
 }
@@ -372,6 +393,13 @@ export function retryGenerationJob(
 ): Promise<RetryGenerationJobResult> {
   return requestJson<RetryGenerationJobResult>(
     `/projects/${projectId}/generation/jobs/${jobId}/retry`,
+    { method: "POST" },
+  );
+}
+
+export function cancelGenerationJob(projectId: string, jobId: string): Promise<GenerationJobRecord> {
+  return requestJson<GenerationJobRecord>(
+    `/projects/${projectId}/generation/jobs/${jobId}/cancel`,
     { method: "POST" },
   );
 }

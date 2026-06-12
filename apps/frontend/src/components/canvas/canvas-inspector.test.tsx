@@ -82,7 +82,7 @@ describe("CanvasInspector", () => {
   it("renders empty, multi, and unsupported selection states", () => {
     expect(renderInspector({ selection: { kind: "empty" } })).toContain("No selection");
 
-    expect(renderInspector({ selection: { kind: "multi", count: 2 } })).toContain("2 objects");
+    expect(renderInspector({ selection: { kind: "multi", count: 2, nodeIds: [] } })).toContain("2 objects");
 
     expect(
       renderInspector({ selection: { kind: "unsupported", shapeId: "shape:geo-1", shapeType: "geo" } }),

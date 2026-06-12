@@ -3,6 +3,7 @@ import type {
   CanvasNodeRecord,
   GenerationJobRecord,
   GenerationQueueSummary,
+  ImageNodeData,
   UpdateCanvasNodeInput,
 } from "@guga-flow/shared-types";
 import React from "react";
@@ -13,7 +14,7 @@ import { type CanvasGraphState } from "./canvas-edge-data";
 import { CanvasEdgeInspector } from "./canvas-edge-inspector";
 import type { CanvasSelectionState } from "./canvas-selection";
 import { BusinessNodeForm } from "./business-node-form";
-import { GenerationActions } from "./generation-actions";
+import { GenerationActions, GenerationBatchActions } from "./generation-actions";
 import { NodeReferenceAssets } from "./node-reference-assets";
 import { buildPromptPreviewRefreshKey, ShotPromptPreview } from "./shot-prompt-preview";
 
@@ -49,6 +50,17 @@ export function CanvasInspector({
       ? edges.find((edge) => edge.id === selection.edgeId)
       : undefined;
   const promptRefreshKey = selectedNode ? buildPromptPreviewRefreshKey(nodes, edges) : "";
+  const selectedBatchImageNodes =
+    selection.kind === "multi"
+      ? selection.nodeIds
+          .map((nodeId) => nodes.find((node) => node.id === nodeId))
+          .filter((node): node is CanvasNodeRecord<ImageNodeData> => {
+            if (!node || node.type !== "image") {
+              return false;
+            }
+            return typeof (node.dataJson as ImageNodeData | undefined)?.assetId === "string";
+          })
+      : [];
 
   return (
     <div className="canvas-inspector">
@@ -99,6 +111,14 @@ export function CanvasInspector({
             generationJobs={generationJobs}
             projectId={projectId}
             node={selectedNode}
+            onGenerationChanged={onGenerationChanged}
+          />
+        ) : null}
+        {selection.kind === "multi" ? (
+          <GenerationBatchActions
+            generationJobs={generationJobs}
+            imageNodes={selectedBatchImageNodes}
+            projectId={projectId}
             onGenerationChanged={onGenerationChanged}
           />
         ) : null}

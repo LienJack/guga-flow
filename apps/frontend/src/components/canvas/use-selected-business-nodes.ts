@@ -20,7 +20,14 @@ export function selectionFromShapes(
     return EMPTY_CANVAS_SELECTION;
   }
   if (shapes.length > 1) {
-    return { kind: "multi", count: shapes.length };
+    return {
+      kind: "multi",
+      count: shapes.length,
+      nodeIds: shapes.flatMap((shape) => {
+        const nodeId = nodeIdFromProps(shape.props);
+        return shape && isBusinessNodeShapeType(shape.type) && nodeId ? [nodeId] : [];
+      }),
+    };
   }
 
   const [shape] = shapes;

@@ -21,7 +21,7 @@ describe("business node selection helpers", () => {
         { id: "shape:shot-1", type: "business_shot", props: { nodeId: "node_1" } },
         { id: "shape:shot-2", type: "business_shot", props: { nodeId: "node_2" } },
       ]),
-    ).toEqual({ kind: "multi", count: 2 });
+    ).toEqual({ kind: "multi", count: 2, nodeIds: ["node_1", "node_2"] });
     expect(selectionFromShapes([{ id: "shape:geo-1", type: "geo" }])).toEqual({
       kind: "unsupported",
       shapeId: "shape:geo-1",

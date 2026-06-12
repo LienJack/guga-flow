@@ -11,8 +11,11 @@ import { describe, expect, it, vi } from "vitest";
 import { buildGenerationJobInputForOperation, GenerationActions } from "./generation-actions";
 
 vi.mock("../../lib/api", () => ({
+  cancelGenerationJob: vi.fn(),
+  createBatchImagesToVideosJobs: vi.fn(),
   createGenerationJob: vi.fn(),
   getImageProviderCatalog: vi.fn(),
+  getVideoProviderCatalog: vi.fn(),
   retryGenerationJob: vi.fn(),
 }));
 
@@ -60,7 +63,8 @@ describe("GenerationActions", () => {
     );
 
     expect(html).toContain("Generate Video");
-    expect(html).not.toContain("Provider");
+    expect(html).toContain("Provider");
+    expect(html).toContain("Mock Video");
   });
 
   it("does not render image-to-video action before an image asset exists", () => {
@@ -110,9 +114,24 @@ describe("GenerationActions", () => {
       providerParams: { quality: "high" },
     });
 
-    expect(buildGenerationJobInputForOperation("image_to_video", "image_1")).toEqual({
+    expect(
+      buildGenerationJobInputForOperation("image_to_video", "image_1", undefined, {
+        videoProvider: "seedance",
+        videoModel: "seedance-1-0-pro",
+        videoAspectRatio: "16:9",
+        durationSeconds: 5,
+        resolution: "1080p",
+        videoProviderParams: { cameraFixed: true },
+      }),
+    ).toEqual({
       operation: "image_to_video",
       sourceNodeId: "image_1",
+      videoProvider: "seedance",
+      videoModel: "seedance-1-0-pro",
+      videoAspectRatio: "16:9",
+      durationSeconds: 5,
+      resolution: "1080p",
+      videoProviderParams: { cameraFixed: true },
     });
   });
 });

@@ -29,10 +29,14 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
   const [canvasNodes, setCanvasNodes] = useState<CanvasNodeRecord[]>([]);
   const [canvasEdges, setCanvasEdges] = useState<CanvasEdgeRecord[]>([]);
   const [generationJobs, setGenerationJobs] = useState<GenerationJobRecord[]>([]);
-  const [queueSummary, setQueueSummary] = useState<Pick<GenerationQueueSummary, "queued" | "running" | "failed">>({
+  const [queueSummary, setQueueSummary] = useState<
+    Pick<GenerationQueueSummary, "queued" | "running" | "failed" | "providerWaiting" | "cancelled">
+  >({
     queued: 0,
     running: 0,
+    providerWaiting: 0,
     failed: 0,
+    cancelled: 0,
   });
   const [selection, setSelection] = useState<CanvasSelectionState>(EMPTY_CANVAS_SELECTION);
   const [fitRequestKey, setFitRequestKey] = useState(0);
