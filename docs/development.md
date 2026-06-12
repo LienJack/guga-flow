@@ -305,6 +305,54 @@ Phase 7 browser/API smoke checklist:
 - Confirm canvas autosave still reaches `Saved`, Asset Library preview/delete remains usable, and semantic edge Inspector still opens and deletes edges.
 - Check browser console errors. The tldraw zh-cn missing-message warning is acceptable if no application error is logged.
 
+## Generation Worker And Mock Media Workflow
+
+Phase 8 turns composed Shot prompts and generated ImageNodes into durable mock media jobs. The browser creates jobs, the backend owns job input and side effects, and the worker executes provider calls outside the frontend.
+
+Backend generation API:
+
+- `POST /api/v1/projects/:projectId/generation/jobs` creates `shot_to_image` and `image_to_video` jobs.
+- `GET /api/v1/projects/:projectId/generation/jobs` lists project jobs and returns queued/running/failed/succeeded summary counts.
+- `GET /api/v1/projects/:projectId/generation/jobs/:jobId` reads one project-scoped job.
+- `POST /api/v1/projects/:projectId/generation/jobs/:jobId/retry` creates a new queued job from a failed job and leaves the original failed job intact.
+
+Worker API:
+
+- `POST /api/v1/worker/generation/jobs/claim` claims one queued job, marks it running, and returns typed job input.
+- `POST /api/v1/worker/generation/jobs/:jobId/fail` marks a running job failed and stores a readable provider or executor error.
+- `POST /api/v1/worker/generation/jobs/:jobId/succeed` completes a running job and applies generated media side effects.
+
+Generation behavior:
+
+- `shot_to_image` reuses the backend Shot prompt composer so the stored job input contains the final image prompt, negative prompt, reference asset ids, source node ids, and debug parts that the Inspector preview shows.
+- `image_to_video` starts from an ImageNode asset and derives video prompt, duration, references, and parent Shot context when a generated image edge points back to a Shot.
+- The worker can run as a polling loop or as a deterministic one-shot command:
+
+```bash
+BACKEND_INTERNAL_URL=http://localhost:3002/api/v1 pnpm --filter @guga-flow/worker run worker:once
+```
+
+- Mock provider success creates placeholder bytes in backend storage, an `Asset`, an `ImageNode` or `VideoNode`, a `generated_image` or `generated_video` semantic edge, a typed job output, and succeeded node/job statuses.
+- Mock provider failure is durable and visible in the job list. Retry is append-only, so failed attempts stay auditable.
+- Mock provider storage keys are bounded even for long composed prompts, preventing local filesystem filename failures.
+
+Frontend behavior:
+
+- Selecting a Shot shows a Generate Image action in the Inspector.
+- Selecting an ImageNode with an image `assetId` shows a Generate Video action in the Inspector.
+- The workbench footer polls queue counts and shows queued, running, and failed jobs.
+- When polling observes terminal job changes, the canvas facts refresh so generated assets, nodes, and edges appear without a full browser reload.
+
+Phase 8 browser/API smoke checklist:
+
+- Apply pending migrations to local Postgres before using the real backend API.
+- Create or open a project with imported storyboard graph state.
+- Create a `shot_to_image` job from a Shot, run `worker:once`, and confirm the job succeeds with a generated image Asset, ImageNode, and `generated_image` edge.
+- Create an `image_to_video` job from the generated ImageNode, run `worker:once`, and confirm the job succeeds with a generated video Asset, VideoNode, and `generated_video` edge.
+- Create a forced-failure job, run `worker:once`, and confirm the failed job remains while retry creates a separate queued job.
+- Open `/projects/:projectId/canvas`, select the Shot and ImageNode, and confirm Inspector actions, queue counts, generated assets, and generated nodes render.
+- Check browser console errors. The tldraw zh-cn missing-message warning is acceptable if no application error is logged.
+
 ## Mock Workflow Verification
 
 Run the worker-owned mock media workflow:
@@ -313,7 +361,13 @@ Run the worker-owned mock media workflow:
 pnpm run mock:workflow
 ```
 
-The command exercises mock LLM, image, video, and editor package providers through server-side provider contracts. It does not require real provider keys and does not create persistent jobs yet.
+The command exercises mock LLM, image, video, and editor package providers through server-side provider contracts. It does not require real provider keys.
+
+To exercise persistent Phase 8 jobs, keep the backend running and execute one claimed job at a time:
+
+```bash
+BACKEND_INTERNAL_URL=http://localhost:3002/api/v1 pnpm --filter @guga-flow/worker run worker:once
+```
 
 ## Quality Gates
 
@@ -355,6 +409,12 @@ Included:
 - backend Shot prompt compose API with structured debug parts and missing-context reporting
 - Character/Location prompt fields plus node-scoped reference image binding in the Inspector
 - Shot prompt preview/debug panel in the Inspector
+- persistent GenerationJob creation from composed prompts
+- DB-backed worker claim/succeed/fail endpoints
+- worker one-shot and polling loop for mock image/video generation jobs
+- generated mock media asset persistence with previewable placeholder bytes
+- generated ImageNode and VideoNode creation with `generated_image` and `generated_video` semantic edges
+- generation job retry, failed job visibility, and queue polling in the workbench
 - selection-aware Inspector with type-specific business forms
 - worker mock workflow
 - shared types and provider contracts
@@ -362,10 +422,9 @@ Included:
 
 Deferred:
 
-- persistent generation queue
-- GenerationJob creation from composed prompts
-- provider execution from prompt preview output
-- generated ImageNode or VideoNode creation
 - StyleAsset and PropAsset reference workflows
 - real provider adapters
+- provider-specific polling, cancellation, and remote result download
+- batch generation
 - editor package zip export
+- selected VideoNode editor export workflow

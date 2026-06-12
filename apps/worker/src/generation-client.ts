@@ -60,5 +60,5 @@ export class HttpGenerationWorkerClient implements GenerationWorkerClient {
 }
 
 export function backendWorkerBaseUrlFromEnv(env: NodeJS.ProcessEnv = process.env): string {
-  return env.BACKEND_INTERNAL_URL ?? env.BACKEND_URL ?? "http://localhost:3001/api/v1";
+  return env.BACKEND_INTERNAL_URL ?? env.BACKEND_URL ?? "http://localhost:3002/api/v1";
 }

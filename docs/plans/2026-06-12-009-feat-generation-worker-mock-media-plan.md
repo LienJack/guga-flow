@@ -1,7 +1,7 @@
 ---
 title: "feat: Add GenerationJob worker and mock media generation"
 type: feat
-status: active
+status: completed
 date: 2026-06-12
 origin: docs/brainstorms/2026-06-12-009-phase-8-generation-worker-mock-media-requirements.md
 ---
@@ -390,6 +390,53 @@ flowchart LR
 - Exact queue claim implementation may depend on SQLite/Prisma transaction behavior; if conditional `updateMany` is clearer than row-level locks, use it and cover with tests.
 - Placeholder video bytes may not be a playable MP4 in Phase 8. The acceptance target is durable asset preview/download boundaries and graph facts, not real media playback.
 - Browser verification may need direct API setup for imported storyboard data if the UI flow would make the smoke too slow. The user-visible generation action still needs browser coverage.
+
+---
+
+## Completion Evidence
+
+Phase 8 completed with the requested Node 26 target intact. Local verification ran under an older local Node shell and reported engine warnings, but the implementation did not downgrade Next, React, Prisma, tldraw, package layout, or workspace architecture.
+
+Automated verification completed:
+
+- `pnpm --filter @guga-flow/shared-types lint`
+- `pnpm --filter @guga-flow/shared-types test`
+- `pnpm --filter @guga-flow/shared-types build`
+- `pnpm --filter @guga-flow/backend test -- generation`
+- `pnpm --filter @guga-flow/backend test -- app.e2e`
+- `pnpm --filter @guga-flow/backend test`
+- `pnpm --filter @guga-flow/backend build`
+- `pnpm --filter @guga-flow/provider-contracts test`
+- `pnpm --filter @guga-flow/provider-contracts lint`
+- `pnpm --filter @guga-flow/provider-contracts build`
+- `pnpm --filter @guga-flow/worker test`
+- `pnpm --filter @guga-flow/worker lint`
+- `pnpm --filter @guga-flow/worker build`
+- `pnpm --filter @guga-flow/worker run mock:workflow`
+- `pnpm --filter @guga-flow/frontend test -- generation`
+- `pnpm --filter @guga-flow/frontend test -- api`
+- `pnpm --filter @guga-flow/frontend lint`
+- `pnpm --filter @guga-flow/frontend build`
+
+End-to-end API and worker smoke completed against local backend/frontend servers:
+
+- Smoke project: `cmqb7t7xb0000a3svlcg4y8cq`
+- Source Shot node: `cmqb7t7ys0004a3svrb44y75v`
+- `shot_to_image` job `cmqb7t8080007a3svv873ukl3` succeeded and created ImageNode `cmqb7t89z0009a3svunlldqnv`.
+- The generated image asset preview returned non-empty bytes.
+- `image_to_video` job `cmqb7t8c0000ba3svn4u7801d` succeeded and created VideoNode `cmqb7t8l2000da3sv3uzckuu1`.
+- Forced-failure job `cmqb7t8mz000fa3sv0nbcolyz` failed with `MOCK_PROVIDER_FAILURE`.
+- Retry job `cmqb7t8xs000ga3svvqg65ytn` was created as a new queued job while the original failure remained failed.
+- Queue summary after retry showed queued `1`, running `0`, failed `1`, and succeeded `2`.
+
+Browser verification completed at `/projects/cmqb7t7xb0000a3svlcg4y8cq/canvas`:
+
+- Workbench footer displayed the expected queue counts.
+- Asset Library showed generated assets.
+- Shot Inspector showed generation actions and continued to render prompt preview.
+- ImageNode Inspector showed Generate Video.
+- Fit to content revealed generated ImageNode and VideoNode on the canvas.
+- Console output had no application errors; only the existing React DevTools info, HMR connect log, tldraw zh-cn missing-message warning, and known form id/name warning were observed.
 
 ---
 
