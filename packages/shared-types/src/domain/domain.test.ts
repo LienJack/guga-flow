@@ -15,13 +15,17 @@ import {
   STORYBOARD_DRAFT_STATUSES,
   UPLOADABLE_ASSET_MIME_TYPES,
   buildStoryboardImportPlan,
+  composeShotPrompt,
   findStoryboardImportLayoutOverlaps,
   hasStoryboardImportProvenance,
+  type AssetListItem,
   type CharacterAssetNodeData,
   type CanvasEdgeData,
+  type CanvasEdgeRecord,
   type CreateCanvasEdgeInput,
   type CreateCanvasEdgeResult,
   type CanvasLoadResult,
+  type CanvasNodeRecord,
   type CreateCanvasNodeInput,
   type CreateNovelDocumentInput,
   type DeleteCanvasEdgeResult,
@@ -32,6 +36,7 @@ import {
   type LocationAssetNodeData,
   type Phase3CanvasNodeRecord,
   type SaveCanvasSnapshotInput,
+  type SceneNodeData,
   type ShotNodeData,
   type StoryboardDraftRecord,
   type StoryboardResult,
@@ -360,7 +365,210 @@ describe("shared domain constants", () => {
     );
     expect(findStoryboardImportLayoutOverlaps(plan.nodes)).toEqual([]);
   });
+
+  it("composes Phase 7 shot prompts from linked graph context and reference images", () => {
+    const graph = promptComposerGraph();
+    const result = composeShotPrompt({
+      ...graph,
+      shotNodeId: "shot_1",
+      globalStylePrompt: "global cinematic watercolor style",
+      modelPromptSuffix: "high detail, clean composition",
+    });
+
+    expect(result.sourceNodeIds).toMatchObject({
+      shotNodeId: "shot_1",
+      sceneNodeId: "scene_1",
+      characterNodeIds: ["character_1", "character_2"],
+      locationNodeId: "location_1",
+    });
+    expect(result.referenceAssetIds).toEqual([
+      "asset_hero_ref",
+      "asset_shared_ref",
+      "asset_friend_ref",
+      "asset_location_ref",
+    ]);
+    expect(result.image.prompt).toContain("Hero identity prompt");
+    expect(result.image.prompt).toContain("Location prompt text");
+    expect(result.image.prompt).toContain("Image prompt: hero and friend at the console");
+    expect(result.video.prompt).toContain("Video prompt: slow dolly across the console");
+    expect(result.negativePrompt).toBe("no text overlays");
+    expect(result.debugParts.map((part) => part.kind)).toEqual(
+      expect.arrayContaining(["global_style", "scene", "location", "character", "shot", "model_suffix"]),
+    );
+    expect(result.missingContext).toEqual([]);
+  });
+
+  it("returns shot-derived prompts and missing-context details when graph context is absent", () => {
+    const shotOnly = canvasNode<ShotNodeData>("shot_lonely", "shot", "Lonely shot", {
+      imagePrompt: "single figure in fog",
+      visualDescription: "A lone figure pauses in a quiet street.",
+    });
+
+    const result = composeShotPrompt({
+      shotNodeId: shotOnly.id,
+      nodes: [shotOnly],
+      edges: [],
+      assets: [],
+    });
+
+    expect(result.image.prompt).toContain("single figure in fog");
+    expect(result.image.prompt).toContain("A lone figure pauses");
+    expect(result.missingContext.map((item) => item.kind)).toEqual(
+      expect.arrayContaining(["scene", "character", "location"]),
+    );
+  });
+
+  it("deduplicates reference image ids and recomposes from edited character and location data", () => {
+    const graph = promptComposerGraph();
+    const before = composeShotPrompt({ ...graph, shotNodeId: "shot_1" });
+    const editedNodes = graph.nodes.map((node) => {
+      if (node.id === "character_1") {
+        const data = node.dataJson as CharacterAssetNodeData;
+        return { ...node, dataJson: { ...data, identityPrompt: "edited hero identity prompt" } };
+      }
+      if (node.id === "location_1") {
+        const data = node.dataJson as LocationAssetNodeData;
+        return { ...node, dataJson: { ...data, locationPrompt: "edited location prompt" } };
+      }
+      return node;
+    });
+
+    const after = composeShotPrompt({
+      ...graph,
+      nodes: editedNodes,
+      shotNodeId: "shot_1",
+    });
+
+    expect(before.referenceAssetIds.filter((assetId) => assetId === "asset_shared_ref")).toHaveLength(1);
+    expect(after.referenceAssetIds.filter((assetId) => assetId === "asset_shared_ref")).toHaveLength(1);
+    expect(after.image.prompt).toContain("edited hero identity prompt");
+    expect(after.image.prompt).toContain("edited location prompt");
+    expect(after.image.prompt).not.toContain("Hero identity prompt");
+    expect(after.image.prompt).not.toContain("Location prompt text");
+  });
 });
+
+function promptComposerGraph(): {
+  nodes: CanvasNodeRecord[];
+  edges: CanvasEdgeRecord[];
+  assets: AssetListItem[];
+} {
+  const nodes: CanvasNodeRecord[] = [
+    canvasNode<SceneNodeData>("scene_1", "scene", "Scene 01", {
+      sceneNumber: "01",
+      synopsis: "The team prepares the console before sunrise.",
+      mood: "focused",
+      timeOfDay: "dawn",
+    }),
+    canvasNode<CharacterAssetNodeData>("character_1", "character_asset", "Hero", {
+      name: "Hero",
+      role: "lead",
+      appearance: "Silver jacket and calm posture.",
+      identityPrompt: "Hero identity prompt",
+      consistencyPrompt: "Hero consistency prompt",
+      referenceAssetIds: ["asset_hero_ref", "asset_shared_ref", "asset_shared_ref"],
+    }),
+    canvasNode<CharacterAssetNodeData>("character_2", "character_asset", "Friend", {
+      name: "Friend",
+      role: "support",
+      appearance: "Dark coat and bright tablet.",
+      identityPrompt: "Friend identity prompt",
+      consistencyPrompt: "Friend consistency prompt",
+      referenceAssetIds: ["asset_friend_ref", "asset_shared_ref"],
+    }),
+    canvasNode<LocationAssetNodeData>("location_1", "location_asset", "Control Room", {
+      name: "Control Room",
+      environment: "glass walls above the city",
+      locationPrompt: "Location prompt text",
+      consistencyPrompt: "same console bank and dawn skyline",
+      referenceAssetIds: ["asset_location_ref"],
+    }),
+    canvasNode<ShotNodeData>("shot_1", "shot", "Shot 01", {
+      shotNumber: "01",
+      imagePrompt: "hero and friend at the console",
+      videoPrompt: "slow dolly across the console",
+      visualDescription: "Two characters lean into a glowing control panel.",
+      action: "They start the launch sequence.",
+      cameraMovement: "slow dolly",
+      durationSeconds: 5,
+      negativePromptNotes: "no text overlays",
+      characterAssetIds: ["character_1", "character_2"],
+      locationAssetId: "location_1",
+    }),
+  ];
+  return {
+    nodes,
+    edges: [
+      canvasEdge("edge_scene", "shot_1", "scene_1", "belongs_to_scene"),
+      canvasEdge("edge_character_1", "character_1", "shot_1", "references_character"),
+      canvasEdge("edge_character_2", "character_2", "shot_1", "references_character"),
+      canvasEdge("edge_location", "location_1", "shot_1", "references_location"),
+    ],
+    assets: [
+      assetListItem("asset_hero_ref", "image"),
+      assetListItem("asset_shared_ref", "image"),
+      assetListItem("asset_friend_ref", "image"),
+      assetListItem("asset_location_ref", "image"),
+    ],
+  };
+}
+
+function canvasNode<TData>(
+  id: string,
+  type: CanvasNodeRecord["type"],
+  title: string,
+  dataJson: TData,
+): CanvasNodeRecord<TData> {
+  return {
+    id,
+    projectId: "project_1",
+    canvasDocumentId: "canvas_1",
+    tldrawShapeId: `shape:${id}`,
+    type,
+    title,
+    x: 0,
+    y: 0,
+    width: 320,
+    height: 220,
+    zIndex: 0,
+    status: "draft",
+    dataJson,
+    createdAt: "2026-06-12T00:00:00.000Z",
+    updatedAt: "2026-06-12T00:00:00.000Z",
+  };
+}
+
+function canvasEdge(
+  id: string,
+  sourceNodeId: string,
+  targetNodeId: string,
+  relation: CanvasEdgeRecord["relation"],
+): CanvasEdgeRecord {
+  return {
+    id,
+    projectId: "project_1",
+    canvasDocumentId: "canvas_1",
+    sourceNodeId,
+    targetNodeId,
+    relation,
+    createdAt: "2026-06-12T00:00:00.000Z",
+  };
+}
+
+function assetListItem(id: string, type: AssetListItem["type"]): AssetListItem {
+  return {
+    id,
+    projectId: "project_1",
+    type,
+    purpose: "uploaded",
+    storageKey: `${id}.png`,
+    mimeType: "image/png",
+    originalFilename: `${id}.png`,
+    previewKind: "image",
+    previewUrl: `/assets/${id}/preview`,
+    createdAt: "2026-06-12T00:00:00.000Z",
+  };
+}
 
 function validStoryboard(): StoryboardResult {
   return {

@@ -125,6 +125,7 @@ export interface CharacterAssetNodeData {
   wardrobe?: string;
   consistencyPrompt?: string;
   identityPrompt?: string;
+  referenceAssetIds?: string[];
   assetKey?: string;
 }
 
@@ -136,6 +137,7 @@ export interface LocationAssetNodeData {
   consistencyPrompt?: string;
   locationPrompt?: string;
   locationType?: string;
+  referenceAssetIds?: string[];
   assetKey?: string;
 }
 
