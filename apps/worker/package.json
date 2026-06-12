@@ -4,10 +4,11 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/index.ts --queue",
     "build": "tsc -p tsconfig.build.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "worker:once": "tsx src/index.ts --once",
     "mock:workflow": "tsx src/index.ts"
   },
   "dependencies": {
