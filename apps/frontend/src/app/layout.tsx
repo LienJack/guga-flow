@@ -5,6 +5,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "guga-flow",
   description: "Canvas-first novel-to-video production workspace",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

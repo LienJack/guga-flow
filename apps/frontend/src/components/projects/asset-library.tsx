@@ -71,7 +71,8 @@ export function AssetLibrary({ projectId, initialAssets = [] }: AssetLibraryProp
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const file = new FormData(event.currentTarget).get("file");
+    const form = event.currentTarget;
+    const file = new FormData(form).get("file");
     if (!(file instanceof File) || file.size === 0) {
       setError("Choose a file to upload");
       return;
@@ -83,7 +84,15 @@ export function AssetLibrary({ projectId, initialAssets = [] }: AssetLibraryProp
       const uploaded = await uploadAsset(projectId, { file, purpose });
       setAssets((current) => [uploaded, ...current]);
       setSelectedAsset(uploaded);
-      event.currentTarget.reset();
+      form.reset();
+
+      if (uploaded.previewKind === "text") {
+        try {
+          setSelectedAsset(await getAsset(projectId, uploaded.id));
+        } catch {
+          setError("Uploaded asset saved, but text preview could not be loaded");
+        }
+      }
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Unable to upload asset");
     } finally {
