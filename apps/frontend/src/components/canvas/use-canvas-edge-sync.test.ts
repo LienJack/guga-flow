@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   connectedCanvasEdgeShapeIds,
   reconcileCanvasEdgeShapes,
+  type CanvasEdgeSyncBinding,
   type CanvasEdgeSyncShape,
 } from "./use-canvas-edge-sync";
 
@@ -45,6 +46,7 @@ function edge(overrides: Partial<CanvasEdgeRecord> = {}) {
 
 function createEditor(initialShapes: CanvasEdgeSyncShape[] = []) {
   const shapes = new Map(initialShapes.map((shape) => [shape.id, shape]));
+  const bindings: CanvasEdgeSyncBinding[] = [];
   return {
     getShape: vi.fn((shapeId: string) => shapes.get(shapeId)),
     createShape: vi.fn((shape: CanvasEdgeSyncShape) => {
@@ -58,7 +60,22 @@ function createEditor(initialShapes: CanvasEdgeSyncShape[] = []) {
         shapes.delete(shapeId);
       }
     }),
+    createBindings: vi.fn((nextBindings: CanvasEdgeSyncBinding[]) => {
+      bindings.push(...nextBindings);
+    }),
+    deleteBindings: vi.fn((removedBindings: CanvasEdgeSyncBinding[]) => {
+      for (const removedBinding of removedBindings) {
+        const index = bindings.findIndex((binding) => binding.id === removedBinding.id);
+        if (index !== -1) {
+          bindings.splice(index, 1);
+        }
+      }
+    }),
+    getBindingsFromShape: vi.fn((shapeId: string, type: "arrow") =>
+      bindings.filter((binding) => binding.fromId === shapeId && binding.type === type),
+    ),
     shapes,
+    bindings,
   };
 }
 
@@ -84,6 +101,10 @@ describe("canvas edge sync", () => {
         type: "arrow",
       }),
     );
+    expect(editor.createBindings).toHaveBeenCalledWith([
+      expect.objectContaining({ fromId: "shape:semantic-edge-edge_1", toId: "shape:character_1" }),
+      expect.objectContaining({ fromId: "shape:semantic-edge-edge_1", toId: "shape:shot_1" }),
+    ]);
     expect(result.createdShapeIds).toEqual(["shape:semantic-edge-edge_1"]);
     expect(result.changed).toBe(true);
   });

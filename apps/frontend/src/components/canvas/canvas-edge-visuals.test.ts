@@ -76,29 +76,47 @@ describe("canvas edge visuals", () => {
     });
 
     expect(buildCanvasEdgeArrowProjection(edge(), [character, shot])).toEqual({
-      id: "shape:semantic-edge-edge_1",
-      type: "arrow",
-      x: 210,
-      y: 210,
-      props: {
-        color: "blue",
-        dash: "solid",
-        size: "m",
-        start: {
-          type: "binding",
-          boundShapeId: "shape:character-1",
-          normalizedAnchor: { x: 0.5, y: 0.5 },
-          isExact: false,
+      shape: {
+        id: "shape:semantic-edge-edge_1",
+        type: "arrow",
+        x: 210,
+        y: 210,
+        props: {
+          color: "blue",
+          dash: "solid",
+          size: "m",
+          start: { x: 0, y: 0 },
+          end: { x: 440, y: 90 },
+          arrowheadStart: "none",
+          arrowheadEnd: "arrow",
         },
-        end: {
-          type: "binding",
-          boundShapeId: "shape:shot-1",
-          normalizedAnchor: { x: 0.5, y: 0.5 },
-          isExact: false,
-        },
-        arrowheadStart: "none",
-        arrowheadEnd: "arrow",
       },
+      bindings: [
+        {
+          id: "binding:semantic-edge-edge_1-start",
+          type: "arrow",
+          fromId: "shape:semantic-edge-edge_1",
+          toId: "shape:character-1",
+          props: {
+            terminal: "start",
+            normalizedAnchor: { x: 0.5, y: 0.5 },
+            isExact: false,
+            isPrecise: true,
+          },
+        },
+        {
+          id: "binding:semantic-edge-edge_1-end",
+          type: "arrow",
+          fromId: "shape:semantic-edge-edge_1",
+          toId: "shape:shot-1",
+          props: {
+            terminal: "end",
+            normalizedAnchor: { x: 0.5, y: 0.5 },
+            isExact: false,
+            isPrecise: true,
+          },
+        },
+      ],
     });
   });
 

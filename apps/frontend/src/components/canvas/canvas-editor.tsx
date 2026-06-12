@@ -66,6 +66,8 @@ import { selectionFromShapes } from "./use-selected-business-nodes";
 type TldrawSnapshot = Parameters<Editor["loadSnapshot"]>[0];
 type TldrawCreateShapeInput = Parameters<Editor["createShape"]>[0];
 type TldrawUpdateShapeInput = Parameters<Editor["updateShape"]>[0];
+type TldrawCreateBindingsInput = Parameters<Editor["createBindings"]>[0];
+type TldrawDeleteBindingsInput = Parameters<Editor["deleteBindings"]>[0];
 
 interface CanvasEditorProps {
   projectId: string;
@@ -143,17 +145,24 @@ function toCanvasEdgeSyncEditor(editor: Editor): CanvasEdgeSyncEditor {
     createShape: (shape) => editor.createShape(shape as unknown as TldrawCreateShapeInput),
     updateShape: (shape) => editor.updateShape(shape as unknown as TldrawUpdateShapeInput),
     deleteShapes: (shapeIds) => editor.deleteShapes(shapeIds as TLShapeId[]),
+    createBindings: (bindings) =>
+      editor.createBindings(bindings as unknown as TldrawCreateBindingsInput),
+    deleteBindings: (bindings) =>
+      editor.deleteBindings(bindings as unknown as TldrawDeleteBindingsInput),
+    getBindingsFromShape: (shapeId, type) => editor.getBindingsFromShape(shapeId as TLShapeId, type),
   };
 }
 
 function restoreCanvasEdgeShape(editor: Editor, nodes: CanvasNodeRecord[], edge: CanvasEdgeRecord) {
   const projection = buildCanvasEdgeArrowProjection(edge, nodes);
-  if (!projection || editor.getShape(projection.id as TLShapeId)) {
+  if (!projection || editor.getShape(projection.shape.id as TLShapeId)) {
     return;
   }
 
-  editor.createShape(projection as unknown as TldrawCreateShapeInput);
-  editor.setSelectedShapes([projection.id as TLShapeId]);
+  const syncEditor = toCanvasEdgeSyncEditor(editor);
+  syncEditor.createShape(projection.shape);
+  syncEditor.createBindings(projection.bindings);
+  editor.setSelectedShapes([projection.shape.id as TLShapeId]);
 }
 
 function createSemanticArrowShapeId(sourceNodeId: string, targetNodeId: string): string {

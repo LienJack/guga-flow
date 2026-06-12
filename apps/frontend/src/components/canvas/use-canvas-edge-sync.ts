@@ -3,14 +3,19 @@ import type { CanvasEdgeRecord, CanvasNodeRecord } from "@guga-flow/shared-types
 import {
   buildCanvasEdgeArrowProjection,
   getCanvasEdgeVisualShapeId,
+  type CanvasEdgeArrowBindingProjection,
   type CanvasEdgeArrowProjection,
+  type CanvasEdgeArrowShapeProjection,
 } from "./canvas-edge-visuals";
 
 export interface CanvasEdgeSyncEditor {
   getShape(shapeId: string): CanvasEdgeSyncShape | undefined;
-  createShape(shape: CanvasEdgeArrowProjection): void;
-  updateShape(shape: CanvasEdgeArrowProjection): void;
+  createShape(shape: CanvasEdgeArrowShapeProjection): void;
+  updateShape(shape: CanvasEdgeArrowShapeProjection): void;
   deleteShapes(shapeIds: string[]): void;
+  createBindings(bindings: CanvasEdgeArrowBindingProjection[]): void;
+  deleteBindings(bindings: CanvasEdgeSyncBinding[]): void;
+  getBindingsFromShape(shapeId: string, type: "arrow"): CanvasEdgeSyncBinding[];
 }
 
 export interface CanvasEdgeSyncShape {
@@ -18,6 +23,14 @@ export interface CanvasEdgeSyncShape {
   type: string;
   x?: number;
   y?: number;
+  props?: unknown;
+}
+
+export interface CanvasEdgeSyncBinding {
+  id: string;
+  type: string;
+  fromId: string;
+  toId: string;
   props?: unknown;
 }
 
@@ -56,17 +69,24 @@ export function reconcileCanvasEdgeShapes(input: {
       continue;
     }
 
-    nextKnownShapeIds.add(projection.id);
-    const existingShape = input.editor.getShape(projection.id);
+    nextKnownShapeIds.add(projection.shape.id);
+    const existingShape = input.editor.getShape(projection.shape.id);
     if (!existingShape) {
-      input.editor.createShape(projection);
-      createdShapeIds.push(projection.id);
+      input.editor.createShape(projection.shape);
+      syncArrowBindings(input.editor, projection);
+      createdShapeIds.push(projection.shape.id);
       continue;
     }
 
     if (!matchesProjection(existingShape, projection)) {
-      input.editor.updateShape(projection);
-      updatedShapeIds.push(projection.id);
+      input.editor.updateShape(projection.shape);
+      updatedShapeIds.push(projection.shape.id);
+    }
+    if (!bindingsMatch(input.editor.getBindingsFromShape(projection.shape.id, "arrow"), projection)) {
+      syncArrowBindings(input.editor, projection);
+      if (!updatedShapeIds.includes(projection.shape.id)) {
+        updatedShapeIds.push(projection.shape.id);
+      }
     }
   }
 
@@ -105,32 +125,63 @@ function matchesProjection(
   shape: CanvasEdgeSyncShape,
   projection: CanvasEdgeArrowProjection,
 ): boolean {
-  if (shape.type !== "arrow" || shape.x !== projection.x || shape.y !== projection.y) {
+  if (shape.type !== "arrow" || shape.x !== projection.shape.x || shape.y !== projection.shape.y) {
     return false;
   }
 
   const props = objectData(shape.props);
   return (
-    props.color === projection.props.color &&
-    props.dash === projection.props.dash &&
-    props.size === projection.props.size &&
-    props.arrowheadStart === projection.props.arrowheadStart &&
-    props.arrowheadEnd === projection.props.arrowheadEnd &&
-    terminalMatches(props.start, projection.props.start) &&
-    terminalMatches(props.end, projection.props.end)
+    props.color === projection.shape.props.color &&
+    props.dash === projection.shape.props.dash &&
+    props.size === projection.shape.props.size &&
+    props.arrowheadStart === projection.shape.props.arrowheadStart &&
+    props.arrowheadEnd === projection.shape.props.arrowheadEnd &&
+    pointMatches(props.start, projection.shape.props.start) &&
+    pointMatches(props.end, projection.shape.props.end)
   );
 }
 
-function terminalMatches(value: unknown, terminal: CanvasEdgeArrowProjection["props"]["start"]) {
+function pointMatches(value: unknown, point: { x: number; y: number }) {
   const data = objectData(value);
-  const normalizedAnchor = objectData(data.normalizedAnchor);
-  return (
-    data.type === terminal.type &&
-    data.boundShapeId === terminal.boundShapeId &&
-    data.isExact === terminal.isExact &&
-    normalizedAnchor.x === terminal.normalizedAnchor.x &&
-    normalizedAnchor.y === terminal.normalizedAnchor.y
-  );
+  return data.x === point.x && data.y === point.y;
+}
+
+function syncArrowBindings(editor: CanvasEdgeSyncEditor, projection: CanvasEdgeArrowProjection) {
+  const existingBindings = editor.getBindingsFromShape(projection.shape.id, "arrow");
+  if (existingBindings.length > 0) {
+    editor.deleteBindings(existingBindings);
+  }
+  editor.createBindings(projection.bindings);
+}
+
+function bindingsMatch(
+  existingBindings: CanvasEdgeSyncBinding[],
+  projection: CanvasEdgeArrowProjection,
+): boolean {
+  if (existingBindings.length !== projection.bindings.length) {
+    return false;
+  }
+
+  return projection.bindings.every((binding) => {
+    const existing = existingBindings.find(
+      (candidate) =>
+        candidate.fromId === binding.fromId &&
+        candidate.toId === binding.toId &&
+        objectData(candidate.props).terminal === binding.props.terminal,
+    );
+    if (!existing) {
+      return false;
+    }
+
+    const props = objectData(existing.props);
+    const normalizedAnchor = objectData(props.normalizedAnchor);
+    return (
+      props.isExact === binding.props.isExact &&
+      props.isPrecise === binding.props.isPrecise &&
+      normalizedAnchor.x === binding.props.normalizedAnchor.x &&
+      normalizedAnchor.y === binding.props.normalizedAnchor.y
+    );
+  });
 }
 
 function objectData(value: unknown): Record<string, unknown> {

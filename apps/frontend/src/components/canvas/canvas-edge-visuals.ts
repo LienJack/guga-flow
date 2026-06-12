@@ -3,6 +3,11 @@ import type { CanvasEdgeRecord, CanvasNodeRecord } from "@guga-flow/shared-types
 import { getCanvasEdgeRelationLabel } from "./canvas-edge-data";
 
 export interface CanvasEdgeArrowProjection {
+  shape: CanvasEdgeArrowShapeProjection;
+  bindings: CanvasEdgeArrowBindingProjection[];
+}
+
+export interface CanvasEdgeArrowShapeProjection {
   id: string;
   type: "arrow";
   x: number;
@@ -11,18 +16,24 @@ export interface CanvasEdgeArrowProjection {
     color: "blue";
     dash: "solid";
     size: "m";
-    start: CanvasEdgeArrowTerminal;
-    end: CanvasEdgeArrowTerminal;
+    start: { x: number; y: number };
+    end: { x: number; y: number };
     arrowheadStart: "none";
     arrowheadEnd: "arrow";
   };
 }
 
-interface CanvasEdgeArrowTerminal {
-  type: "binding";
-  boundShapeId: string;
-  normalizedAnchor: { x: number; y: number };
-  isExact: false;
+export interface CanvasEdgeArrowBindingProjection {
+  id: string;
+  type: "arrow";
+  fromId: string;
+  toId: string;
+  props: {
+    terminal: "start" | "end";
+    normalizedAnchor: { x: number; y: number };
+    isExact: false;
+    isPrecise: true;
+  };
 }
 
 export function getCanvasEdgeVisualShapeId(edge: CanvasEdgeRecord): string {
@@ -53,19 +64,25 @@ export function buildCanvasEdgeArrowProjection(
   const sourceCenter = center(sourceNode);
   const targetCenter = center(targetNode);
   return {
-    id: getCanvasEdgeVisualShapeId(edge),
-    type: "arrow",
-    x: sourceCenter.x,
-    y: sourceCenter.y,
-    props: {
-      color: "blue",
-      dash: "solid",
-      size: "m",
-      start: bindingTerminal(sourceNode.tldrawShapeId),
-      end: bindingTerminal(targetNode.tldrawShapeId),
-      arrowheadStart: "none",
-      arrowheadEnd: "arrow",
+    shape: {
+      id: getCanvasEdgeVisualShapeId(edge),
+      type: "arrow",
+      x: sourceCenter.x,
+      y: sourceCenter.y,
+      props: {
+        color: "blue",
+        dash: "solid",
+        size: "m",
+        start: { x: 0, y: 0 },
+        end: { x: targetCenter.x - sourceCenter.x, y: targetCenter.y - sourceCenter.y },
+        arrowheadStart: "none",
+        arrowheadEnd: "arrow",
+      },
     },
+    bindings: [
+      bindingProjection(edge, "start", sourceNode.tldrawShapeId),
+      bindingProjection(edge, "end", targetNode.tldrawShapeId),
+    ],
   };
 }
 
@@ -73,12 +90,23 @@ export function getCanvasEdgeVisualLabel(edge: CanvasEdgeRecord): string {
   return getCanvasEdgeRelationLabel(edge.relation);
 }
 
-function bindingTerminal(shapeId: string): CanvasEdgeArrowTerminal {
+function bindingProjection(
+  edge: CanvasEdgeRecord,
+  terminal: "start" | "end",
+  targetShapeId: string,
+): CanvasEdgeArrowBindingProjection {
+  const arrowShapeId = getCanvasEdgeVisualShapeId(edge);
   return {
-    type: "binding",
-    boundShapeId: shapeId,
-    normalizedAnchor: { x: 0.5, y: 0.5 },
-    isExact: false,
+    id: `binding:${arrowShapeId.replace(/^shape:/, "")}-${terminal}`,
+    type: "arrow",
+    fromId: arrowShapeId,
+    toId: targetShapeId,
+    props: {
+      terminal,
+      normalizedAnchor: { x: 0.5, y: 0.5 },
+      isExact: false,
+      isPrecise: true,
+    },
   };
 }
 
