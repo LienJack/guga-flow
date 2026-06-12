@@ -81,7 +81,7 @@ The initial schema preserves the hybrid persistence foundation:
 - `GenerationJob`
 - `EditorExport`
 
-Project, asset, canvas snapshot, and business `CanvasNode` APIs are available. The visual canvas source of truth is `CanvasDocument.snapshotJson`; normalized `CanvasNode` records own business facts and geometry for custom business shapes, while `CanvasEdge` remains ready for later semantic binding phases.
+Project, asset, canvas snapshot, business `CanvasNode`, and semantic `CanvasEdge` APIs are available. The visual canvas source of truth is `CanvasDocument.snapshotJson`; normalized `CanvasNode` records own business facts and geometry for custom business shapes, while normalized `CanvasEdge` records own durable Character/Location relationships.
 
 ## Development Servers
 
@@ -126,6 +126,8 @@ Backend API:
 - `PATCH /api/v1/projects/:projectId/canvas/nodes/:nodeId` updates business node title, status, and `dataJson`.
 - `PATCH /api/v1/projects/:projectId/canvas/nodes/:nodeId/geometry` updates normalized position and size after supported canvas moves or resizes.
 - `DELETE /api/v1/projects/:projectId/canvas/nodes/:nodeId` deletes the normalized business node. Related future edges can cascade through the schema; unrelated assets are preserved.
+- `POST /api/v1/projects/:projectId/canvas/edges` creates a normalized semantic edge and synchronizes target node reference data in one transaction.
+- `DELETE /api/v1/projects/:projectId/canvas/edges/:edgeId` deletes a semantic edge and removes the reference data owned by that edge or batch.
 
 Frontend behavior:
 
@@ -136,6 +138,10 @@ Frontend behavior:
 - User-originated canvas changes are autosaved with debounce.
 - Business-shape move and resize events debounce a normalized geometry patch.
 - Removing a business shape deletes the matching normalized `CanvasNode` without deleting project assets.
+- Character-to-Shot and Location-to-Shot semantic bindings create normalized `CanvasEdge` records and tldraw arrow projections.
+- Location-to-SceneFrame semantic binding applies the Location to eligible Shot nodes whose center point is inside the SceneFrame business card bounds.
+- Semantic edge arrows are projections of normalized `CanvasEdge` rows. Built-in tldraw arrow shapes keep numeric start/end points, while separate arrow binding records attach terminals to source and target business shapes.
+- Selecting a semantic connector opens an edge-focused Inspector with relation, source, target, applied-shot count where relevant, and delete action.
 - Selecting a business node opens a type-aware Inspector form. Shot, Character, and Location forms include the richer consistency and production fields needed by later phases.
 - The topbar save badge shows `Ready`, `Saving`, `Saved`, or `Failed`.
 - Failed saves keep the latest local edit visible and expose a retry action.
@@ -159,6 +165,25 @@ Phase 3 browser smoke checklist:
 - Move the Shot card and confirm `CanvasNode.x/y/width/height` update after debounce.
 - Upload or retain a project asset, delete the Shot card, refresh or re-query the API, and confirm the node is gone while the asset remains.
 - Check browser console errors.
+
+Phase 4 semantic edge workflow:
+
+- Create Character, Location, Shot, and SceneFrame business nodes from the canvas toolbar.
+- Bind Character to Shot or Location to Shot by selecting a Character/Location source and using the compact bind control, or by moving the source onto a valid target.
+- Bind Location to SceneFrame to batch-apply the Location to eligible Shots contained by the SceneFrame bounds.
+- Inspect the selected semantic connector from the Inspector and delete it when needed.
+- Refresh the project and confirm normalized edges, visible connectors, and Shot reference summaries restore.
+
+Phase 4 browser smoke checklist:
+
+- Create or open a project and navigate to `/projects/:projectId/canvas`.
+- Create Character, Location, Shot, and SceneFrame nodes from the toolbar.
+- Create a Character-to-Shot semantic edge and confirm the Shot summary reports a character reference once.
+- Create a Location-to-Shot or Location-to-SceneFrame semantic edge and confirm the Shot summary reports a Location reference.
+- Refresh and confirm semantic connectors render without tldraw validation errors.
+- Delete a semantic edge from the Inspector or edge API and confirm the returned Shot data no longer carries that edge-owned reference.
+- Confirm the Asset Library remains visible while edge selection and deletion are available.
+- Check browser console errors. Locale warning-only messages from tldraw are acceptable if no application error is logged.
 
 ## Mock Workflow Verification
 
@@ -196,6 +221,9 @@ Included:
 - debounced canvas autosave with visible save, failed, and retry states
 - business custom shapes for all Phase 3 MVP node types
 - normalized business node create/update/geometry/delete APIs
+- semantic Character/Location edge create/delete APIs
+- semantic edge arrow projection, selection, Inspector, deletion, and reload reconciliation
+- Character-to-Shot, Location-to-Shot, and Location-to-SceneFrame reference synchronization
 - selection-aware Inspector with type-specific business forms
 - worker mock workflow
 - shared types and provider contracts
@@ -203,7 +231,8 @@ Included:
 
 Deferred:
 
-- semantic asset binding
+- novel import and storyboard JSON extraction
+- storyboard import and auto layout
 - persistent generation queue
 - real provider adapters
 - editor package zip export

@@ -1,7 +1,7 @@
 ---
 title: "feat: Add semantic canvas edges and asset binding"
 type: feat
-status: active
+status: completed
 date: 2026-06-12
 origin: docs/brainstorms/2026-06-12-005-phase-4-semantic-edges-asset-binding-requirements.md
 ---
@@ -526,6 +526,55 @@ flowchart TB
 - Update `docs/development.md` with Phase 4 edge routes, binding workflow, SceneFrame batch rule, and smoke checklist.
 - Keep plan verification evidence current during `ce-work`; do not wait until final review to document browser results.
 - `ce-compound` should likely capture a Phase 4 learning about semantic graph projection and backend-owned reference synchronization.
+
+---
+
+## Implementation Notes
+
+- U1 added shared Phase 4 contracts for edge create/delete results, Shot reference fields, and batch metadata.
+- U2 added backend `POST /projects/:projectId/canvas/edges` and `DELETE /projects/:projectId/canvas/edges/:edgeId` routes. The service validates project-scoped source/target nodes, creates idempotent semantic edges, updates affected `CanvasNode.dataJson` inside a transaction, and removes edge-owned references on delete.
+- U3 added frontend API calls and pure graph helpers for relation labels, source/target validation, SceneFrame Shot containment, state merging, duplicate handling, and Shot reference summaries.
+- U4 added normalized edge state to the canvas workspace and projected semantic edges into tldraw arrows. A browser smoke caught that `tldraw@5.1.0` rejects binding objects inside `shape.props.start/end`; the final implementation keeps numeric arrow start/end points and creates separate arrow binding records.
+- U5 added semantic binding affordances for Character/Location sources, including direct source movement over valid targets and an explicit compact bind mode.
+- U6 added an edge Inspector state with relation/source/target details, batch count where relevant, delete handling, error recovery, and Asset Library preservation.
+- U7 updated development docs and captured the verification evidence below.
+
+## Verification Evidence
+
+Targeted checks:
+
+- `pnpm --filter @guga-flow/shared-types run test`
+- `pnpm --filter @guga-flow/backend run test -- src/canvas/canvas.service.spec.ts test/app.e2e-spec.ts`
+- `pnpm --filter @guga-flow/frontend run lint`
+- `pnpm --filter @guga-flow/frontend run test -- src/components/canvas/canvas-edge-data.test.ts src/components/canvas/semantic-bind-interactions.test.ts src/components/canvas/canvas-edge-visuals.test.ts src/components/canvas/use-canvas-edge-sync.test.ts src/components/canvas/canvas-editor.test.tsx src/components/canvas/canvas-inspector.test.tsx`
+- `pnpm --filter @guga-flow/frontend run test -- src/components/canvas/canvas-edge-visuals.test.ts src/components/canvas/use-canvas-edge-sync.test.ts src/components/canvas/canvas-editor.test.tsx`
+
+Full checks:
+
+- `pnpm run format:check`
+- `pnpm run test`
+- `pnpm run build`
+- `pnpm run mock:workflow`
+
+Environment note:
+
+- The shell used for verification reported Node `v22.22.2`, while the project target remains `>=26.3.0`. pnpm emitted engine warnings, but the repository Node target and dependency architecture were not downgraded. If a future command fails because of engine enforcement, upgrade the local Node runtime.
+
+Browser and API smoke:
+
+- Existing dev services were reachable at `http://localhost:3001` and `http://localhost:3002`; backend health reported mock LLM, image, and video providers.
+- Smoke project `cmqb1u9eh0001rosvu5p6gclk` created Character, Shot, Location, and SceneFrame business nodes through the canvas UI.
+- The smoke created a Character-to-Shot edge and a Location-to-SceneFrame edge through the backend edge API after UI node creation. The canvas API returned `edgeCount: 3`, relations `references_character`, `references_location`, and `references_location`, and the Shot data contained `characterAssetIds` plus `locationAssetId`.
+- Browser reload rendered the normalized graph without the prior tldraw validation error. The Shot card displayed `1 character ref / Location ref / 4s`; console output contained only tldraw zh-cn missing-message warnings for `page-menu.max-pages-reached` and `page-menu.resize`, not application errors.
+- Deleting edge `cmqb1x42d000brosvwlyn55ki` through `DELETE /api/v1/projects/cmqb1u9eh0001rosvu5p6gclk/canvas/edges/cmqb1x42d000brosvwlyn55ki` returned `deleted: true` and an updated Shot node with `characterAssetIds` removed. A subsequent canvas load returned only the Location SceneFrame batch edge and child Location-to-Shot edge.
+- Playwright automation was not used because the local Playwright browser binary was not installed. Chrome DevTools automation and backend API smoke covered the browser-facing evidence; frontend unit tests cover the direct bind/drop and Inspector delete paths that are brittle to drive with synthetic tldraw pointer events.
+
+## Module Handoff Summary
+
+- Module: Phase 4 semantic canvas edges and asset binding.
+- PRD phase: Phase 4.
+- Completed commits: `d414ad4`, `9815f74`, `bc84e31`, `0d2e8cf`, `169c3cc`, `fe78857`, `76c1834`, plus this documentation commit.
+- Key follow-up for Phase 5: consume `characterAssetIds` and `locationAssetId` as durable graph facts when importing novel/storyboard data rather than inferring references from card text.
 
 ---
 
