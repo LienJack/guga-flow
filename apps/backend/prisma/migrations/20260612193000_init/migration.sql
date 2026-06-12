@@ -184,7 +184,7 @@ CREATE TABLE "NodeVersion" (
 -- CreateTable
 CREATE TABLE "ProviderConfig" (
     "id" TEXT NOT NULL,
-    "projectId" TEXT,
+    "projectId" TEXT NOT NULL,
     "kind" "ProviderKind" NOT NULL,
     "provider" TEXT NOT NULL,
     "enabled" BOOLEAN NOT NULL DEFAULT false,

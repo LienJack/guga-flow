@@ -284,7 +284,7 @@ model NodeVersion {
 
 model ProviderConfig {
   id           String       @id @default(cuid())
-  projectId    String?
+  projectId    String
   kind         ProviderKind
   provider     String
   enabled      Boolean      @default(false)
@@ -293,7 +293,7 @@ model ProviderConfig {
   paramsJson   Json?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
-  project      Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, kind, provider])
   @@index([kind, provider])
