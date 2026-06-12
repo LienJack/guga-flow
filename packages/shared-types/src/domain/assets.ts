@@ -12,6 +12,20 @@ export const ASSET_PURPOSES = [
 ] as const;
 export type AssetPurpose = (typeof ASSET_PURPOSES)[number];
 
+export const UPLOADABLE_ASSET_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "video/mp4",
+  "video/webm",
+  "text/plain",
+  "text/markdown",
+] as const;
+export type UploadableAssetMimeType = (typeof UPLOADABLE_ASSET_MIME_TYPES)[number];
+
+export const ASSET_PREVIEW_KINDS = ["image", "video", "text", "metadata"] as const;
+export type AssetPreviewKind = (typeof ASSET_PREVIEW_KINDS)[number];
+
 export interface AssetRecord {
   id: string;
   projectId: string;
@@ -24,5 +38,19 @@ export interface AssetRecord {
   width?: number;
   height?: number;
   durationMs?: number;
+  metadataJson?: unknown;
   createdAt: string;
+}
+
+export interface AssetListItem extends AssetRecord {
+  previewKind: AssetPreviewKind;
+  previewUrl?: string;
+}
+
+export interface AssetDetail extends AssetListItem {
+  textPreview?: string;
+}
+
+export interface AssetUploadResult {
+  asset: AssetDetail;
 }
