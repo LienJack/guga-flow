@@ -13,6 +13,7 @@ import type {
   DeleteCanvasEdgeResult,
   DeleteCanvasNodeResult,
   DeleteNovelDocumentResult,
+  ComposeShotPromptInput,
   GenerateStoryboardResult,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
@@ -24,6 +25,7 @@ import type {
   ProjectListItem,
   SaveCanvasSnapshotInput,
   SaveCanvasSnapshotResult,
+  ShotPromptCompositionResult,
   StoryboardDraftRecord,
   UpdateStoryboardDraftInput,
   UpdateStoryboardDraftResult,
@@ -35,6 +37,11 @@ import type {
   UpdateNovelDocumentInput,
   UpdateNovelDocumentResult,
 } from "@guga-flow/shared-types";
+
+export type ComposeShotPromptRequest = Pick<
+  ComposeShotPromptInput,
+  "globalStylePrompt" | "modelPromptSuffix"
+>;
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3002/api/v1").replace(
   /\/$/,
@@ -320,4 +327,18 @@ export function deleteCanvasEdge(
   return requestJson<DeleteCanvasEdgeResult>(`/projects/${projectId}/canvas/edges/${edgeId}`, {
     method: "DELETE",
   });
+}
+
+export function composeShotPrompt(
+  projectId: string,
+  shotNodeId: string,
+  input: ComposeShotPromptRequest = {},
+): Promise<ShotPromptCompositionResult> {
+  return requestJson<ShotPromptCompositionResult>(
+    `/projects/${projectId}/prompts/shot/${shotNodeId}/compose`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
 }

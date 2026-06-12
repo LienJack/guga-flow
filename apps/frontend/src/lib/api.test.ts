@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StoryboardResult } from "@guga-flow/shared-types";
 
 import {
+  composeShotPrompt,
   createCanvasEdge,
   createNovelDocument,
   generateStoryboardDraft,
@@ -51,6 +52,55 @@ describe("frontend api client", () => {
           targetNodeId: "shot_1",
           relation: "references_character",
           visualArrowShapeId: "shape:arrow-1",
+        }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+  });
+
+  it("calls the Shot prompt compose endpoint", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        shotNodeId: "shot_1",
+        sourceNodeIds: {
+          shotNodeId: "shot_1",
+          characterNodeIds: ["character_1"],
+          referenceAssetIds: [],
+        },
+        referenceAssetIds: [],
+        negativePrompt: "",
+        image: {
+          channel: "image",
+          prompt: "image prompt",
+          negativePrompt: "",
+          parts: [],
+          missingContext: [],
+        },
+        video: {
+          channel: "video",
+          prompt: "video prompt",
+          negativePrompt: "",
+          parts: [],
+          missingContext: [],
+        },
+        debugParts: [],
+        missingContext: [],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await composeShotPrompt("project_1", "shot_1", {
+      globalStylePrompt: "ink wash",
+      modelPromptSuffix: "clean frame",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:3002/api/v1/projects/project_1/prompts/shot/shot_1/compose",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          globalStylePrompt: "ink wash",
+          modelPromptSuffix: "clean frame",
         }),
         headers: { "Content-Type": "application/json" },
       }),
