@@ -1,5 +1,5 @@
 import { CANVAS_NODE_TYPES } from "@guga-flow/shared-types";
-import React from "react";
+import React, { type ReactNode } from "react";
 
 const sidebarItems = [
   ["Novel", 1],
@@ -10,12 +10,22 @@ const sidebarItems = [
   ["Queue", 0],
 ] as const;
 
-export function WorkbenchShell() {
+interface WorkbenchShellProps {
+  projectId?: string;
+  projectTitle?: string;
+  inspectorSlot?: ReactNode;
+}
+
+export function WorkbenchShell({
+  projectId,
+  projectTitle = "Untitled project",
+  inspectorSlot,
+}: WorkbenchShellProps) {
   return (
     <main className="workbench" aria-label="guga-flow workbench">
       <header className="topbar">
         <div className="brand">guga-flow</div>
-        <div className="project-title">Untitled project</div>
+        <div className="project-title">{projectTitle}</div>
         <nav className="toolbar" aria-label="Primary actions">
           <button className="tool-button" type="button" disabled>
             Storyboard
@@ -90,7 +100,14 @@ export function WorkbenchShell() {
               <span>Canvas status</span>
               <span className="property-value">Ready</span>
             </li>
+            {projectId ? (
+              <li className="property-item">
+                <span>Project</span>
+                <span className="property-value">{projectId}</span>
+              </li>
+            ) : null}
           </ul>
+          {inspectorSlot}
         </aside>
       </section>
 

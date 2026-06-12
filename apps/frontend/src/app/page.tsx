@@ -1,5 +1,5 @@
-import { WorkbenchShell } from "../components/workbench-shell";
+import { ProjectDashboard } from "../components/projects/project-dashboard";
 
 export default function HomePage() {
-  return <WorkbenchShell />;
+  return <ProjectDashboard />;
 }
