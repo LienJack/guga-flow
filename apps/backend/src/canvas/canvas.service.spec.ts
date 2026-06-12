@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
+import type { StoryboardResult } from "@guga-flow/shared-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PrismaService } from "../prisma/prisma.service";
@@ -77,6 +78,18 @@ function asset(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function storyboardDraft(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "draft_1",
+    projectId: "project_1",
+    novelDocumentId: "novel_1",
+    status: "ready",
+    storyboardJson: importStoryboard(),
+    readyForImport: true,
+    ...overrides,
+  };
+}
+
 type MockAsset = ReturnType<typeof asset>;
 type MockCanvasEdge = ReturnType<typeof canvasEdge>;
 type MockCanvasNode = ReturnType<typeof canvasNode>;
@@ -106,6 +119,9 @@ function createPrismaMock() {
       update: vi.fn(),
       delete: vi.fn(),
       deleteMany: vi.fn(),
+    },
+    storyboardDraft: {
+      findFirst: vi.fn(async (_args: MockFindArgs): Promise<ReturnType<typeof storyboardDraft> | null> => null),
     },
     asset: {
       findMany: vi.fn(async (): Promise<MockAsset[]> => []),
@@ -512,6 +528,174 @@ describe("CanvasService", () => {
     ]);
   });
 
+  it("creates storyboard import nodes and semantic edges from a ready draft", async () => {
+    let nodeSequence = 1;
+    let edgeSequence = 1;
+    prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
+    prisma.storyboardDraft.findFirst.mockResolvedValue(storyboardDraft());
+    prisma.canvasNode.findMany.mockResolvedValue([]);
+    prisma.canvasNode.create.mockImplementation(async ({ data }: MockCreateArgs) =>
+      canvasNode({
+        id: `node_${nodeSequence++}`,
+        ...data,
+      }),
+    );
+    prisma.canvasEdge.findFirst.mockResolvedValue(null);
+    prisma.canvasEdge.create.mockImplementation(async ({ data }: MockCreateArgs) =>
+      canvasEdge({
+        id: `edge_${edgeSequence++}`,
+        ...data,
+      }),
+    );
+    prisma.canvasNode.update.mockImplementation(async ({ where, data }: MockUpdateArgs) =>
+      canvasNode({
+        id: where.id,
+        dataJson: data.dataJson,
+      }),
+    );
+
+    const result = await service.importStoryboard("project_1", {
+      novelDocumentId: "novel_1",
+      storyboardDraftId: "draft_1",
+      duplicatePolicy: "new_version",
+    });
+
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(result.summary).toMatchObject({
+      sceneCount: 2,
+      shotCount: 6,
+      characterCount: 2,
+      locationCount: 1,
+      createdNodeCount: 14,
+      reusedNodeCount: 0,
+      version: 1,
+    });
+    expect(result.nodes.map((node) => node.type)).toEqual(
+      expect.arrayContaining([
+        "novel",
+        "scene_frame",
+        "scene",
+        "shot",
+        "character_asset",
+        "location_asset",
+      ]),
+    );
+    expect(result.edges.map((edge) => edge.relation)).toEqual(
+      expect.arrayContaining(["belongs_to_scene", "references_character", "references_location"]),
+    );
+    const updatedShot = result.nodes.find(
+      (node) =>
+        node.type === "shot" &&
+        Array.isArray((node.dataJson as { characterAssetIds?: unknown }).characterAssetIds),
+    );
+    expect(updatedShot?.dataJson).toMatchObject({
+      characterAssetIds: expect.arrayContaining(["node_2", "node_3"]),
+      locationAssetId: "node_4",
+    });
+  });
+
+  it("reuses matching character nodes during storyboard import", async () => {
+    let sequence = 1;
+    prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
+    prisma.storyboardDraft.findFirst.mockResolvedValue(storyboardDraft());
+    prisma.canvasNode.findMany.mockResolvedValue([
+      canvasNode({
+        id: "existing_character",
+        type: "character_asset",
+        tldrawShapeId: "shape:existing-character",
+        dataJson: { name: "Hero", role: "protagonist" },
+      }),
+    ]);
+    prisma.canvasNode.create.mockImplementation(async ({ data }: MockCreateArgs) =>
+      canvasNode({
+        id: `created_${sequence++}`,
+        ...data,
+      }),
+    );
+    prisma.canvasEdge.findFirst.mockResolvedValue(null);
+    prisma.canvasEdge.create.mockImplementation(async ({ data }: MockCreateArgs) =>
+      canvasEdge({
+        id: `edge_${sequence++}`,
+        ...data,
+      }),
+    );
+    prisma.canvasNode.update.mockImplementation(async ({ where, data }: MockUpdateArgs) =>
+      canvasNode({
+        id: where.id,
+        dataJson: data.dataJson,
+      }),
+    );
+
+    const result = await service.importStoryboard("project_1", {
+      novelDocumentId: "novel_1",
+      storyboardDraftId: "draft_1",
+    });
+
+    expect(result.summary.reusedNodeCount).toBe(1);
+    expect(result.nodes).toContainEqual(expect.objectContaining({ id: "existing_character" }));
+    expect(result.edges).toContainEqual(
+      expect.objectContaining({
+        sourceNodeId: "existing_character",
+        relation: "references_character",
+      }),
+    );
+  });
+
+  it("rejects storyboard imports when the draft is not ready", async () => {
+    prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
+    prisma.storyboardDraft.findFirst.mockResolvedValue(
+      storyboardDraft({ status: "valid", readyForImport: false }),
+    );
+
+    await expect(
+      service.importStoryboard("project_1", {
+        novelDocumentId: "novel_1",
+        storyboardDraftId: "draft_1",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.canvasNode.create).not.toHaveBeenCalled();
+    expect(prisma.canvasEdge.create).not.toHaveBeenCalled();
+  });
+
+  it("creates scene membership edges without mutating shot asset references", async () => {
+    const sceneNode = canvasNode({
+      id: "scene_1",
+      tldrawShapeId: "shape:scene-1",
+      type: "scene",
+    });
+    const frameNode = canvasNode({
+      id: "frame_1",
+      tldrawShapeId: "shape:frame-1",
+      type: "scene_frame",
+    });
+    prisma.canvasNode.findFirst.mockImplementation(async ({ where }) => {
+      if (where.id === "scene_1") {
+        return sceneNode;
+      }
+      if (where.id === "frame_1") {
+        return frameNode;
+      }
+      return null;
+    });
+    prisma.canvasEdge.create.mockResolvedValue(
+      canvasEdge({
+        id: "edge_scene_frame",
+        sourceNodeId: "scene_1",
+        targetNodeId: "frame_1",
+        relation: "belongs_to_scene",
+      }),
+    );
+
+    const result = await service.createEdge("project_1", {
+      sourceNodeId: "scene_1",
+      targetNodeId: "frame_1",
+      relation: "belongs_to_scene",
+    });
+
+    expect(result.updatedNodes).toEqual([]);
+    expect(prisma.canvasNode.update).not.toHaveBeenCalled();
+  });
+
   it("deletes semantic edges and rolls back shot references", async () => {
     const characterNode = canvasNode({
       id: "character_1",
@@ -631,3 +815,61 @@ describe("CanvasService", () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
+
+function importStoryboard(): StoryboardResult {
+  return {
+    title: "Storyboard Import",
+    logline: "Two scenes for import.",
+    characters: [
+      {
+        tempId: "char_hero",
+        name: "Hero",
+        role: "protagonist",
+        appearance: "A consistent lead.",
+        personality: "Focused.",
+        identityPrompt: "consistent hero",
+      },
+      {
+        tempId: "char_friend",
+        name: "Friend",
+        role: "support",
+        appearance: "A calm companion.",
+        personality: "Practical.",
+        identityPrompt: "consistent friend",
+      },
+    ],
+    locations: [
+      {
+        tempId: "loc_city",
+        name: "City Rooftop",
+        type: "exterior",
+        description: "A rooftop at dusk.",
+        lighting: "soft evening",
+        atmosphere: "quiet",
+        locationPrompt: "cinematic rooftop",
+      },
+    ],
+    scenes: [1, 2].map((sceneIndex) => ({
+      tempId: `scene_${sceneIndex}`,
+      title: `Scene ${sceneIndex}`,
+      sourceExcerpt: `Scene ${sceneIndex} source.`,
+      summary: `Scene ${sceneIndex} summary.`,
+      mood: "focused",
+      characterTempIds: ["char_hero", "char_friend"],
+      locationTempId: "loc_city",
+      shots: [1, 2, 3].map((shotIndex) => ({
+        tempId: `shot_${sceneIndex}_${shotIndex}`,
+        shotIndex,
+        title: `Shot ${sceneIndex}.${shotIndex}`,
+        durationSec: 4,
+        visualDescription: `Visual ${sceneIndex}.${shotIndex}`,
+        action: `Action ${sceneIndex}.${shotIndex}`,
+        cameraMovement: "slow push in",
+        characterTempIds: ["char_hero", "char_friend"],
+        locationTempId: "loc_city",
+        imagePrompt: `image prompt ${sceneIndex}.${shotIndex}`,
+        videoPrompt: `video prompt ${sceneIndex}.${shotIndex}`,
+      })),
+    })),
+  };
+}

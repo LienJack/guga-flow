@@ -57,6 +57,14 @@ export class MockLlmProvider implements LlmProvider {
           personality: "Determined and observant.",
           identityPrompt: "consistent protagonist, cinematic character reference",
         },
+        {
+          tempId: "char_ally",
+          name: "Ally",
+          role: "support",
+          appearance: "A reliable companion with a clean visual silhouette.",
+          personality: "Calm, practical, and watchful.",
+          identityPrompt: "consistent support character, cinematic character reference",
+        },
       ],
       locations: [
         {
@@ -70,35 +78,68 @@ export class MockLlmProvider implements LlmProvider {
         },
       ],
       scenes: [
-        {
-          tempId: "scene_1",
+        mockScene({
+          sceneIndex: 1,
           title: "Opening Beat",
           sourceExcerpt: input.novelText.slice(0, 160),
           summary: "The story opens with a clear visual action.",
           mood: "anticipatory",
           timeOfDay: "evening",
-          characterTempIds: ["char_hero"],
-          locationTempId: "loc_city",
-          shots: [
-            {
-              tempId: "shot_1",
-              shotIndex: 1,
-              title: "Hero establishes the scene",
-              durationSec: 4,
-              visualDescription: "The hero steps into frame and surveys the city.",
-              action: "walks to the edge of the rooftop",
-              cameraMovement: "slow push in",
-              mood: "focused",
-              characterTempIds: ["char_hero"],
-              locationTempId: "loc_city",
-              imagePrompt: "hero on a cinematic rooftop, evening, slow push in",
-              videoPrompt: "slow push in on hero overlooking the city",
-            },
-          ],
-        },
+        }),
+        mockScene({
+          sceneIndex: 2,
+          title: "Decision Beat",
+          sourceExcerpt: input.novelText.slice(160, 320) || input.novelText.slice(0, 160),
+          summary: "The hero and ally make the decision that moves the story forward.",
+          mood: "resolved",
+          timeOfDay: "night",
+        }),
       ],
     };
   }
+}
+
+function mockScene(input: {
+  sceneIndex: number;
+  title: string;
+  sourceExcerpt: string;
+  summary: string;
+  mood: string;
+  timeOfDay: string;
+}): StoryboardResult["scenes"][number] {
+  return {
+    tempId: `scene_${input.sceneIndex}`,
+    title: input.title,
+    sourceExcerpt: input.sourceExcerpt,
+    summary: input.summary,
+    mood: input.mood,
+    timeOfDay: input.timeOfDay,
+    characterTempIds: ["char_hero", "char_ally"],
+    locationTempId: "loc_city",
+    shots: [1, 2, 3].map((shotIndex) => {
+      const globalShotIndex = (input.sceneIndex - 1) * 3 + shotIndex;
+      return {
+        tempId: `shot_${globalShotIndex}`,
+        shotIndex: globalShotIndex,
+        title: `Shot ${globalShotIndex}`,
+        durationSec: shotIndex === 2 ? 5 : 4,
+        visualDescription: `Scene ${input.sceneIndex} shot ${shotIndex} frames the rooftop action clearly.`,
+        action:
+          shotIndex === 1
+            ? "the hero enters the rooftop frame"
+            : shotIndex === 2
+              ? "the ally joins and points toward the city"
+              : "both characters commit to the next move",
+        cameraMovement:
+          shotIndex === 1 ? "slow push in" : shotIndex === 2 ? "gentle pan" : "locked close up",
+        mood: input.mood,
+        characterTempIds: shotIndex === 1 ? ["char_hero"] : ["char_hero", "char_ally"],
+        locationTempId: "loc_city",
+        imagePrompt: `cinematic rooftop scene ${input.sceneIndex} shot ${shotIndex}, consistent hero and ally`,
+        videoPrompt: `camera ${shotIndex} movement over rooftop scene ${input.sceneIndex}`,
+      };
+    }),
+  };
 }
 
 export class MockImageProvider implements ImageProvider {

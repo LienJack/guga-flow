@@ -1,5 +1,6 @@
 import "reflect-metadata";
 
+import type { CanvasEdgeRecord, CanvasNodeRecord, StoryboardResult } from "@guga-flow/shared-types";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
@@ -832,6 +833,108 @@ describe("project api e2e", () => {
       .expect(({ body }) => {
         expect(body.nodes).toHaveLength(0);
         expect(body.edges).toHaveLength(0);
+      });
+  });
+
+  it("imports ready storyboard drafts into persistent canvas graph state", async () => {
+    const createdProject = await request(app.getHttpServer())
+      .post("/api/v1/projects")
+      .send({ title: "Storyboard Import Project" })
+      .expect(201);
+    const projectId = createdProject.body.id;
+
+    const createdNovel = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels`)
+      .send({
+        title: "Storyboard Import Source",
+        content:
+          "A hero watches the city lights before choosing the next shot. An ally joins with a warning and points to the next signal.",
+      })
+      .expect(201);
+    const novelId = createdNovel.body.novel.id;
+
+    const generated = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels/${novelId}/generate-storyboard`)
+      .expect(201);
+    const draftId = generated.body.draft.id;
+    const generatedStoryboard = generated.body.draft.storyboard as StoryboardResult;
+
+    expect(generatedStoryboard.scenes).toHaveLength(2);
+    expect(generatedStoryboard.scenes.flatMap((scene) => scene.shots)).toHaveLength(6);
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels/${novelId}/storyboard-draft/${draftId}/ready`)
+      .expect(201);
+
+    const imported = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/import-storyboard`)
+      .send({
+        novelDocumentId: novelId,
+        storyboardDraftId: draftId,
+        duplicatePolicy: "new_version",
+      })
+      .expect(201);
+    const importedNodes = imported.body.nodes as CanvasNodeRecord[];
+    const importedEdges = imported.body.edges as CanvasEdgeRecord[];
+
+    expect(imported.body.summary).toMatchObject({
+      sceneCount: 2,
+      shotCount: 6,
+      characterCount: 2,
+      locationCount: 1,
+      createdNodeCount: 14,
+      reusedNodeCount: 0,
+      version: 1,
+    });
+    expect(importedNodes.map((node) => node.type)).toEqual(
+      expect.arrayContaining([
+        "novel",
+        "scene_frame",
+        "scene",
+        "shot",
+        "character_asset",
+        "location_asset",
+      ]),
+    );
+    expect(importedEdges.map((edge) => edge.relation)).toEqual(
+      expect.arrayContaining(["belongs_to_scene", "references_character", "references_location"]),
+    );
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/canvas`)
+      .expect(200)
+      .expect(({ body }) => {
+        const nodes = body.nodes as CanvasNodeRecord[];
+        const edges = body.edges as CanvasEdgeRecord[];
+        expect(nodes).toHaveLength(importedNodes.length);
+        expect(edges).toHaveLength(importedEdges.length);
+        expect(
+          nodes.some((node) => {
+            const dataJson = node.dataJson as {
+              characterAssetIds?: unknown;
+              imagePrompt?: unknown;
+              locationAssetId?: unknown;
+            };
+            return (
+              node.type === "shot" &&
+              typeof dataJson.imagePrompt === "string" &&
+              Array.isArray(dataJson.characterAssetIds) &&
+              typeof dataJson.locationAssetId === "string"
+            );
+          }),
+        ).toBe(true);
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/import-storyboard`)
+      .send({
+        novelDocumentId: novelId,
+        storyboardDraftId: draftId,
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.summary.version).toBe(2);
+        expect(body.summary.createdNodeCount).toBeGreaterThan(0);
       });
   });
 

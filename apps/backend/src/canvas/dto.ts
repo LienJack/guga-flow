@@ -3,8 +3,10 @@ import type {
   CanvasSnapshotJson,
   CreateCanvasEdgeInput,
   CreateCanvasNodeInput,
+  ImportStoryboardToCanvasInput,
   NodeStatus,
   Phase3CanvasNodeType,
+  StoryboardImportDuplicatePolicy,
   UpdateCanvasNodeGeometryInput,
   UpdateCanvasNodeInput,
 } from "@guga-flow/shared-types";
@@ -12,6 +14,7 @@ import {
   CANVAS_EDGE_RELATIONS,
   NODE_STATUSES,
   PHASE_3_CANVAS_NODE_TYPES,
+  STORYBOARD_IMPORT_DUPLICATE_POLICIES,
 } from "@guga-flow/shared-types";
 import { Type } from "class-transformer";
 import {
@@ -159,4 +162,20 @@ export class UpdateCanvasNodeGeometryDto implements UpdateCanvasNodeGeometryInpu
   @Type(() => Number)
   @IsInt()
   zIndex?: number;
+}
+
+export class ImportStoryboardToCanvasDto implements ImportStoryboardToCanvasInput {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  novelDocumentId!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  storyboardDraftId!: string;
+
+  @IsOptional()
+  @IsIn(STORYBOARD_IMPORT_DUPLICATE_POLICIES)
+  duplicatePolicy?: StoryboardImportDuplicatePolicy;
 }

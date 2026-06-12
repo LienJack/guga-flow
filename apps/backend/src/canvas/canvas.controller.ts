@@ -4,6 +4,7 @@ import { CanvasService } from "./canvas.service";
 import {
   CreateCanvasEdgeDto,
   CreateCanvasNodeDto,
+  ImportStoryboardToCanvasDto,
   SaveCanvasSnapshotDto,
   UpdateCanvasNodeDto,
   UpdateCanvasNodeGeometryDto,
@@ -31,6 +32,14 @@ export class CanvasController {
   @Post("edges")
   createEdge(@Param("projectId") projectId: string, @Body() body: CreateCanvasEdgeDto) {
     return this.canvasService.createEdge(projectId, body);
+  }
+
+  @Post("import-storyboard")
+  importStoryboard(
+    @Param("projectId") projectId: string,
+    @Body() body: ImportStoryboardToCanvasDto,
+  ) {
+    return this.canvasService.importStoryboard(projectId, body);
   }
 
   @Patch("nodes/:nodeId")

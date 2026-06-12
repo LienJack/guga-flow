@@ -18,9 +18,15 @@ import type {
   CreateCanvasNodeResult,
   DeleteCanvasEdgeResult,
   DeleteCanvasNodeResult,
+  ImportStoryboardToCanvasInput,
+  ImportStoryboardToCanvasResult,
   NodeStatus,
   SaveCanvasSnapshotInput,
   SaveCanvasSnapshotResult,
+  StoryboardImportDataJson,
+  StoryboardImportDuplicatePolicy,
+  StoryboardImportPlannedNode,
+  StoryboardImportSummary,
   UpdateCanvasNodeGeometryInput,
   UpdateCanvasNodeGeometryResult,
   UpdateCanvasNodeInput,
@@ -30,6 +36,11 @@ import {
   CANVAS_EDGE_RELATIONS,
   NODE_STATUSES,
   PHASE_3_CANVAS_NODE_TYPES,
+  STORYBOARD_IMPORT_DUPLICATE_POLICIES,
+  buildStoryboardImportPlan,
+  storyboardImportAssetKey,
+  storyboardImportProvenance,
+  validateStoryboardResult,
 } from "@guga-flow/shared-types";
 
 import { PrismaService } from "../prisma/prisma.service";
@@ -72,6 +83,15 @@ type CanvasEdgeModel = {
   relation: string;
   dataJson: unknown;
   createdAt: Date | string;
+};
+
+type StoryboardDraftModel = {
+  id: string;
+  projectId: string;
+  novelDocumentId: string;
+  status: string;
+  storyboardJson: unknown | null;
+  readyForImport: boolean;
 };
 
 type CanvasPrismaClient = Pick<PrismaService, "canvasEdge" | "canvasNode">;
@@ -171,6 +191,15 @@ function getStringArray(value: CanvasSnapshotJson | undefined): string[] {
 
 function getOptionalString(value: CanvasSnapshotJson | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function isStoryboardImportDuplicatePolicy(
+  value: unknown,
+): value is StoryboardImportDuplicatePolicy {
+  return (
+    typeof value === "string" &&
+    STORYBOARD_IMPORT_DUPLICATE_POLICIES.includes(value as StoryboardImportDuplicatePolicy)
+  );
 }
 
 @Injectable()
@@ -358,15 +387,161 @@ export class CanvasService {
         ...input,
         dataJson,
       });
-      const updatedNode =
-        input.relation === "references_character"
-          ? await this.applyCharacterToShot(tx, targetNode, sourceNode.id)
-          : await this.applyLocationToShot(tx, targetNode, sourceNode.id);
+      const updatedNodes: CanvasNodeModel[] = [];
+      if (input.relation === "references_character") {
+        updatedNodes.push(await this.applyCharacterToShot(tx, targetNode, sourceNode.id));
+      } else if (input.relation === "references_location") {
+        updatedNodes.push(await this.applyLocationToShot(tx, targetNode, sourceNode.id));
+      }
 
       return {
         edge: this.toCanvasEdgeRecord(edge),
         edges: [this.toCanvasEdgeRecord(edge)],
-        updatedNodes: [this.toCanvasNodeRecord(updatedNode)],
+        updatedNodes: updatedNodes.map((node) => this.toCanvasNodeRecord(node)),
+      };
+    });
+  }
+
+  async importStoryboard(
+    projectId: string,
+    input: ImportStoryboardToCanvasInput,
+  ): Promise<ImportStoryboardToCanvasResult> {
+    const duplicatePolicy = input.duplicatePolicy ?? "new_version";
+    if (!isStoryboardImportDuplicatePolicy(duplicatePolicy)) {
+      throw new BadRequestException("Storyboard import duplicate policy is invalid");
+    }
+
+    const canvasDocument = await this.getOrCreateCanvasDocument(projectId);
+    const draft = await this.findReadyStoryboardDraft(
+      projectId,
+      input.novelDocumentId,
+      input.storyboardDraftId,
+    );
+    const validation = validateStoryboardResult(draft.storyboardJson);
+    if (!validation.success) {
+      throw new BadRequestException("Storyboard draft is invalid");
+    }
+
+    const existingNodes = await this.prisma.canvasNode.findMany({
+      where: { projectId, canvasDocumentId: canvasDocument.id },
+      orderBy: [{ zIndex: "asc" }, { createdAt: "asc" }],
+    });
+    const existingImportVersions = existingNodes.flatMap((node) => {
+      const provenance = storyboardImportProvenance(node.dataJson);
+      return provenance ? [provenance.version] : [];
+    });
+    const version =
+      existingImportVersions.length > 0 ? Math.max(...existingImportVersions) + 1 : 1;
+    const importBatchId = `storyboard-import-${draft.id}-v${version}-${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const plan = buildStoryboardImportPlan({
+      storyboard: validation.data,
+      draftId: draft.id,
+      novelDocumentId: draft.novelDocumentId,
+      importBatchId,
+      importedAt: new Date().toISOString(),
+      version,
+      duplicatePolicy,
+    });
+
+    const maxZIndex = existingNodes.reduce(
+      (max, node) => Math.max(max, Number.isFinite(node.zIndex) ? node.zIndex : 0),
+      0,
+    );
+    const existingAssetNodes = existingNodes.filter(
+      (node) => node.type === "character_asset" || node.type === "location_asset",
+    );
+
+    return this.runTransaction(async (tx) => {
+      const nodeByPlanKey = new Map<string, CanvasNodeModel>();
+      const resultNodes: CanvasNodeModel[] = [];
+      const resultNodeIds = new Set<string>();
+      let createdNodeCount = 0;
+      const reusedNodeIds = new Set<string>();
+
+      for (const plannedNode of plan.nodes) {
+        const reusableAssetNode = this.findReusableAssetNode(plannedNode, existingAssetNodes);
+        if (reusableAssetNode) {
+          nodeByPlanKey.set(plannedNode.key, reusableAssetNode);
+          if (!resultNodeIds.has(reusableAssetNode.id)) {
+            resultNodes.push(reusableAssetNode);
+            resultNodeIds.add(reusableAssetNode.id);
+          }
+          reusedNodeIds.add(reusableAssetNode.id);
+          continue;
+        }
+
+        const node = await tx.canvasNode.create({
+          data: {
+            projectId,
+            canvasDocumentId: canvasDocument.id,
+            tldrawShapeId: this.importShapeId(importBatchId, plannedNode.key),
+            type: plannedNode.type,
+            title: this.normalizeTitle(plannedNode.title),
+            x: plannedNode.x,
+            y: plannedNode.y,
+            width: plannedNode.width,
+            height: plannedNode.height,
+            zIndex: maxZIndex + plannedNode.zIndex + 1,
+            status: "draft",
+            dataJson: this.normalizeNodeDataJson(plannedNode.dataJson),
+          },
+        });
+        nodeByPlanKey.set(plannedNode.key, node);
+        resultNodes.push(node);
+        resultNodeIds.add(node.id);
+        createdNodeCount += 1;
+      }
+
+      const resultEdges: CanvasEdgeModel[] = [];
+      const updatedNodeById = new Map<string, CanvasNodeModel>();
+
+      for (const [edgeIndex, plannedEdge] of plan.edges.entries()) {
+        const sourceNode = nodeByPlanKey.get(plannedEdge.sourceKey);
+        const targetNode = nodeByPlanKey.get(plannedEdge.targetKey);
+        if (!sourceNode || !targetNode) {
+          throw new BadRequestException("Storyboard import edge references a missing node");
+        }
+
+        this.validateSemanticEdge(sourceNode, targetNode, plannedEdge.relation);
+        const edge = await this.findOrCreateCanvasEdge(tx, projectId, canvasDocument.id, {
+          sourceNodeId: sourceNode.id,
+          targetNodeId: targetNode.id,
+          relation: plannedEdge.relation,
+          sourceShapeId: sourceNode.tldrawShapeId,
+          targetShapeId: targetNode.tldrawShapeId,
+          visualArrowShapeId: this.importShapeId(importBatchId, `edge-${edgeIndex}`),
+          dataJson: plannedEdge.dataJson,
+        });
+        resultEdges.push(edge);
+
+        if (plannedEdge.relation === "references_character" && targetNode.type === "shot") {
+          updatedNodeById.set(
+            targetNode.id,
+            await this.applyCharacterToShot(tx, updatedNodeById.get(targetNode.id) ?? targetNode, sourceNode.id),
+          );
+        } else if (plannedEdge.relation === "references_location" && targetNode.type === "shot") {
+          updatedNodeById.set(
+            targetNode.id,
+            await this.applyLocationToShot(tx, updatedNodeById.get(targetNode.id) ?? targetNode, sourceNode.id),
+          );
+        }
+      }
+
+      const mergedNodes = resultNodes.map((node) => updatedNodeById.get(node.id) ?? node);
+      const summary: StoryboardImportSummary = {
+        ...plan.summary,
+        createdNodeCount,
+        reusedNodeCount: reusedNodeIds.size,
+        createdEdgeCount: resultEdges.length,
+      };
+
+      return {
+        importBatchId,
+        summary,
+        nodes: mergedNodes.map((node) => this.toCanvasNodeRecord(node)),
+        edges: resultEdges.map((edge) => this.toCanvasEdgeRecord(edge)),
       };
     });
   }
@@ -512,6 +687,19 @@ export class CanvasService {
       return;
     }
 
+    if (relation === "belongs_to_scene") {
+      const validSceneMembership =
+        (sourceNode.type === "shot" && targetNode.type === "scene") ||
+        (sourceNode.type === "scene" && targetNode.type === "scene_frame") ||
+        (sourceNode.type === "shot" && targetNode.type === "scene_frame");
+      if (!validSceneMembership) {
+        throw new BadRequestException(
+          "Scene membership edges must connect shots or scenes to their scene container",
+        );
+      }
+      return;
+    }
+
     throw new BadRequestException("Canvas edge relation is not supported for semantic binding yet");
   }
 
@@ -620,6 +808,83 @@ export class CanvasService {
         ...(input.dataJson !== undefined ? { dataJson: input.dataJson } : {}),
       },
     });
+  }
+
+  private async findReadyStoryboardDraft(
+    projectId: string,
+    novelDocumentId: string,
+    storyboardDraftId: string,
+  ): Promise<StoryboardDraftModel> {
+    await this.ensureProjectExists(projectId);
+
+    const draft = await this.prisma.storyboardDraft.findFirst({
+      where: {
+        id: storyboardDraftId,
+        projectId,
+        novelDocumentId,
+      },
+    });
+    if (!draft) {
+      throw new NotFoundException("Storyboard draft not found");
+    }
+    if (draft.status !== "ready" || !draft.readyForImport) {
+      throw new BadRequestException("Storyboard draft is not ready for import");
+    }
+
+    return draft;
+  }
+
+  private findReusableAssetNode(
+    plannedNode: StoryboardImportPlannedNode,
+    existingAssetNodes: CanvasNodeModel[],
+  ): CanvasNodeModel | undefined {
+    if (plannedNode.type !== "character_asset" && plannedNode.type !== "location_asset") {
+      return undefined;
+    }
+
+    const plannedType = plannedNode.type;
+    const plannedAssetKey = this.assetKeyForNode(plannedType, plannedNode.dataJson);
+    if (!plannedAssetKey) {
+      return undefined;
+    }
+
+    return existingAssetNodes.find(
+      (node) =>
+        node.type === plannedType &&
+        this.assetKeyForNode(plannedType, this.toNodeDataObject(node.dataJson)) === plannedAssetKey,
+    );
+  }
+
+  private assetKeyForNode(
+    type: Extract<CanvasNodeType, "character_asset" | "location_asset">,
+    dataJson: { [key: string]: CanvasSnapshotJson },
+  ): string | undefined {
+    const explicitKey = getOptionalString(dataJson.assetKey);
+    if (explicitKey) {
+      return explicitKey;
+    }
+
+    const name = getOptionalString(dataJson.name);
+    if (!name) {
+      return undefined;
+    }
+
+    return type === "character_asset"
+      ? storyboardImportAssetKey(type, {
+          name,
+          role: getOptionalString(dataJson.role),
+        })
+      : storyboardImportAssetKey(type, {
+          name,
+          locationType: getOptionalString(dataJson.locationType),
+        });
+  }
+
+  private importShapeId(importBatchId: string, key: string): string {
+    return `shape:${[importBatchId, key]
+      .join("-")
+      .replace(/[^a-zA-Z0-9:_-]+/g, "-")
+      .slice(0, 150)}`;
   }
 
   private async applyCharacterToShot(
