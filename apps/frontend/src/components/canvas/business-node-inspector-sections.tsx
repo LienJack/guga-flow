@@ -41,6 +41,7 @@ export const BUSINESS_NODE_FIELDS = {
     { key: "personality", label: "Personality", multiline: true },
     { key: "wardrobe", label: "Wardrobe", multiline: true },
     { key: "consistencyPrompt", label: "Consistency Prompt", multiline: true },
+    { key: "identityPrompt", label: "Identity Prompt", multiline: true },
   ],
   location_asset: [
     { key: "name", label: "Name" },
@@ -48,6 +49,7 @@ export const BUSINESS_NODE_FIELDS = {
     { key: "mood", label: "Mood" },
     { key: "visualStyle", label: "Visual Style", multiline: true },
     { key: "consistencyPrompt", label: "Consistency Prompt", multiline: true },
+    { key: "locationPrompt", label: "Location Prompt", multiline: true },
   ],
   image: [
     { key: "description", label: "Description", multiline: true },

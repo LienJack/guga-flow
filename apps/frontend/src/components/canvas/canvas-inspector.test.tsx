@@ -101,6 +101,25 @@ describe("CanvasInspector", () => {
     expect(html).toContain("Assets");
   });
 
+  it("renders Character prompt fields and node reference image controls", () => {
+    const html = renderInspector({
+      nodes: [
+        {
+          ...characterNode,
+          dataJson: {
+            name: "Ari",
+            identityPrompt: "consistent Ari identity",
+          },
+        },
+      ],
+      selection: { kind: "business-node", nodeId: characterNode.id },
+    });
+
+    expect(html).toContain("Identity Prompt");
+    expect(html).toContain("consistent Ari identity");
+    expect(html).toContain("Reference images");
+  });
+
   it("renders selected edge relation and endpoints while keeping assets available", () => {
     const html = renderInspector({
       nodes: [characterNode, shotNode],

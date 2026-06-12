@@ -7,6 +7,7 @@ import { type CanvasGraphState } from "./canvas-edge-data";
 import { CanvasEdgeInspector } from "./canvas-edge-inspector";
 import type { CanvasSelectionState } from "./canvas-selection";
 import { BusinessNodeForm } from "./business-node-form";
+import { NodeReferenceAssets } from "./node-reference-assets";
 
 interface CanvasInspectorProps {
   edges: CanvasEdgeRecord[];
@@ -71,6 +72,13 @@ export function CanvasInspector({
               const result = await saveNode(projectId, selectedNode.id, input);
               onNodeUpdated(result);
             }}
+          />
+        ) : null}
+        {selectedNode ? (
+          <NodeReferenceAssets
+            projectId={projectId}
+            node={selectedNode}
+            onNodeUpdated={onNodeUpdated}
           />
         ) : null}
       </section>

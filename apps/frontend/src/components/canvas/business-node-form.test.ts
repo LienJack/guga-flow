@@ -28,6 +28,27 @@ const shotNode: CanvasNodeRecord = {
   updatedAt: "2026-06-12T00:00:00.000Z",
 };
 
+const characterNode: CanvasNodeRecord = {
+  ...shotNode,
+  id: "character_1",
+  tldrawShapeId: "shape:character-1",
+  type: "character_asset",
+  title: "Ari",
+  dataJson: {
+    name: "Ari",
+    identityPrompt: "old identity",
+    consistencyPrompt: "old consistency",
+    referenceAssetIds: ["asset_1"],
+    storyboardImport: {
+      batchId: "batch_1",
+      draftId: "draft_1",
+      novelDocumentId: "novel_1",
+      entityKind: "character_asset",
+      version: 1,
+    },
+  },
+};
+
 describe("dataJsonFromForm", () => {
   it("preserves non-form extension data while updating and clearing known fields", () => {
     expect(
@@ -43,6 +64,27 @@ describe("dataJsonFromForm", () => {
       locationAssetId: "location_1",
       providerMeta: { requestId: "req_1", version: 2 },
       tags: ["night", "rooftop"],
+    });
+  });
+
+  it("saves Character prompt fields without dropping reference ids or provenance", () => {
+    expect(
+      dataJsonFromForm(characterNode, {
+        name: "Ari",
+        identityPrompt: "edited identity",
+        consistencyPrompt: "",
+      }),
+    ).toEqual({
+      name: "Ari",
+      identityPrompt: "edited identity",
+      referenceAssetIds: ["asset_1"],
+      storyboardImport: {
+        batchId: "batch_1",
+        draftId: "draft_1",
+        novelDocumentId: "novel_1",
+        entityKind: "character_asset",
+        version: 1,
+      },
     });
   });
 });

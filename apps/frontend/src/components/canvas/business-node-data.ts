@@ -154,6 +154,8 @@ export function createDefaultBusinessNodeData<TType extends Phase3CanvasNodeType
         personality: "",
         wardrobe: "",
         consistencyPrompt: "",
+        identityPrompt: "",
+        referenceAssetIds: [],
       } as Phase3CanvasNodeData<TType>;
     case "location_asset":
       return {
@@ -162,6 +164,8 @@ export function createDefaultBusinessNodeData<TType extends Phase3CanvasNodeType
         mood: "",
         visualStyle: "",
         consistencyPrompt: "",
+        locationPrompt: "",
+        referenceAssetIds: [],
       } as Phase3CanvasNodeData<TType>;
     case "image":
       return {
@@ -277,6 +281,15 @@ function shotReferenceText(data: Record<string, unknown>): string {
   return compact([characterReference, locationReference], "");
 }
 
+function referenceAssetText(data: Record<string, unknown>): string {
+  const referenceCount = new Set(stringArray(data, "referenceAssetIds")).size;
+  if (referenceCount === 0) {
+    return "";
+  }
+
+  return `${referenceCount} reference image${referenceCount === 1 ? "" : "s"}`;
+}
+
 function titleFromData(type: Phase3CanvasNodeType, data: Record<string, unknown>): string {
   switch (type) {
     case "character_asset":
@@ -350,11 +363,26 @@ function detailForNode(
       );
     case "character_asset":
       return compact(
-        [text(data, "role"), text(data, "personality"), text(data, "consistencyPrompt")],
+        [
+          text(data, "role"),
+          text(data, "personality"),
+          text(data, "identityPrompt"),
+          text(data, "consistencyPrompt"),
+          referenceAssetText(data),
+        ],
         fallback,
       );
     case "location_asset":
-      return compact([text(data, "mood"), text(data, "visualStyle"), text(data, "consistencyPrompt")], fallback);
+      return compact(
+        [
+          text(data, "mood"),
+          text(data, "visualStyle"),
+          text(data, "locationPrompt"),
+          text(data, "consistencyPrompt"),
+          referenceAssetText(data),
+        ],
+        fallback,
+      );
     case "image":
       return compact([text(data, "assetId"), text(data, "prompt")], fallback);
     case "video":

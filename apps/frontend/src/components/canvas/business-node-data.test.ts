@@ -105,9 +105,40 @@ describe("business node data helpers", () => {
     const location = createDefaultBusinessNodeData("location_asset");
 
     expect(character).toHaveProperty("consistencyPrompt");
+    expect(character).toHaveProperty("identityPrompt");
+    expect(character).toHaveProperty("referenceAssetIds");
     expect(character).toHaveProperty("appearance");
     expect(location).toHaveProperty("consistencyPrompt");
+    expect(location).toHaveProperty("locationPrompt");
+    expect(location).toHaveProperty("referenceAssetIds");
     expect(location).toHaveProperty("visualStyle");
+  });
+
+  it("surfaces Character and Location prompt/reference state on cards", () => {
+    const character = buildBusinessNodeCardModel({
+      ...baseNode,
+      type: "character_asset",
+      title: "Ari",
+      dataJson: {
+        role: "Pilot",
+        identityPrompt: "consistent pilot identity",
+        referenceAssetIds: ["asset_1", "asset_1", "asset_2"],
+      },
+    });
+    const location = buildBusinessNodeCardModel({
+      ...baseNode,
+      type: "location_asset",
+      title: "Launch Site",
+      dataJson: {
+        locationPrompt: "neon launch pad at dawn",
+        referenceAssetIds: ["asset_3"],
+      },
+    });
+
+    expect(character.detail).toContain("consistent pilot identity");
+    expect(character.detail).toContain("2 reference images");
+    expect(location.detail).toContain("neon launch pad");
+    expect(location.detail).toContain("1 reference image");
   });
 
   it("tolerates partially populated data from older records", () => {

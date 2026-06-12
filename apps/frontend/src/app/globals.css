@@ -550,6 +550,14 @@ select {
   gap: 12px;
 }
 
+.node-reference-assets {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 2px;
+}
+
 .canvas-edge-inspector {
   display: grid;
   gap: 12px;
@@ -947,6 +955,80 @@ select {
 
 .asset-upload {
   grid-template-columns: 1fr;
+}
+
+.reference-upload {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.reference-upload input {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 9px;
+  font-size: 12px;
+}
+
+.reference-asset-list,
+.reference-candidate-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reference-asset-row,
+.reference-candidate-row {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 7px;
+}
+
+.reference-asset-row {
+  grid-template-columns: 34px minmax(0, 1fr) 30px;
+}
+
+.reference-candidate-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.reference-asset-row img,
+.reference-asset-fallback {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  background: var(--panel-strong);
+}
+
+.reference-asset-row img {
+  object-fit: cover;
+}
+
+.reference-asset-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.reference-asset-row span,
+.reference-candidate-row span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .asset-row {
