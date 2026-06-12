@@ -1,3 +1,4 @@
+import type { CanvasNodeRecord, UpdateCanvasNodeGeometryInput } from "@guga-flow/shared-types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createBusinessNodeGeometryScheduler } from "./use-business-node-sync";
@@ -36,11 +37,21 @@ describe("business node geometry scheduler", () => {
 
   it("debounces geometry patches and flushes the latest value", async () => {
     vi.useFakeTimers();
-    const patchGeometry = vi.fn(async () => undefined);
+    const onGeometrySaved = vi.fn();
+    const patchGeometry = vi.fn(
+      async (
+        projectId: string,
+        nodeId: string,
+        input: UpdateCanvasNodeGeometryInput,
+      ) => ({
+        node: nodeFromGeometry(projectId, nodeId, input),
+      }),
+    );
     const scheduler = createBusinessNodeGeometryScheduler({
       projectId: "project_1",
       delayMs: 100,
       patchGeometry,
+      onGeometrySaved,
     });
 
     scheduler.schedule("node_1", { x: 0, y: 0, width: 360, height: 220 });
@@ -55,6 +66,16 @@ describe("business node geometry scheduler", () => {
       width: 380,
       height: 240,
     });
+    expect(onGeometrySaved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "node_1",
+        projectId: "project_1",
+        x: 20,
+        y: 30,
+        width: 380,
+        height: 240,
+      }),
+    );
   });
 
   it("reports geometry patch failures", async () => {
@@ -73,3 +94,27 @@ describe("business node geometry scheduler", () => {
     expect(onError).toHaveBeenCalledWith("offline");
   });
 });
+
+function nodeFromGeometry(
+  projectId: string,
+  nodeId: string,
+  input: UpdateCanvasNodeGeometryInput,
+): CanvasNodeRecord {
+  return {
+    id: nodeId,
+    projectId,
+    canvasDocumentId: "canvas_1",
+    tldrawShapeId: "shape:shot-1",
+    type: "shot",
+    title: "Shot",
+    x: input.x,
+    y: input.y,
+    width: input.width,
+    height: input.height,
+    zIndex: input.zIndex ?? 0,
+    status: "draft",
+    dataJson: {},
+    createdAt: "2026-06-12T00:00:00.000Z",
+    updatedAt: "2026-06-12T00:00:00.000Z",
+  };
+}

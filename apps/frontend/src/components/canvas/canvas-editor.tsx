@@ -78,6 +78,37 @@ function zIndexForNode(node: CanvasNodeRecord | undefined): number {
   return node?.zIndex ?? 0;
 }
 
+function mergeCanvasNode(nodes: CanvasNodeRecord[], nextNode: CanvasNodeRecord): CanvasNodeRecord[] {
+  const index = nodes.findIndex((node) => node.id === nextNode.id);
+  if (index === -1) {
+    return [...nodes, nextNode];
+  }
+
+  const nextNodes = [...nodes];
+  nextNodes[index] = nextNode;
+  return nextNodes;
+}
+
+function restoreBusinessNodeShape(editor: Editor, node: CanvasNodeRecord) {
+  if (!isPhase3CanvasNodeType(node.type)) {
+    return;
+  }
+
+  const shapeId = nodeShapeId(node);
+  if (editor.getShape(shapeId)) {
+    return;
+  }
+
+  editor.createShape({
+    id: shapeId,
+    type: getBusinessNodeShapeType(node.type),
+    x: node.x,
+    y: node.y,
+    props: buildBusinessNodeShapeProps(node),
+  });
+  editor.setSelectedShapes([shapeId]);
+}
+
 export function CanvasEditor({
   projectId,
   canvasNodes = [],
@@ -93,6 +124,7 @@ export function CanvasEditor({
   const editorRef = useRef<Editor | null>(null);
   const loadRequestIdRef = useRef(0);
   const nodesRef = useRef<CanvasNodeRecord[]>(canvasNodes);
+  const createNodeSequenceRef = useRef(0);
   const geometrySchedulerRef = useRef<ReturnType<
     typeof createBusinessNodeGeometryScheduler
   > | null>(null);
@@ -129,6 +161,9 @@ export function CanvasEditor({
     geometrySchedulerRef.current = createBusinessNodeGeometryScheduler({
       projectId,
       patchGeometry: updateCanvasNodeGeometry,
+      onGeometrySaved: (node) => {
+        publishCanvasNodes(mergeCanvasNode(nodesRef.current, node));
+      },
       onError: (message) => setNodeActionError(message),
     });
 
@@ -136,7 +171,7 @@ export function CanvasEditor({
       geometrySchedulerRef.current?.dispose();
       geometrySchedulerRef.current = null;
     };
-  }, [projectId]);
+  }, [projectId, publishCanvasNodes]);
 
   const reconcileBusinessNodes = useCallback((editor: Editor, nodes: CanvasNodeRecord[]) => {
     for (const node of nodes) {
@@ -316,6 +351,7 @@ export function CanvasEditor({
         return;
       }
 
+      const removedNode = nodesRef.current.find((node) => node.id === shape.props.nodeId);
       deletingNodeIdsRef.current.add(shape.props.nodeId);
       deleteCanvasNode(projectId, shape.props.nodeId)
         .then(() => {
@@ -324,12 +360,18 @@ export function CanvasEditor({
         })
         .catch((error: unknown) => {
           setNodeActionError(errorMessage(error));
+          const editor = editorRef.current;
+          if (editor && removedNode) {
+            restoreBusinessNodeShape(editor, removedNode);
+            emitSelection(editor);
+            scheduleSave(editorSnapshotToJson(editor));
+          }
         })
         .finally(() => {
           deletingNodeIdsRef.current.delete(shape.props.nodeId);
         });
     },
-    [onSelectionChange, projectId, publishCanvasNodes],
+    [emitSelection, onSelectionChange, projectId, publishCanvasNodes, scheduleSave],
   );
 
   const handleMount = useCallback(
@@ -397,7 +439,16 @@ export function CanvasEditor({
         return;
       }
 
-      const shapeId = createShapeId(`business-${type}-${Date.now().toString(36)}`);
+      createNodeSequenceRef.current += 1;
+      const shapeId = createShapeId(
+        [
+          "business",
+          type,
+          Date.now().toString(36),
+          createNodeSequenceRef.current.toString(36),
+          Math.random().toString(36).slice(2, 8),
+        ].join("-"),
+      );
       const offset = Math.min(nodesRef.current.length, 12) * 28;
       const input = createBusinessCanvasNodeInput(type, {
         tldrawShapeId: shapeId,

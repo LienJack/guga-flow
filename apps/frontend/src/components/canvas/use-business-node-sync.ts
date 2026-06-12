@@ -1,4 +1,8 @@
-import type { UpdateCanvasNodeGeometryInput } from "@guga-flow/shared-types";
+import type {
+  CanvasNodeRecord,
+  UpdateCanvasNodeGeometryInput,
+  UpdateCanvasNodeGeometryResult,
+} from "@guga-flow/shared-types";
 
 interface BusinessNodeGeometrySchedulerOptions {
   projectId: string;
@@ -7,13 +11,15 @@ interface BusinessNodeGeometrySchedulerOptions {
     projectId: string,
     nodeId: string,
     input: UpdateCanvasNodeGeometryInput,
-  ) => Promise<unknown>;
+  ) => Promise<UpdateCanvasNodeGeometryResult>;
+  onGeometrySaved?: (node: CanvasNodeRecord) => void;
   onError?: (message: string) => void;
 }
 
 export function createBusinessNodeGeometryScheduler({
   delayMs = 500,
   onError,
+  onGeometrySaved,
   patchGeometry,
   projectId,
 }: BusinessNodeGeometrySchedulerOptions) {
@@ -32,6 +38,11 @@ export function createBusinessNodeGeometryScheduler({
     const results = await Promise.allSettled(
       batch.map(([nodeId, geometry]) => patchGeometry(projectId, nodeId, geometry)),
     );
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        onGeometrySaved?.(result.value.node);
+      }
+    }
     const failed = results.find((result) => result.status === "rejected");
     if (failed) {
       const reason = failed.reason;

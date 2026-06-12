@@ -156,7 +156,7 @@ function formDataFromNode(node: CanvasNodeRecord): Record<string, FieldValue> {
   return result;
 }
 
-function dataJsonFromForm(
+export function dataJsonFromForm(
   node: CanvasNodeRecord,
   values: Record<string, FieldValue>,
 ): { [key: string]: CanvasSnapshotJson } {
@@ -164,10 +164,11 @@ function dataJsonFromForm(
     return {};
   }
 
-  const result: { [key: string]: CanvasSnapshotJson } = {};
+  const result = canvasJsonObject(node.dataJson);
   for (const field of getBusinessNodeFields(node.type)) {
     const value = values[field.key];
     if (value === "" || value === undefined) {
+      delete result[field.key];
       continue;
     }
     if (field.inputType === "number") {
@@ -181,6 +182,37 @@ function dataJsonFromForm(
   }
 
   return result;
+}
+
+function canvasJsonObject(value: unknown): { [key: string]: CanvasSnapshotJson } {
+  const data = objectData(value);
+  const result: { [key: string]: CanvasSnapshotJson } = {};
+  for (const [key, fieldValue] of Object.entries(data)) {
+    if (isCanvasSnapshotJson(fieldValue)) {
+      result[key] = fieldValue;
+    }
+  }
+
+  return result;
+}
+
+function isCanvasSnapshotJson(value: unknown): value is CanvasSnapshotJson {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every(isCanvasSnapshotJson);
+  }
+  if (typeof value === "object") {
+    return Object.values(objectData(value)).every(isCanvasSnapshotJson);
+  }
+
+  return false;
 }
 
 function objectData(value: unknown): Record<string, unknown> {
