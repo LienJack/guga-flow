@@ -37,6 +37,8 @@ function asset(overrides: Record<string, unknown> = {}) {
   };
 }
 
+type MockAsset = ReturnType<typeof asset>;
+
 function createPrismaMock() {
   return {
     project: {
@@ -52,7 +54,7 @@ function createPrismaMock() {
       findMany: vi.fn(async () => []),
     },
     asset: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async (): Promise<MockAsset[]> => []),
     },
   };
 }

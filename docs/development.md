@@ -81,7 +81,7 @@ The initial schema preserves the hybrid persistence foundation:
 - `GenerationJob`
 - `EditorExport`
 
-Project and asset APIs are available. Canvas save/load behavior remains deferred to Phase 2.
+Project, asset, and canvas snapshot APIs are available. The visual canvas source of truth is `CanvasDocument.snapshotJson`; normalized `CanvasNode` and `CanvasEdge` records are kept for later business-shape phases.
 
 ## Development Servers
 
@@ -91,7 +91,7 @@ pnpm run dev
 
 This builds shared packages first and then starts all app surfaces in parallel.
 
-Open the frontend at `http://localhost:3001`. The home page is the project dashboard. Creating or opening a project routes to `/projects/:projectId/canvas`, which currently hosts the Phase 1 canvas workspace shell and asset library.
+Open the frontend at `http://localhost:3001`. The home page is the project dashboard. Creating or opening a project routes to `/projects/:projectId/canvas`, which hosts the workbench shell, persistent tldraw canvas, save-status badge, fit-to-content control, and asset library inspector.
 
 ## Project And Asset Workflow
 
@@ -113,6 +113,32 @@ Supported upload MIME types:
 - `text/markdown`
 
 Uploaded files are stored under `UPLOAD_STORAGE_DIR` and exposed through backend preview routes. Provider API keys are not used by the browser.
+
+## Project Canvas Workflow
+
+Phase 2 supports a project-scoped tldraw canvas on `/projects/:projectId/canvas`.
+
+Backend API:
+
+- `GET /api/v1/projects/:projectId/canvas` creates or resolves the project's canvas document and returns the saved visual snapshot, normalized nodes, normalized edges, and project asset metadata.
+- `PATCH /api/v1/projects/:projectId/canvas/snapshot` saves the latest visual snapshot to `CanvasDocument.snapshotJson`.
+
+Frontend behavior:
+
+- The canvas loads the saved tldraw snapshot before user edits are listened to.
+- User-originated canvas changes are autosaved with debounce.
+- The topbar save badge shows `Ready`, `Saving`, `Saved`, or `Failed`.
+- Failed saves keep the latest local edit visible and expose a retry action.
+- The `Fit to content` control calls tldraw's zoom-to-fit path for saved or newly created content.
+
+Phase 2 browser smoke checklist:
+
+- Start Postgres and Redis, then run backend and frontend dev servers.
+- Create or open a project and navigate to `/projects/:projectId/canvas`.
+- Draw a built-in tldraw shape, wait for `Saved`, refresh, and confirm the shape restores.
+- Move the shape, wait for `Saved`, refresh, and confirm the updated position restores.
+- Confirm the asset library still lists and previews uploaded image/video/text/markdown assets from the inspector.
+- Check browser console errors and backend API responses before marking the module verified.
 
 ## Mock Workflow Verification
 
@@ -146,13 +172,14 @@ Included:
 - frontend project dashboard and workbench shell
 - backend health/config/Prisma/project/asset foundation
 - local asset upload and preview
+- persistent project-scoped tldraw canvas snapshot load/save
+- debounced canvas autosave with visible save, failed, and retry states
 - worker mock workflow
 - shared types and provider contracts
 - local infra and quality gates
 
 Deferred:
 
-- tldraw canvas persistence
 - custom business shapes
 - semantic asset binding
 - persistent generation queue

@@ -1,7 +1,7 @@
 ---
 title: "feat: Add tldraw canvas persistence"
 type: feat
-status: active
+status: completed
 date: 2026-06-12
 origin: docs/brainstorms/2026-06-12-003-phase-2-tldraw-canvas-persistence-requirements.md
 ---
@@ -398,6 +398,17 @@ sequenceDiagram
 - Update `docs/development.md` with canvas API notes, tldraw frontend dependency, and the Phase 2 smoke checklist.
 - The implementation should not add provider env vars or browser secrets.
 - If local Node remains below the repository target, verification notes should distinguish expected engine warnings from real test/build failures.
+
+---
+
+## Verification Evidence
+
+- Shared contracts: `pnpm --filter @guga-flow/shared-types run test` and `pnpm --filter @guga-flow/shared-types run build`.
+- Backend canvas API: `pnpm --filter @guga-flow/backend run test -- src/canvas/canvas.service.spec.ts test/app.e2e-spec.ts` and `pnpm --filter @guga-flow/backend run build`.
+- Frontend autosave and tldraw integration: `pnpm --filter @guga-flow/frontend run test`, `pnpm --filter @guga-flow/frontend run lint`, and `pnpm --filter @guga-flow/frontend run build`.
+- Full repository gates: `pnpm run test`, `pnpm run build`, `pnpm run mock:workflow`, `pnpm run format:check`, and `docker compose -f infra/docker-compose.yml config`.
+- API smoke: created project `cmqaxzrat0003jtsvonv33oyc`, loaded an empty canvas document, saved a tldraw snapshot, and reloaded `canvasDocument.snapshotJson` with one rectangle shape.
+- Browser smoke: created a rectangle in the tldraw canvas, observed `Saved`, refreshed and confirmed restore, moved the shape from `{ x: 240, y: 204 }` to `{ x: 300, y: 254 }`, refreshed and confirmed restore at the new position, then confirmed the inspector asset library listed and previewed `canvas-smoke.md`.
 
 ---
 
