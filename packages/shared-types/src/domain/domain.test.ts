@@ -7,8 +7,11 @@ import {
   CANVAS_SAVE_STATUSES,
   GENERATION_JOB_STATUSES,
   GENERATION_OPERATIONS,
+  NOVEL_LANGUAGES,
+  NOVEL_SOURCE_TYPES,
   PHASE_3_CANVAS_NODE_TYPES,
   PROJECT_ASPECT_RATIOS,
+  STORYBOARD_DRAFT_STATUSES,
   UPLOADABLE_ASSET_MIME_TYPES,
   type CharacterAssetNodeData,
   type CanvasEdgeData,
@@ -16,14 +19,22 @@ import {
   type CreateCanvasEdgeResult,
   type CanvasLoadResult,
   type CreateCanvasNodeInput,
+  type CreateNovelDocumentInput,
   type DeleteCanvasEdgeResult,
   type DeleteCanvasNodeResult,
+  type DeleteNovelDocumentResult,
+  type ImportNovelSourceInput,
   type LocationAssetNodeData,
   type Phase3CanvasNodeRecord,
   type SaveCanvasSnapshotInput,
   type ShotNodeData,
+  type StoryboardDraftRecord,
+  type StoryboardResult,
   type UpdateCanvasNodeGeometryInput,
   type UpdateCanvasNodeInput,
+  type UpdateNovelDocumentInput,
+  type UpdateStoryboardDraftInput,
+  validateStoryboardResult,
 } from "../index";
 
 describe("shared domain constants", () => {
@@ -45,6 +56,8 @@ describe("shared domain constants", () => {
 
   it("includes Phase 1 project and upload asset contracts", () => {
     expect(PROJECT_ASPECT_RATIOS).toEqual(["9:16", "16:9", "1:1"]);
+    expect(NOVEL_SOURCE_TYPES).toEqual(["paste", "txt", "md"]);
+    expect(NOVEL_LANGUAGES).toEqual(["zh", "en", "ja", "other"]);
     expect(UPLOADABLE_ASSET_MIME_TYPES).toEqual(
       expect.arrayContaining(["image/png", "video/mp4", "text/markdown"]),
     );
@@ -207,4 +220,141 @@ describe("shared domain constants", () => {
     expect(createResult.appliedShotCount).toBe(2);
     expect(deleteResult.deletedEdgeIds).toContain("edge_child_1");
   });
+
+  it("exports Phase 5 novel source and storyboard draft contracts", () => {
+    expect(STORYBOARD_DRAFT_STATUSES).toEqual(["draft", "valid", "invalid", "ready"]);
+
+    const createNovelInput: CreateNovelDocumentInput = {
+      title: "Rooftop Signal",
+      content: "A hero watches the city lights before choosing the next shot.",
+      sourceType: "paste",
+      language: "en",
+    };
+    const importNovelInput: ImportNovelSourceInput = {
+      title: "Imported Markdown",
+      content: "# Opening\nA character enters.",
+      sourceType: "md",
+    };
+    const updateNovelInput: UpdateNovelDocumentInput = {
+      title: "Rooftop Signal Revised",
+      content: "The hero raises a signal flare.",
+    };
+    const deleteNovelResult: DeleteNovelDocumentResult = {
+      deleted: true,
+      novelId: "novel_1",
+    };
+    const storyboard = validStoryboard();
+    const validation = validateStoryboardResult(storyboard);
+
+    expect(createNovelInput.language).toBe("en");
+    expect(importNovelInput.sourceType).toBe("md");
+    expect(updateNovelInput.title).toContain("Revised");
+    expect(deleteNovelResult.deleted).toBe(true);
+    expect(validation.success).toBe(true);
+
+    if (!validation.success) {
+      throw new Error("Expected storyboard validation to succeed");
+    }
+
+    const draft: StoryboardDraftRecord = {
+      id: "draft_1",
+      projectId: "project_1",
+      novelDocumentId: "novel_1",
+      status: "ready",
+      storyboard: validation.data,
+      validationIssues: [],
+      provider: "mock-llm",
+      model: "mock-storyboard",
+      readyForImport: true,
+      createdAt: "2026-06-12T00:00:00.000Z",
+      updatedAt: "2026-06-12T00:00:00.000Z",
+    };
+    const updateDraftInput: UpdateStoryboardDraftInput = {
+      storyboard: validation.data,
+    };
+
+    expect(draft.storyboard?.scenes[0]?.shots[0]?.imagePrompt).toContain("rooftop");
+    expect(updateDraftInput.storyboard.characters[0]?.tempId).toBe("char_hero");
+  });
+
+  it("rejects malformed Phase 5 storyboard drafts", () => {
+    const duplicateCharacter = validStoryboard();
+    duplicateCharacter.characters[1] = {
+      ...duplicateCharacter.characters[0],
+      name: "Duplicate Hero",
+    };
+    const duplicateValidation = validateStoryboardResult(duplicateCharacter);
+    expect(duplicateValidation.success).toBe(false);
+    expect(duplicateValidation.issues.map((issue) => issue.message)).toContain(
+      "Duplicate character temp id",
+    );
+
+    const missingReference = validStoryboard();
+    missingReference.scenes[0]!.shots[0]!.characterTempIds = ["char_missing"];
+    const missingReferenceValidation = validateStoryboardResult(missingReference);
+    expect(missingReferenceValidation.success).toBe(false);
+    expect(missingReferenceValidation.issues.map((issue) => issue.message)).toContain(
+      "Unknown shot character temp id",
+    );
+
+    const emptyScenes = { ...validStoryboard(), scenes: [] };
+    const emptyScenesValidation = validateStoryboardResult(emptyScenes);
+    expect(emptyScenesValidation.success).toBe(false);
+  });
 });
+
+function validStoryboard(): StoryboardResult {
+  return {
+    title: "Local Mock Storyboard",
+    logline: "A mock storyboard generated from a local excerpt.",
+    characters: [
+      {
+        tempId: "char_hero",
+        name: "Hero",
+        role: "protagonist",
+        appearance: "A consistent lead character for mock generation.",
+        personality: "Determined and observant.",
+        identityPrompt: "consistent protagonist, cinematic character reference",
+      },
+    ],
+    locations: [
+      {
+        tempId: "loc_city",
+        name: "City Rooftop",
+        type: "exterior",
+        description: "A simple rooftop location used by the mock storyboard.",
+        lighting: "soft evening light",
+        atmosphere: "quiet and expectant",
+        locationPrompt: "cinematic rooftop, soft evening light",
+      },
+    ],
+    scenes: [
+      {
+        tempId: "scene_1",
+        title: "Opening Beat",
+        sourceExcerpt: "A hero watches the city lights before choosing the next shot.",
+        summary: "The story opens with a clear visual action.",
+        mood: "anticipatory",
+        timeOfDay: "evening",
+        characterTempIds: ["char_hero"],
+        locationTempId: "loc_city",
+        shots: [
+          {
+            tempId: "shot_1",
+            shotIndex: 1,
+            title: "Hero establishes the scene",
+            durationSec: 4,
+            visualDescription: "The hero steps into frame and surveys the city.",
+            action: "walks to the edge of the rooftop",
+            cameraMovement: "slow push in",
+            mood: "focused",
+            characterTempIds: ["char_hero"],
+            locationTempId: "loc_city",
+            imagePrompt: "hero on a cinematic rooftop, evening, slow push in",
+            videoPrompt: "slow push in on hero overlooking the city",
+          },
+        ],
+      },
+    ],
+  };
+}
