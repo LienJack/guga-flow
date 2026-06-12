@@ -77,6 +77,7 @@ export interface SceneFrameNodeData {
   label?: string;
   order?: number;
   description?: string;
+  locationAssetId?: string;
 }
 
 export interface SceneNodeData {
@@ -95,6 +96,8 @@ export interface ShotNodeData {
   durationSeconds?: number;
   promptNotes?: string;
   negativePromptNotes?: string;
+  characterAssetIds?: string[];
+  locationAssetId?: string;
 }
 
 export interface CharacterAssetNodeData {
@@ -192,6 +195,12 @@ export interface CanvasEdgeRecord<TData = unknown> {
   createdAt: string;
 }
 
+export interface CanvasEdgeData {
+  appliedShotNodeIds?: string[];
+  childEdgeIds?: string[];
+  batchSourceEdgeId?: string;
+}
+
 export interface CanvasLoadResult {
   canvasDocument: CanvasDocumentRecord;
   nodes: CanvasNodeRecord[];
@@ -249,4 +258,29 @@ export interface UpdateCanvasNodeGeometryResult {
 export interface DeleteCanvasNodeResult {
   deleted: true;
   nodeId: string;
+}
+
+export interface CreateCanvasEdgeInput<TData = CanvasSnapshotJson> {
+  sourceNodeId: string;
+  targetNodeId: string;
+  relation: CanvasEdgeRelation;
+  sourceShapeId?: string;
+  targetShapeId?: string;
+  visualArrowShapeId?: string;
+  dataJson?: TData;
+  affectedShotNodeIds?: string[];
+}
+
+export interface CreateCanvasEdgeResult {
+  edge: CanvasEdgeRecord;
+  edges: CanvasEdgeRecord[];
+  updatedNodes: CanvasNodeRecord[];
+  appliedShotCount?: number;
+}
+
+export interface DeleteCanvasEdgeResult {
+  deleted: true;
+  edgeId: string;
+  deletedEdgeIds: string[];
+  updatedNodes: CanvasNodeRecord[];
 }

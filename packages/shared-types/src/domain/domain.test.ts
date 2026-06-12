@@ -11,8 +11,12 @@ import {
   PROJECT_ASPECT_RATIOS,
   UPLOADABLE_ASSET_MIME_TYPES,
   type CharacterAssetNodeData,
+  type CanvasEdgeData,
+  type CreateCanvasEdgeInput,
+  type CreateCanvasEdgeResult,
   type CanvasLoadResult,
   type CreateCanvasNodeInput,
+  type DeleteCanvasEdgeResult,
   type DeleteCanvasNodeResult,
   type LocationAssetNodeData,
   type Phase3CanvasNodeRecord,
@@ -96,6 +100,8 @@ describe("shared domain constants", () => {
       durationSeconds: 4,
       promptNotes: "cinematic, practical lights",
       negativePromptNotes: "no logos",
+      characterAssetIds: ["node_character_1"],
+      locationAssetId: "node_location_1",
     };
     const characterData: CharacterAssetNodeData = {
       name: "Ari",
@@ -153,5 +159,52 @@ describe("shared domain constants", () => {
     expect(locationData.visualStyle).toBe("clean hard sci-fi");
     expect(updateInput.status).toBe("draft");
     expect(deleteResult.nodeId).toBe("node_1");
+  });
+
+  it("exports Phase 4 semantic edge contracts", () => {
+    const edgeData: CanvasEdgeData = {
+      appliedShotNodeIds: ["node_shot_1", "node_shot_2"],
+      childEdgeIds: ["edge_child_1"],
+    };
+    const createInput: CreateCanvasEdgeInput<CanvasEdgeData> = {
+      sourceNodeId: "node_location_1",
+      targetNodeId: "node_frame_1",
+      relation: "references_location",
+      sourceShapeId: "shape:location-1",
+      targetShapeId: "shape:frame-1",
+      visualArrowShapeId: "shape:edge-location-frame",
+      dataJson: edgeData,
+      affectedShotNodeIds: ["node_shot_1", "node_shot_2"],
+    };
+    const edge = {
+      id: "edge_1",
+      projectId: "project_1",
+      canvasDocumentId: "canvas_1",
+      sourceNodeId: createInput.sourceNodeId,
+      targetNodeId: createInput.targetNodeId,
+      sourceShapeId: createInput.sourceShapeId,
+      targetShapeId: createInput.targetShapeId,
+      visualArrowShapeId: createInput.visualArrowShapeId,
+      relation: createInput.relation,
+      dataJson: edgeData,
+      createdAt: "2026-06-12T00:00:00.000Z",
+    };
+    const createResult: CreateCanvasEdgeResult = {
+      edge,
+      edges: [edge],
+      updatedNodes: [],
+      appliedShotCount: 2,
+    };
+    const deleteResult: DeleteCanvasEdgeResult = {
+      deleted: true,
+      edgeId: edge.id,
+      deletedEdgeIds: [edge.id, "edge_child_1"],
+      updatedNodes: [],
+    };
+
+    expect(createInput.relation).toBe("references_location");
+    expect(createResult.edge.dataJson).toEqual(edgeData);
+    expect(createResult.appliedShotCount).toBe(2);
+    expect(deleteResult.deletedEdgeIds).toContain("edge_child_1");
   });
 });
