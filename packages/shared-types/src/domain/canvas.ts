@@ -141,13 +141,25 @@ export interface LocationAssetNodeData {
   assetKey?: string;
 }
 
-export interface ImageNodeData {
+export interface GeneratedMediaNodeData {
+  generationJobId?: string;
+  generationOperation?: "shot_to_image" | "image_to_video";
+  generatedFromNodeId?: string;
+  sourceNodeIds?: string[];
+  referenceAssetIds?: string[];
+  provider?: string;
+  model?: string;
+  inputJson?: unknown;
+  outputJson?: unknown;
+}
+
+export interface ImageNodeData extends GeneratedMediaNodeData {
   prompt?: string;
   assetId?: string;
   description?: string;
 }
 
-export interface VideoNodeData {
+export interface VideoNodeData extends GeneratedMediaNodeData {
   prompt?: string;
   assetId?: string;
   durationSeconds?: number;

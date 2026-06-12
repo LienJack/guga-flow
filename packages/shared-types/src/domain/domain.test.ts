@@ -9,6 +9,7 @@ import {
   GENERATION_OPERATIONS,
   NOVEL_LANGUAGES,
   NOVEL_SOURCE_TYPES,
+  PHASE_8_GENERATION_OPERATIONS,
   PHASE_3_CANVAS_NODE_TYPES,
   PROJECT_ASPECT_RATIOS,
   STORYBOARD_IMPORT_DUPLICATE_POLICIES,
@@ -22,21 +23,28 @@ import {
   type CharacterAssetNodeData,
   type CanvasEdgeData,
   type CanvasEdgeRecord,
-  type CreateCanvasEdgeInput,
-  type CreateCanvasEdgeResult,
   type CanvasLoadResult,
   type CanvasNodeRecord,
+  type CreateCanvasEdgeInput,
+  type CreateCanvasEdgeResult,
+  type CreateGenerationJobInput,
   type CreateCanvasNodeInput,
   type CreateNovelDocumentInput,
   type DeleteCanvasEdgeResult,
   type DeleteCanvasNodeResult,
   type DeleteNovelDocumentResult,
+  type GeneratedMediaJobOutput,
+  type GenerationJobListResult,
+  type GenerationQueueSummary,
+  type ImageNodeData,
+  type ImageToVideoJobInput,
   type ImportStoryboardToCanvasInput,
   type ImportNovelSourceInput,
   type LocationAssetNodeData,
   type Phase3CanvasNodeRecord,
   type SaveCanvasSnapshotInput,
   type SceneNodeData,
+  type ShotToImageJobInput,
   type ShotNodeData,
   type StoryboardDraftRecord,
   type StoryboardResult,
@@ -62,6 +70,7 @@ describe("shared domain constants", () => {
     );
     expect(GENERATION_OPERATIONS).toContain("novel_to_storyboard");
     expect(GENERATION_OPERATIONS).toContain("editor_export");
+    expect(PHASE_8_GENERATION_OPERATIONS).toEqual(["shot_to_image", "image_to_video"]);
   });
 
   it("includes Phase 1 project and upload asset contracts", () => {
@@ -445,6 +454,146 @@ describe("shared domain constants", () => {
     expect(after.image.prompt).toContain("edited location prompt");
     expect(after.image.prompt).not.toContain("Hero identity prompt");
     expect(after.image.prompt).not.toContain("Location prompt text");
+  });
+
+  it("exports Phase 8 generation job inputs, outputs, and queue summary contracts", () => {
+    const createInput: CreateGenerationJobInput = {
+      operation: "shot_to_image",
+      sourceNodeId: "shot_1",
+      forceFailure: true,
+    };
+    const shotInput: ShotToImageJobInput = {
+      operation: "shot_to_image",
+      projectId: "project_1",
+      sourceNodeId: "shot_1",
+      shotNodeId: "shot_1",
+      prompt: "cinematic image prompt",
+      negativePrompt: "no text",
+      referenceAssetIds: ["asset_ref_1"],
+      sourceNodeIds: {
+        shotNodeId: "shot_1",
+        sceneNodeId: "scene_1",
+        characterNodeIds: ["character_1"],
+        locationNodeId: "location_1",
+        referenceAssetIds: ["asset_ref_1"],
+      },
+      debugParts: [
+        {
+          id: "shot:shot_1:image",
+          kind: "shot",
+          label: "Shot",
+          text: "cinematic image prompt",
+          channels: ["image"],
+          sourceNodeIds: ["shot_1"],
+        },
+      ],
+      missingContext: [],
+      provider: "mock-image",
+      model: "mock-image-v1",
+      providerParams: { seed: 7 },
+      forceFailure: true,
+    };
+    const videoInput: ImageToVideoJobInput = {
+      operation: "image_to_video",
+      projectId: "project_1",
+      sourceNodeId: "image_1",
+      imageNodeId: "image_1",
+      sourceImageAssetId: "asset_image_1",
+      prompt: "slow dolly across the frame",
+      durationSeconds: 5,
+      parentShotNodeId: "shot_1",
+      parentShotTitle: "Shot 01",
+      referenceAssetIds: ["asset_ref_1"],
+      sourceNodeIds: ["image_1", "shot_1"],
+      provider: "mock-video",
+      model: "mock-video-v1",
+    };
+    const output: GeneratedMediaJobOutput = {
+      operation: "shot_to_image",
+      sourceNodeId: "shot_1",
+      targetNodeId: "image_1",
+      assetId: "asset_image_1",
+      edgeId: "edge_generated_image_1",
+      provider: "mock-image",
+      model: "mock-image-v1",
+      prompt: shotInput.prompt,
+      referenceAssetIds: shotInput.referenceAssetIds,
+      providerOutput: {
+        assetId: "provider_asset_image_1",
+        storageKey: "mock/images/provider_asset_image_1.png",
+        mimeType: "image/png",
+        provider: "mock-image",
+        model: "mock-image-v1",
+        prompt: shotInput.prompt,
+        referenceAssetIds: shotInput.referenceAssetIds,
+      },
+      completedAt: "2026-06-12T00:00:00.000Z",
+    };
+    const counts: GenerationQueueSummary["counts"] = {
+      queued: 1,
+      running: 2,
+      provider_waiting: 0,
+      succeeded: 3,
+      failed: 1,
+      cancelled: 0,
+    };
+    const queueSummary: GenerationQueueSummary = {
+      counts,
+      queued: counts.queued,
+      running: counts.running,
+      failed: counts.failed,
+    };
+    const listResult: GenerationJobListResult<ShotToImageJobInput | ImageToVideoJobInput> = {
+      jobs: [
+        {
+          id: "job_1",
+          projectId: "project_1",
+          operation: "shot_to_image",
+          status: "succeeded",
+          provider: "mock-image",
+          model: "mock-image-v1",
+          sourceNodeId: "shot_1",
+          targetNodeId: "image_1",
+          inputJson: shotInput,
+          outputJson: output,
+          createdAt: "2026-06-12T00:00:00.000Z",
+          updatedAt: "2026-06-12T00:00:01.000Z",
+        },
+        {
+          id: "job_2",
+          projectId: "project_1",
+          operation: "image_to_video",
+          status: "queued",
+          provider: "mock-video",
+          model: "mock-video-v1",
+          sourceNodeId: "image_1",
+          inputJson: videoInput,
+          createdAt: "2026-06-12T00:00:02.000Z",
+          updatedAt: "2026-06-12T00:00:02.000Z",
+        },
+      ],
+      queueSummary,
+    };
+    const imageNodeData: ImageNodeData = {
+      assetId: output.assetId,
+      prompt: output.prompt,
+      provider: output.provider,
+      model: output.model,
+      generationJobId: "job_1",
+      generationOperation: "shot_to_image",
+      generatedFromNodeId: "shot_1",
+      sourceNodeIds: ["shot_1"],
+      referenceAssetIds: output.referenceAssetIds,
+      inputJson: shotInput,
+      outputJson: output,
+    };
+
+    expect(createInput.operation).toBe("shot_to_image");
+    expect(listResult.jobs.map((job) => job.operation)).toEqual(["shot_to_image", "image_to_video"]);
+    expect(listResult.queueSummary).toMatchObject({ queued: 1, running: 2, failed: 1 });
+    expect(imageNodeData.generationJobId).toBe("job_1");
+    expect(imageNodeData.inputJson).toMatchObject({ prompt: "cinematic image prompt" });
+    expect(imageNodeData.outputJson).toMatchObject({ targetNodeId: "image_1" });
   });
 });
 
