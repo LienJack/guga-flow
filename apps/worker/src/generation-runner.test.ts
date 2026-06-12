@@ -15,6 +15,7 @@ function createClientMock(): GenerationWorkerClient {
   return {
     claimNextJob: vi.fn(async () => ({})),
     succeedJob: vi.fn(async () => jobRecord("job_done", shotInput())),
+    waitJob: vi.fn(async () => jobRecord("job_waiting", videoInput(), { status: "provider_waiting" })),
     failJob: vi.fn(async () => jobRecord("job_failed", shotInput(), { status: "failed" })),
   };
 }
@@ -59,36 +60,44 @@ function createRegistryMock(): GenerationExecutorRegistry {
     })),
   } as ImageProvider;
 
+  const videoProvider = {
+    capability: {
+      id: "mock-video",
+      displayName: "Mock Video",
+      requiresApiKey: false,
+    },
+    createTask: vi.fn(async () => ({
+      status: "succeeded",
+      providerTaskId: "provider_task_1",
+      output: {
+        ...videoOutput,
+        providerTaskId: "provider_task_1",
+      },
+    })),
+    getTask: vi.fn(async () => ({
+      status: "succeeded",
+      providerTaskId: "provider_task_1",
+      output: {
+        ...videoOutput,
+        providerTaskId: "provider_task_1",
+      },
+    })),
+    cancelTask: vi.fn(async () => ({
+      status: "cancelled",
+      providerTaskId: "provider_task_1",
+    })),
+    generateVideo: vi.fn(async () => videoOutput),
+  } as VideoProvider;
+
   return {
     imageProviders: {
       get: vi.fn(() => imageProvider),
       list: vi.fn(() => [imageProvider]),
     },
-    video: {
-      capability: {
-        id: "mock-video",
-        displayName: "Mock Video",
-        requiresApiKey: false,
-      },
-      createTask: vi.fn(async () => ({
-        status: "succeeded",
-        providerTaskId: "provider_task_1",
-        output: {
-          ...videoOutput,
-          providerTaskId: "provider_task_1",
-        },
-      })),
-      getTask: vi.fn(async () => ({
-        status: "succeeded",
-        providerTaskId: "provider_task_1",
-        output: videoOutput,
-      })),
-      cancelTask: vi.fn(async () => ({
-        status: "cancelled",
-        providerTaskId: "provider_task_1",
-      })),
-      generateVideo: vi.fn(async () => videoOutput),
-    } as VideoProvider,
+    videoProviders: {
+      get: vi.fn(() => videoProvider),
+      list: vi.fn(() => [videoProvider]),
+    },
   };
 }
 
@@ -106,8 +115,9 @@ describe("generation worker runner", () => {
 
     expect(result).toEqual({ status: "idle" });
     expect(registry.imageProviders.get).not.toHaveBeenCalled();
-    expect(registry.video.generateVideo).not.toHaveBeenCalled();
+    expect(registry.videoProviders.get).not.toHaveBeenCalled();
     expect(client.succeedJob).not.toHaveBeenCalled();
+    expect(client.waitJob).not.toHaveBeenCalled();
     expect(client.failJob).not.toHaveBeenCalled();
   });
 
@@ -159,13 +169,20 @@ describe("generation worker runner", () => {
     });
 
     const result = await runOneGenerationJob({ client, registry });
+    const videoProvider = registry.videoProviders.get("mock-video");
 
-    expect(registry.video.generateVideo).toHaveBeenCalledWith({
+    expect(registry.videoProviders.get).toHaveBeenCalledWith("mock-video");
+    expect(videoProvider.createTask).toHaveBeenCalledWith({
       projectId: "project_1",
       prompt: "Video prompt",
+      mode: "image_to_video",
+      model: "mock-video-v1",
       sourceImageAssetId: "asset_image_1",
       durationSec: 5,
+      aspectRatio: "16:9",
+      resolution: "720p",
       referenceAssetIds: ["asset_ref_1"],
+      providerParams: { cameraFixed: false },
       forceFailure: undefined,
     });
     expect(client.succeedJob).toHaveBeenCalledWith(
@@ -174,6 +191,61 @@ describe("generation worker runner", () => {
         storageKey: "mock/videos/provider_video_1.mp4",
         provider: "mock-video",
         prompt: "Video prompt",
+      }),
+      undefined,
+    );
+    expect(result).toEqual({ status: "succeeded", jobId: "job_video" });
+  });
+
+  it("marks submitted image-to-video jobs as waiting when provider task is still running", async () => {
+    vi.mocked(client.claimNextJob).mockResolvedValue({
+      job: jobRecord("job_video", videoInput(), {
+        operation: "image_to_video",
+        provider: "mock-video",
+      }),
+    });
+    const videoProvider = registry.videoProviders.get("mock-video");
+    vi.mocked(videoProvider.createTask).mockResolvedValue({
+      status: "provider_waiting",
+      providerTaskId: "provider_task_waiting",
+      rawJson: { providerTaskId: "provider_task_waiting" },
+    });
+
+    const result = await runOneGenerationJob({ client, registry });
+
+    expect(client.waitJob).toHaveBeenCalledWith("job_video", {
+      providerTaskId: "provider_task_waiting",
+      provider: "mock-video",
+      model: "mock-video-v1",
+      rawJson: { providerTaskId: "provider_task_waiting" },
+    });
+    expect(client.succeedJob).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      status: "waiting",
+      jobId: "job_video",
+      providerTaskId: "provider_task_waiting",
+    });
+  });
+
+  it("polls provider-waiting image-to-video jobs and reports success", async () => {
+    vi.mocked(client.claimNextJob).mockResolvedValue({
+      job: jobRecord("job_video", videoInput(), {
+        operation: "image_to_video",
+        provider: "mock-video",
+        providerTaskId: "provider_task_1",
+      }),
+    });
+    const videoProvider = registry.videoProviders.get("mock-video");
+
+    const result = await runOneGenerationJob({ client, registry });
+
+    expect(videoProvider.createTask).not.toHaveBeenCalled();
+    expect(videoProvider.getTask).toHaveBeenCalledWith("provider_task_1");
+    expect(client.succeedJob).toHaveBeenCalledWith(
+      "job_video",
+      expect.objectContaining({
+        providerTaskId: "provider_task_1",
+        storageKey: "mock/videos/provider_video_1.mp4",
       }),
       undefined,
     );
@@ -249,11 +321,14 @@ function videoInput(): ImageToVideoJobInput {
     sourceImageAssetId: "asset_image_1",
     prompt: "Video prompt",
     durationSeconds: 5,
+    aspectRatio: "16:9",
+    resolution: "720p",
     parentShotNodeId: "shot_1",
     referenceAssetIds: ["asset_ref_1"],
     sourceNodeIds: ["image_1", "shot_1"],
     provider: "mock-video",
     model: "mock-video-v1",
+    providerParams: { cameraFixed: false },
   };
 }
 

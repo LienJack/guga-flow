@@ -10,6 +10,7 @@ import type {
   VideoProviderResolution,
   WorkerGenerationJobFailInput,
   WorkerGenerationJobSucceedInput,
+  WorkerGenerationJobWaitInput,
 } from "@guga-flow/shared-types";
 import {
   IMAGE_PROVIDER_IDS,
@@ -101,6 +102,27 @@ export class CreateGenerationJobDto implements CreateGenerationJobInput {
 export class WorkerGenerationJobFailDto implements WorkerGenerationJobFailInput {
   @IsObject()
   error!: ProviderFailure;
+}
+
+export class WorkerGenerationJobWaitDto implements WorkerGenerationJobWaitInput {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(240)
+  providerTaskId!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  provider!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  model?: string;
+
+  @IsOptional()
+  @IsObject()
+  rawJson?: CanvasSnapshotJson;
 }
 
 export class WorkerGenerationJobSucceedDto implements WorkerGenerationJobSucceedInput {

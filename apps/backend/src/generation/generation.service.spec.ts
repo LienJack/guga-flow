@@ -5,6 +5,7 @@ import type {
   CanvasNodeRecord,
   ImageProviderCatalogResult,
   ImageNodeData,
+  ImageToVideoJobInput,
   ProviderFailure,
   ShotPromptCompositionResult,
   ShotNodeData,
@@ -494,7 +495,7 @@ describe("GenerationService", () => {
 
     expect(prisma.generationJob.findFirst).toHaveBeenCalledWith({
       where: {
-        status: "queued",
+        status: { in: ["queued", "provider_waiting"] },
         operation: { in: ["shot_to_image", "image_to_video"] },
       },
       orderBy: { createdAt: "asc" },
@@ -512,6 +513,58 @@ describe("GenerationService", () => {
       data: { status: "running" },
     });
     expect(result.job?.status).toBe("running");
+  });
+
+  it("marks running video jobs as waiting for provider completion", async () => {
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "image_to_video",
+        status: "running",
+        provider: "seedance",
+        model: "seedance-1-0-pro",
+        sourceNodeId: "image_1",
+        inputJson: {
+          ...videoInput(),
+          provider: "seedance",
+          model: "seedance-1-0-pro",
+        },
+      }),
+    );
+    prisma.generationJob.update.mockResolvedValue(
+      generationJob({
+        operation: "image_to_video",
+        status: "provider_waiting",
+        provider: "seedance",
+        model: "seedance-1-0-pro",
+        providerTaskId: "seedance_task_1",
+      }),
+    );
+
+    const result = await service.waitJob("job_1", {
+      provider: "seedance",
+      model: "seedance-1-0-pro",
+      providerTaskId: "seedance_task_1",
+      rawJson: { providerTaskId: "seedance_task_1" },
+    });
+
+    expect(prisma.generationJob.update).toHaveBeenCalledWith({
+      where: { id: "job_1" },
+      data: {
+        status: "provider_waiting",
+        providerTaskId: "seedance_task_1",
+        model: "seedance-1-0-pro",
+        outputJson: expect.objectContaining({
+          providerTaskId: "seedance_task_1",
+          provider: "seedance",
+        }),
+        errorMessage: null,
+      },
+    });
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "image_1" },
+      data: { status: "provider_waiting" },
+    });
+    expect(result.status).toBe("provider_waiting");
   });
 
   it("marks active jobs failed without creating media side effects", async () => {
@@ -870,6 +923,27 @@ function shotToImageInput(overrides: Partial<ShotToImageJobInput> = {}): ShotToI
     missingContext: [],
     provider: "mock-image",
     model: "mock-image-v1",
+    providerParams: {},
+    ...overrides,
+  };
+}
+
+function videoInput(overrides: Partial<ImageToVideoJobInput> = {}): ImageToVideoJobInput {
+  return {
+    operation: "image_to_video",
+    projectId: "project_1",
+    sourceNodeId: "image_1",
+    imageNodeId: "image_1",
+    sourceImageAssetId: "asset_image_1",
+    prompt: "Video prompt: slow push",
+    durationSeconds: 5,
+    aspectRatio: "16:9",
+    resolution: "720p",
+    parentShotNodeId: "shot_1",
+    referenceAssetIds: ["asset_ref_1"],
+    sourceNodeIds: ["image_1", "shot_1"],
+    provider: "mock-video",
+    model: "mock-video-v1",
     providerParams: {},
     ...overrides,
   };

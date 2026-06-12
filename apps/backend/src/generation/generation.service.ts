@@ -28,6 +28,7 @@ import type {
   ShotToImageJobInput,
   VideoProviderCatalogItem,
   VideoProviderResolution,
+  WorkerGenerationJobWaitInput,
 } from "@guga-flow/shared-types";
 import {
   GENERATION_JOB_STATUSES,
@@ -269,7 +270,7 @@ export class GenerationService {
     const job = await this.runTransaction(async (tx) => {
       const queued = (await tx.generationJob.findFirst({
         where: {
-          status: "queued",
+          status: { in: ["queued", "provider_waiting"] },
           operation: { in: [...PHASE_8_GENERATION_OPERATIONS] as PrismaGenerationOperation[] },
         },
         orderBy: { createdAt: "asc" },
@@ -280,7 +281,7 @@ export class GenerationService {
       }
 
       const claimed = await tx.generationJob.updateMany({
-        where: { id: queued.id, status: "queued" },
+        where: { id: queued.id, status: queued.status as GenerationJobStatus },
         data: {
           status: "running",
           errorMessage: null,
@@ -302,6 +303,46 @@ export class GenerationService {
     });
 
     return job ? { job: this.toGenerationJobRecord(job) } : {};
+  }
+
+  async waitJob(
+    jobId: string,
+    waitInput: WorkerGenerationJobWaitInput,
+  ): Promise<GenerationJobRecord> {
+    const existing = (await this.prisma.generationJob.findUnique({
+      where: { id: jobId },
+    })) as GenerationJobModel | null;
+    if (!existing) {
+      throw new NotFoundException("Generation job not found");
+    }
+    if (existing.status !== "running" && existing.status !== "provider_waiting") {
+      throw new BadRequestException("Only active generation jobs can wait for provider completion");
+    }
+    if (waitInput.provider !== existing.provider) {
+      throw new BadRequestException("Provider wait input does not match the claimed job provider");
+    }
+
+    const waiting = await this.runTransaction(async (tx) => {
+      const updated = (await tx.generationJob.update({
+        where: { id: existing.id },
+        data: {
+          status: "provider_waiting",
+          providerTaskId: waitInput.providerTaskId,
+          model: waitInput.model ?? existing.model,
+          outputJson: jsonValue({
+            providerTaskId: waitInput.providerTaskId,
+            provider: waitInput.provider,
+            model: waitInput.model ?? existing.model,
+            rawJson: waitInput.rawJson ?? null,
+          }),
+          errorMessage: null,
+        },
+      })) as GenerationJobModel;
+      await this.updateNodeStatus(tx, existing.targetNodeId ?? existing.sourceNodeId, "provider_waiting");
+      return updated;
+    });
+
+    return this.toGenerationJobRecord(waiting);
   }
 
   async failJob(jobId: string, failure: ProviderFailure): Promise<GenerationJobRecord> {

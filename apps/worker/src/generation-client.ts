@@ -4,6 +4,7 @@ import type {
   GenerationJobInput,
   GenerationJobRecord,
   ProviderFailure,
+  WorkerGenerationJobWaitInput,
 } from "@guga-flow/shared-types";
 
 export interface GenerationWorkerClient {
@@ -13,6 +14,7 @@ export interface GenerationWorkerClient {
     providerOutput: GeneratedMediaProviderOutput,
     providerOutputs?: GeneratedMediaProviderOutput[],
   ): Promise<GenerationJobRecord>;
+  waitJob(jobId: string, input: WorkerGenerationJobWaitInput): Promise<GenerationJobRecord>;
   failJob(jobId: string, error: ProviderFailure): Promise<GenerationJobRecord>;
 }
 
@@ -38,6 +40,10 @@ export class HttpGenerationWorkerClient implements GenerationWorkerClient {
       providerOutput,
       providerOutputs,
     });
+  }
+
+  waitJob(jobId: string, input: WorkerGenerationJobWaitInput): Promise<GenerationJobRecord> {
+    return this.post(`/worker/generation/jobs/${encodeURIComponent(jobId)}/wait`, input);
   }
 
   failJob(jobId: string, error: ProviderFailure): Promise<GenerationJobRecord> {

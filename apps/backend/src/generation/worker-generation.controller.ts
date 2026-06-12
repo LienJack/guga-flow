@@ -1,6 +1,6 @@
 import { Body, Controller, Inject, Param, Post } from "@nestjs/common";
 
-import { WorkerGenerationJobFailDto, WorkerGenerationJobSucceedDto } from "./dto";
+import { WorkerGenerationJobFailDto, WorkerGenerationJobSucceedDto, WorkerGenerationJobWaitDto } from "./dto";
 import { GenerationService } from "./generation.service";
 
 @Controller("worker/generation/jobs")
@@ -15,6 +15,11 @@ export class WorkerGenerationController {
   @Post(":jobId/fail")
   failJob(@Param("jobId") jobId: string, @Body() body: WorkerGenerationJobFailDto) {
     return this.generationService.failJob(jobId, body.error);
+  }
+
+  @Post(":jobId/wait")
+  waitJob(@Param("jobId") jobId: string, @Body() body: WorkerGenerationJobWaitDto) {
+    return this.generationService.waitJob(jobId, body);
   }
 
   @Post(":jobId/succeed")

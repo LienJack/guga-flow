@@ -4,12 +4,14 @@ import type { GenerationWorkerClient } from "./generation-client";
 import {
   createGenerationExecutorRegistry,
   executeGenerationJob,
+  pollGenerationJob,
   toProviderFailure,
   type GenerationExecutorRegistry,
 } from "./generation-executors";
 
 export type GenerationWorkerRunResult =
   | { status: "idle" }
+  | { status: "waiting"; jobId: string; providerTaskId: string }
   | { status: "succeeded"; jobId: string }
   | { status: "failed"; jobId: string; error: ProviderFailure };
 
@@ -37,7 +39,20 @@ export async function runOneGenerationJob(
   }
 
   try {
-    const result = await executeGenerationJob(job, registry);
+    const result = job.providerTaskId
+      ? await pollGenerationJob(job, registry)
+      : await executeGenerationJob(job, registry);
+    if (result.status === "provider_waiting") {
+      await options.client.waitJob(job.id, {
+        providerTaskId: result.providerTaskId,
+        provider: result.provider,
+        model: result.model ?? job.model,
+        rawJson: result.rawJson,
+      });
+      options.logger?.info(`Generation job ${job.id} is waiting on provider task ${result.providerTaskId}.`);
+      return { status: "waiting", jobId: job.id, providerTaskId: result.providerTaskId };
+    }
+
     await options.client.succeedJob(job.id, result.providerOutput, result.providerOutputs);
     options.logger?.info(`Generation job ${job.id} succeeded.`);
     return { status: "succeeded", jobId: job.id };

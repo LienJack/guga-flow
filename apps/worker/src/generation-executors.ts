@@ -1,11 +1,12 @@
 import {
   ProviderError,
   createImageProviderRegistry,
-  createMockProviderRegistry,
+  createVideoProviderRegistry,
   type ImageProviderOutput,
   type ImageProviderRegistry,
   type MockAssetOutput,
-  type ProviderRegistry,
+  type VideoProviderRegistry,
+  type VideoProviderTaskResult,
 } from "@guga-flow/provider-contracts";
 import type {
   GeneratedMediaProviderOutput,
@@ -16,29 +17,36 @@ import type {
 
 export interface GenerationExecutorRegistry {
   imageProviders: ImageProviderRegistry;
-  video: ProviderRegistry["video"];
+  videoProviders: VideoProviderRegistry;
 }
 
-export interface GenerationExecutorResult {
-  providerOutput: GeneratedMediaProviderOutput;
-  providerOutputs?: GeneratedMediaProviderOutput[];
-}
+export type GenerationExecutorResult =
+  | {
+      status: "succeeded";
+      providerOutput: GeneratedMediaProviderOutput;
+      providerOutputs?: GeneratedMediaProviderOutput[];
+    }
+  | {
+      status: "provider_waiting";
+      provider: string;
+      model?: string;
+      providerTaskId: string;
+      rawJson?: GeneratedMediaProviderOutput["rawJson"];
+    };
 
 export function createGenerationExecutorRegistry(
   env: Record<string, string | undefined> = process.env,
 ): GenerationExecutorRegistry {
-  const registry = createMockProviderRegistry();
   return {
     imageProviders: createImageProviderRegistry({ env }),
-    video: registry.video,
+    videoProviders: createVideoProviderRegistry({ env }),
   };
 }
 
 export function createMockGenerationExecutorRegistry(): GenerationExecutorRegistry {
-  const registry = createMockProviderRegistry();
   return {
     imageProviders: createImageProviderRegistry({ env: {} }),
-    video: registry.video,
+    videoProviders: createVideoProviderRegistry({ env: {} }),
   };
 }
 
@@ -64,26 +72,48 @@ export async function executeGenerationJob(
     const providerOutputs = result.outputs.map((output) => toGeneratedMediaProviderOutput(output, input.prompt));
     const providerOutput = firstProviderOutput(provider.capability.id, providerOutputs);
     return {
+      status: "succeeded",
       providerOutput,
       providerOutputs: providerOutputs.length > 1 ? providerOutputs : undefined,
     };
   }
 
   if (input.operation === "image_to_video") {
-    const output = await registry.video.generateVideo({
+    const provider = registry.videoProviders.get(input.provider);
+    const result = await provider.createTask({
       projectId: input.projectId,
       prompt: input.prompt,
+      mode: "image_to_video",
+      model: input.model,
       sourceImageAssetId: input.sourceImageAssetId,
       durationSec: input.durationSeconds,
+      aspectRatio: input.aspectRatio,
+      resolution: input.resolution,
       referenceAssetIds: input.referenceAssetIds,
+      providerParams: input.providerParams,
       forceFailure: input.forceFailure,
     });
-    return {
-      providerOutput: toGeneratedMediaProviderOutput(output, input.prompt),
-    };
+    return videoTaskResultToExecutorResult(result, provider.capability.id, input.prompt, input.model);
   }
 
   return Promise.reject(new Error(`Unsupported generation operation: ${job.operation}`));
+}
+
+export async function pollGenerationJob(
+  job: GenerationJobRecord<GenerationJobInput>,
+  registry: GenerationExecutorRegistry = createMockGenerationExecutorRegistry(),
+): Promise<GenerationExecutorResult> {
+  const input = job.inputJson;
+  if (input.operation !== "image_to_video") {
+    throw new Error(`Only image-to-video jobs can wait for provider tasks: ${job.operation}`);
+  }
+  if (!job.providerTaskId) {
+    throw new Error(`Image-to-video job ${job.id} has no provider task id`);
+  }
+
+  const provider = registry.videoProviders.get(input.provider);
+  const result = await provider.getTask(job.providerTaskId);
+  return videoTaskResultToExecutorResult(result, provider.capability.id, input.prompt, input.model);
 }
 
 export function toProviderFailure(error: unknown, provider: string): ProviderFailure {
@@ -123,6 +153,54 @@ function toGeneratedMediaProviderOutput(
     providerTaskId: output.providerTaskId,
     rawJson: output.rawJson,
   };
+}
+
+function videoTaskResultToExecutorResult(
+  result: VideoProviderTaskResult,
+  provider: string,
+  prompt: string,
+  model?: string,
+): GenerationExecutorResult {
+  if (result.status === "provider_waiting") {
+    return {
+      status: "provider_waiting",
+      provider,
+      model,
+      providerTaskId: result.providerTaskId,
+      rawJson: result.rawJson,
+    };
+  }
+  if (result.status === "succeeded" && result.output) {
+    return {
+      status: "succeeded",
+      providerOutput: toGeneratedMediaProviderOutput(result.output, prompt),
+    };
+  }
+  if (result.status === "succeeded") {
+    throw new ProviderError({
+      provider,
+      code: "PROVIDER_EMPTY_RESPONSE",
+      message: `${provider} video task succeeded without a video output.`,
+      retryable: false,
+    });
+  }
+  if (result.status === "failed") {
+    throw new ProviderError(
+      result.error ?? {
+        provider,
+        code: "PROVIDER_TASK_FAILED",
+        message: `${provider} video task failed.`,
+        retryable: false,
+      },
+    );
+  }
+
+  throw new ProviderError({
+    provider,
+    code: "PROVIDER_TASK_CANCELLED",
+    message: `${provider} video task was cancelled by the provider.`,
+    retryable: false,
+  });
 }
 
 function firstProviderOutput(

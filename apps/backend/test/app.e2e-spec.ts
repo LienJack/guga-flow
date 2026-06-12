@@ -311,7 +311,10 @@ function createPrismaE2eMock() {
             .filter(
               (job) =>
                 (!where.projectId || job.projectId === where.projectId) &&
-                (!where.status || job.status === where.status) &&
+                (!where.status ||
+                  (typeof where.status === "string"
+                    ? job.status === where.status
+                    : where.status.in?.includes(job.status))) &&
                 (!where.operation?.in || where.operation.in.includes(job.operation)),
             )
             .sort(
