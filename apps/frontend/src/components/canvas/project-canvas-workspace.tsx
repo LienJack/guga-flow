@@ -1,6 +1,6 @@
 "use client";
 
-import type { CanvasNodeRecord, CanvasSaveStatus } from "@guga-flow/shared-types";
+import type { CanvasEdgeRecord, CanvasNodeRecord, CanvasSaveStatus } from "@guga-flow/shared-types";
 import React, { useCallback, useState } from "react";
 
 import { WorkbenchShell } from "../workbench-shell";
@@ -17,6 +17,7 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
   const [saveStatus, setSaveStatus] = useState<CanvasSaveStatus>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [canvasNodes, setCanvasNodes] = useState<CanvasNodeRecord[]>([]);
+  const [canvasEdges, setCanvasEdges] = useState<CanvasEdgeRecord[]>([]);
   const [selection, setSelection] = useState<CanvasSelectionState>(EMPTY_CANVAS_SELECTION);
 
   const handleSaveStatusChange = useCallback((status: CanvasSaveStatus, error: string | null) => {
@@ -38,7 +39,9 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
       canvasSlot={
         <CanvasEditor
           projectId={projectId}
+          canvasEdges={canvasEdges}
           canvasNodes={canvasNodes}
+          onCanvasEdgesChange={setCanvasEdges}
           onCanvasNodesChange={setCanvasNodes}
           onSelectionChange={setSelection}
           onSaveStatusChange={handleSaveStatusChange}

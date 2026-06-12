@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  CanvasEdgeRecord,
   CanvasNodeRecord,
   CanvasSaveStatus,
   CanvasSnapshotJson,
@@ -12,11 +13,19 @@ import { Tldraw, createShapeId, type Editor, type TLShape, type TLShapeId } from
 
 import {
   createCanvasNode,
+  deleteCanvasEdge,
   deleteCanvasNode,
   getProjectCanvas,
   saveCanvasSnapshot,
   updateCanvasNodeGeometry,
 } from "../../lib/api";
+import { mergeCanvasEdgeDeleteResult } from "./canvas-edge-data";
+import {
+  buildCanvasEdgeArrowProjection,
+  buildCanvasEdgeShapeIdMap,
+  findCanvasEdgeByVisualShapeId,
+  getCanvasEdgeVisualShapeId,
+} from "./canvas-edge-visuals";
 import { type CanvasSelectionState, EMPTY_CANVAS_SELECTION } from "./canvas-selection";
 import {
   buildBusinessNodeCardModel,
@@ -37,13 +46,22 @@ import {
 } from "./business-node-shape-utils";
 import { createBusinessNodeGeometryScheduler } from "./use-business-node-sync";
 import { useCanvasAutosave } from "./use-canvas-autosave";
+import {
+  connectedCanvasEdgeShapeIds,
+  reconcileCanvasEdgeShapes,
+  type CanvasEdgeSyncEditor,
+} from "./use-canvas-edge-sync";
 import { selectionFromShapes } from "./use-selected-business-nodes";
 
 type TldrawSnapshot = Parameters<Editor["loadSnapshot"]>[0];
+type TldrawCreateShapeInput = Parameters<Editor["createShape"]>[0];
+type TldrawUpdateShapeInput = Parameters<Editor["updateShape"]>[0];
 
 interface CanvasEditorProps {
   projectId: string;
+  canvasEdges?: CanvasEdgeRecord[];
   canvasNodes?: CanvasNodeRecord[];
+  onCanvasEdgesChange?: (edges: CanvasEdgeRecord[]) => void;
   onCanvasNodesChange?: (nodes: CanvasNodeRecord[]) => void;
   onSelectionChange?: (selection: CanvasSelectionState) => void;
   onSaveStatusChange?: (status: CanvasSaveStatus, error: string | null) => void;
@@ -109,9 +127,30 @@ function restoreBusinessNodeShape(editor: Editor, node: CanvasNodeRecord) {
   editor.setSelectedShapes([shapeId]);
 }
 
+function toCanvasEdgeSyncEditor(editor: Editor): CanvasEdgeSyncEditor {
+  return {
+    getShape: (shapeId) => editor.getShape(shapeId as TLShapeId),
+    createShape: (shape) => editor.createShape(shape as unknown as TldrawCreateShapeInput),
+    updateShape: (shape) => editor.updateShape(shape as unknown as TldrawUpdateShapeInput),
+    deleteShapes: (shapeIds) => editor.deleteShapes(shapeIds as TLShapeId[]),
+  };
+}
+
+function restoreCanvasEdgeShape(editor: Editor, nodes: CanvasNodeRecord[], edge: CanvasEdgeRecord) {
+  const projection = buildCanvasEdgeArrowProjection(edge, nodes);
+  if (!projection || editor.getShape(projection.id as TLShapeId)) {
+    return;
+  }
+
+  editor.createShape(projection as unknown as TldrawCreateShapeInput);
+  editor.setSelectedShapes([projection.id as TLShapeId]);
+}
+
 export function CanvasEditor({
+  canvasEdges = [],
   projectId,
   canvasNodes = [],
+  onCanvasEdgesChange,
   onCanvasNodesChange,
   onSaveStatusChange,
   onSelectionChange,
@@ -124,12 +163,16 @@ export function CanvasEditor({
   const editorRef = useRef<Editor | null>(null);
   const loadRequestIdRef = useRef(0);
   const nodesRef = useRef<CanvasNodeRecord[]>(canvasNodes);
+  const edgesRef = useRef<CanvasEdgeRecord[]>(canvasEdges);
   const createNodeSequenceRef = useRef(0);
   const geometrySchedulerRef = useRef<ReturnType<
     typeof createBusinessNodeGeometryScheduler
   > | null>(null);
+  const knownEdgeShapeIdsRef = useRef(new Set<string>());
   const ignoredRemovedShapeIdsRef = useRef(new Set<string>());
+  const ignoredRemovedEdgeShapeIdsRef = useRef(new Set<string>());
   const deletingNodeIdsRef = useRef(new Set<string>());
+  const deletingEdgeIdsRef = useRef(new Set<string>());
 
   const publishCanvasNodes = useCallback(
     (nodes: CanvasNodeRecord[]) => {
@@ -139,9 +182,21 @@ export function CanvasEditor({
     [onCanvasNodesChange],
   );
 
+  const publishCanvasEdges = useCallback(
+    (edges: CanvasEdgeRecord[]) => {
+      edgesRef.current = edges;
+      onCanvasEdgesChange?.(edges);
+    },
+    [onCanvasEdgesChange],
+  );
+
   useEffect(() => {
     nodesRef.current = canvasNodes;
   }, [canvasNodes]);
+
+  useEffect(() => {
+    edgesRef.current = canvasEdges;
+  }, [canvasEdges]);
 
   const autosave = useCanvasAutosave({
     projectId,
@@ -220,6 +275,36 @@ export function CanvasEditor({
     }
   }, [canvasNodes, loading, reconcileBusinessNodes]);
 
+  const reconcileCanvasEdges = useCallback(
+    (editor: Editor, nodes: CanvasNodeRecord[], edges: CanvasEdgeRecord[]) => {
+      const result = reconcileCanvasEdgeShapes({
+        editor: toCanvasEdgeSyncEditor(editor),
+        nodes,
+        edges,
+        knownShapeIds: knownEdgeShapeIdsRef.current,
+      });
+      knownEdgeShapeIdsRef.current = result.nextKnownShapeIds;
+      return result;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || loading) {
+      return;
+    }
+
+    try {
+      const result = reconcileCanvasEdges(editor, canvasNodes, canvasEdges);
+      if (result.changed) {
+        scheduleSave(editorSnapshotToJson(editor));
+      }
+    } catch (error) {
+      setNodeActionError(errorMessage(error));
+    }
+  }, [canvasEdges, canvasNodes, loading, reconcileCanvasEdges, scheduleSave]);
+
   const loadCanvas = useCallback(() => {
     const requestId = loadRequestIdRef.current + 1;
     loadRequestIdRef.current = requestId;
@@ -228,6 +313,7 @@ export function CanvasEditor({
     setNodeActionError(null);
     setSnapshotJson(null);
     publishCanvasNodes([]);
+    publishCanvasEdges([]);
     onSelectionChange?.(EMPTY_CANVAS_SELECTION);
 
     getProjectCanvas(projectId)
@@ -237,6 +323,7 @@ export function CanvasEditor({
         }
         setSnapshotJson(result.canvasDocument.snapshotJson);
         publishCanvasNodes(result.nodes);
+        publishCanvasEdges(result.edges);
         setLoading(false);
       })
       .catch((error: unknown) => {
@@ -246,7 +333,7 @@ export function CanvasEditor({
         setLoadError(errorMessage(error));
         setLoading(false);
       });
-  }, [onSelectionChange, projectId, publishCanvasNodes]);
+  }, [onSelectionChange, projectId, publishCanvasEdges, publishCanvasNodes]);
 
   useEffect(() => {
     loadCanvas();
@@ -266,7 +353,11 @@ export function CanvasEditor({
 
   const emitSelection = useCallback(
     (editor: Editor) => {
-      onSelectionChange?.(selectionFromShapes(editor.getSelectedShapes()));
+      onSelectionChange?.(
+        selectionFromShapes(editor.getSelectedShapes(), {
+          edgeShapeToEdgeId: buildCanvasEdgeShapeIdMap(edgesRef.current),
+        }),
+      );
     },
     [onSelectionChange],
   );
@@ -355,6 +446,24 @@ export function CanvasEditor({
       deletingNodeIdsRef.current.add(shape.props.nodeId);
       deleteCanvasNode(projectId, shape.props.nodeId)
         .then(() => {
+          const connectedShapeIds = connectedCanvasEdgeShapeIds(edgesRef.current, shape.props.nodeId);
+          for (const shapeId of connectedShapeIds) {
+            ignoredRemovedEdgeShapeIdsRef.current.add(shapeId);
+          }
+          if (connectedShapeIds.length > 0) {
+            editorRef.current?.deleteShapes(connectedShapeIds as TLShapeId[]);
+          }
+          knownEdgeShapeIdsRef.current = new Set(
+            Array.from(knownEdgeShapeIdsRef.current).filter(
+              (shapeId) => !connectedShapeIds.includes(shapeId),
+            ),
+          );
+          publishCanvasEdges(
+            edgesRef.current.filter(
+              (edge) =>
+                edge.sourceNodeId !== shape.props.nodeId && edge.targetNodeId !== shape.props.nodeId,
+            ),
+          );
           publishCanvasNodes(nodesRef.current.filter((node) => node.id !== shape.props.nodeId));
           onSelectionChange?.(EMPTY_CANVAS_SELECTION);
         })
@@ -371,7 +480,59 @@ export function CanvasEditor({
           deletingNodeIdsRef.current.delete(shape.props.nodeId);
         });
     },
-    [emitSelection, onSelectionChange, projectId, publishCanvasNodes, scheduleSave],
+    [emitSelection, onSelectionChange, projectId, publishCanvasEdges, publishCanvasNodes, scheduleSave],
+  );
+
+  const handleCanvasEdgeShapeRemoved = useCallback(
+    (shape: TLShape) => {
+      if (shape.type !== "arrow") {
+        return;
+      }
+      if (ignoredRemovedEdgeShapeIdsRef.current.delete(shape.id)) {
+        return;
+      }
+
+      const edge = findCanvasEdgeByVisualShapeId(edgesRef.current, shape.id);
+      if (!edge || deletingEdgeIdsRef.current.has(edge.id)) {
+        return;
+      }
+
+      deletingEdgeIdsRef.current.add(edge.id);
+      deleteCanvasEdge(projectId, edge.id)
+        .then((result) => {
+          const deletedShapeIds = new Set(
+            edgesRef.current
+              .filter((candidate) => result.deletedEdgeIds.includes(candidate.id))
+              .map((candidate) => getCanvasEdgeVisualShapeId(candidate)),
+          );
+          const merged = mergeCanvasEdgeDeleteResult(
+            { nodes: nodesRef.current, edges: edgesRef.current },
+            result,
+          );
+          knownEdgeShapeIdsRef.current = new Set(
+            Array.from(knownEdgeShapeIdsRef.current).filter(
+              (shapeId) => !deletedShapeIds.has(shapeId),
+            ),
+          );
+          publishCanvasNodes(merged.nodes);
+          publishCanvasEdges(merged.edges);
+          onSelectionChange?.(EMPTY_CANVAS_SELECTION);
+        })
+        .catch((error: unknown) => {
+          setNodeActionError(errorMessage(error));
+          const editor = editorRef.current;
+          if (editor) {
+            restoreCanvasEdgeShape(editor, nodesRef.current, edge);
+            knownEdgeShapeIdsRef.current.add(getCanvasEdgeVisualShapeId(edge));
+            emitSelection(editor);
+            scheduleSave(editorSnapshotToJson(editor));
+          }
+        })
+        .finally(() => {
+          deletingEdgeIdsRef.current.delete(edge.id);
+        });
+    },
+    [emitSelection, onSelectionChange, projectId, publishCanvasEdges, publishCanvasNodes, scheduleSave],
   );
 
   const handleMount = useCallback(
@@ -382,6 +543,10 @@ export function CanvasEditor({
         editor.loadSnapshot(snapshotJson as unknown as TldrawSnapshot);
       }
       reconcileBusinessNodes(editor, nodesRef.current);
+      const edgeReconcileResult = reconcileCanvasEdges(editor, nodesRef.current, edgesRef.current);
+      if (edgeReconcileResult.changed) {
+        scheduleSave(editorSnapshotToJson(editor));
+      }
       emitSelection(editor);
 
       const removeListener = editor.store.listen(
@@ -400,6 +565,7 @@ export function CanvasEditor({
           for (const record of Object.values(entry.changes.removed)) {
             if (record.typeName === "shape") {
               handleBusinessShapeRemoved(record as TLShape);
+              handleCanvasEdgeShapeRemoved(record as TLShape);
             }
           }
         },
@@ -421,7 +587,9 @@ export function CanvasEditor({
       emitSelection,
       handleBusinessShapeAdded,
       handleBusinessShapeRemoved,
+      handleCanvasEdgeShapeRemoved,
       handleBusinessShapeUpdated,
+      reconcileCanvasEdges,
       reconcileBusinessNodes,
       scheduleSave,
       snapshotJson,

@@ -69,6 +69,17 @@ describe("CanvasInspector", () => {
         />,
       ),
     ).toContain("geo");
+
+    expect(
+      renderToStaticMarkup(
+        <CanvasInspector
+          projectId="project_1"
+          nodes={[]}
+          selection={{ kind: "business-edge", edgeId: "edge_1" }}
+          onNodeUpdated={vi.fn()}
+        />,
+      ),
+    ).toContain("Semantic edge");
   });
 
   it("renders the Shot form and keeps the asset library available", () => {

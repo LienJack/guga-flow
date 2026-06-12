@@ -22,6 +22,9 @@ vi.mock("tldraw", () => ({
 }));
 
 vi.mock("../../lib/api", () => ({
+  createCanvasNode: vi.fn(),
+  deleteCanvasEdge: vi.fn(),
+  deleteCanvasNode: vi.fn(),
   getProjectCanvas: vi.fn(async () => ({
     canvasDocument: {
       id: "canvas_1",
@@ -35,6 +38,7 @@ vi.mock("../../lib/api", () => ({
     assets: [],
   })),
   saveCanvasSnapshot: vi.fn(),
+  updateCanvasNodeGeometry: vi.fn(),
 }));
 
 describe("CanvasEditor", () => {

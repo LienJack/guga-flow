@@ -1,6 +1,7 @@
 export type CanvasSelectionState =
   | { kind: "empty" }
   | { kind: "business-node"; nodeId: string }
+  | { kind: "business-edge"; edgeId: string }
   | { kind: "multi"; count: number }
   | { kind: "unsupported"; shapeId: string; shapeType: string };
 

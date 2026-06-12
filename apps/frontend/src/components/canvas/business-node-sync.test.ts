@@ -27,6 +27,16 @@ describe("business node selection helpers", () => {
       shapeId: "shape:geo-1",
       shapeType: "geo",
     });
+    expect(
+      selectionFromShapes([{ id: "shape:arrow-edge-1", type: "arrow" }], {
+        edgeShapeToEdgeId: new Map([["shape:arrow-edge-1", "edge_1"]]),
+      }),
+    ).toEqual({ kind: "business-edge", edgeId: "edge_1" });
+    expect(selectionFromShapes([{ id: "shape:user-arrow", type: "arrow" }])).toEqual({
+      kind: "unsupported",
+      shapeId: "shape:user-arrow",
+      shapeType: "arrow",
+    });
   });
 });
 

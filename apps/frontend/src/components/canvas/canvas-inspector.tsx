@@ -36,6 +36,9 @@ export function CanvasInspector({
         {selection.kind === "unsupported" ? (
           <InspectorState title="Canvas object" value={selection.shapeType} />
         ) : null}
+        {selection.kind === "business-edge" ? (
+          <InspectorState title="Semantic edge" value={selection.edgeId} />
+        ) : null}
         {selection.kind === "business-node" && !selectedNode ? (
           <InspectorState title="Node unavailable" value={selection.nodeId} />
         ) : null}

@@ -8,7 +8,14 @@ interface ShapeSelectionLike {
   props?: unknown;
 }
 
-export function selectionFromShapes(shapes: ShapeSelectionLike[]): CanvasSelectionState {
+interface SelectionOptions {
+  edgeShapeToEdgeId?: ReadonlyMap<string, string>;
+}
+
+export function selectionFromShapes(
+  shapes: ShapeSelectionLike[],
+  options: SelectionOptions = {},
+): CanvasSelectionState {
   if (shapes.length === 0) {
     return EMPTY_CANVAS_SELECTION;
   }
@@ -20,6 +27,12 @@ export function selectionFromShapes(shapes: ShapeSelectionLike[]): CanvasSelecti
   const nodeId = nodeIdFromProps(shape?.props);
   if (shape && isBusinessNodeShapeType(shape.type) && nodeId) {
     return { kind: "business-node", nodeId };
+  }
+  if (shape?.type === "arrow") {
+    const edgeId = options.edgeShapeToEdgeId?.get(shape.id);
+    if (edgeId) {
+      return { kind: "business-edge", edgeId };
+    }
   }
 
   return {
