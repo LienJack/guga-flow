@@ -11,8 +11,12 @@ import {
   NOVEL_SOURCE_TYPES,
   PHASE_3_CANVAS_NODE_TYPES,
   PROJECT_ASPECT_RATIOS,
+  STORYBOARD_IMPORT_DUPLICATE_POLICIES,
   STORYBOARD_DRAFT_STATUSES,
   UPLOADABLE_ASSET_MIME_TYPES,
+  buildStoryboardImportPlan,
+  findStoryboardImportLayoutOverlaps,
+  hasStoryboardImportProvenance,
   type CharacterAssetNodeData,
   type CanvasEdgeData,
   type CreateCanvasEdgeInput,
@@ -23,6 +27,7 @@ import {
   type DeleteCanvasEdgeResult,
   type DeleteCanvasNodeResult,
   type DeleteNovelDocumentResult,
+  type ImportStoryboardToCanvasInput,
   type ImportNovelSourceInput,
   type LocationAssetNodeData,
   type Phase3CanvasNodeRecord,
@@ -301,6 +306,60 @@ describe("shared domain constants", () => {
     const emptyScenesValidation = validateStoryboardResult(emptyScenes);
     expect(emptyScenesValidation.success).toBe(false);
   });
+
+  it("exports Phase 6 storyboard import layout contracts", () => {
+    expect(STORYBOARD_IMPORT_DUPLICATE_POLICIES).toEqual(["new_version"]);
+
+    const importInput: ImportStoryboardToCanvasInput = {
+      novelDocumentId: "novel_1",
+      storyboardDraftId: "draft_1",
+      duplicatePolicy: "new_version",
+    };
+    const storyboard = twoSceneStoryboard();
+    const plan = buildStoryboardImportPlan({
+      storyboard,
+      draftId: importInput.storyboardDraftId,
+      novelDocumentId: importInput.novelDocumentId,
+      importBatchId: "import_batch_1",
+      importedAt: "2026-06-12T00:00:00.000Z",
+      version: 2,
+    });
+
+    expect(plan.summary).toMatchObject({
+      importBatchId: "import_batch_1",
+      duplicatePolicy: "new_version",
+      version: 2,
+      sceneCount: 2,
+      shotCount: 6,
+      characterCount: 2,
+      locationCount: 1,
+      createdNodeCount: 14,
+    });
+    expect(plan.nodes.map((node) => node.type)).toEqual(
+      expect.arrayContaining([
+        "novel",
+        "character_asset",
+        "location_asset",
+        "scene_frame",
+        "scene",
+        "shot",
+      ]),
+    );
+
+    const firstShot = plan.nodes.find((node) => node.key === "shot:shot_1_1");
+    expect(firstShot?.dataJson).toMatchObject({
+      imagePrompt: "image prompt scene 1 shot 1",
+      videoPrompt: "video prompt scene 1 shot 1",
+      durationSeconds: 4,
+      characterTempIds: ["char_hero", "char_friend"],
+      locationTempId: "loc_city",
+    });
+    expect(hasStoryboardImportProvenance(firstShot?.dataJson)).toBe(true);
+    expect(plan.edges.map((edge) => edge.relation)).toEqual(
+      expect.arrayContaining(["belongs_to_scene", "references_character", "references_location"]),
+    );
+    expect(findStoryboardImportLayoutOverlaps(plan.nodes)).toEqual([]);
+  });
 });
 
 function validStoryboard(): StoryboardResult {
@@ -356,5 +415,45 @@ function validStoryboard(): StoryboardResult {
         ],
       },
     ],
+  };
+}
+
+function twoSceneStoryboard(): StoryboardResult {
+  const storyboard = validStoryboard();
+  storyboard.characters.push({
+    tempId: "char_friend",
+    name: "Friend",
+    role: "support",
+    appearance: "A second consistent character.",
+    personality: "Calm and practical.",
+    identityPrompt: "consistent support character, cinematic character reference",
+  });
+  storyboard.scenes = [buildImportScene(1), buildImportScene(2)];
+  return storyboard;
+}
+
+function buildImportScene(sceneIndex: number): StoryboardResult["scenes"][number] {
+  return {
+    tempId: `scene_${sceneIndex}`,
+    title: `Scene ${sceneIndex}`,
+    sourceExcerpt: `Scene ${sceneIndex} source excerpt.`,
+    summary: `Scene ${sceneIndex} summary.`,
+    mood: "focused",
+    timeOfDay: "evening",
+    characterTempIds: ["char_hero", "char_friend"],
+    locationTempId: "loc_city",
+    shots: [1, 2, 3].map((shotIndex) => ({
+      tempId: `shot_${sceneIndex}_${shotIndex}`,
+      shotIndex,
+      title: `Shot ${sceneIndex}.${shotIndex}`,
+      durationSec: 3 + shotIndex,
+      visualDescription: `Visual scene ${sceneIndex} shot ${shotIndex}.`,
+      action: `Action scene ${sceneIndex} shot ${shotIndex}.`,
+      cameraMovement: "slow push in",
+      characterTempIds: ["char_hero", "char_friend"],
+      locationTempId: "loc_city",
+      imagePrompt: `image prompt scene ${sceneIndex} shot ${shotIndex}`,
+      videoPrompt: `video prompt scene ${sceneIndex} shot ${shotIndex}`,
+    })),
   };
 }

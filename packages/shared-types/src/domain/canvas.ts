@@ -71,6 +71,7 @@ export interface NovelNodeData {
   sourceText?: string;
   synopsis?: string;
   language?: string;
+  storyboardTitle?: string;
 }
 
 export interface SceneFrameNodeData {
@@ -78,6 +79,7 @@ export interface SceneFrameNodeData {
   order?: number;
   description?: string;
   locationAssetId?: string;
+  locationTempId?: string;
 }
 
 export interface SceneNodeData {
@@ -86,6 +88,9 @@ export interface SceneNodeData {
   location?: string;
   timeOfDay?: string;
   mood?: string;
+  sourceExcerpt?: string;
+  characterTempIds?: string[];
+  locationTempId?: string;
 }
 
 export interface ShotNodeData {
@@ -94,8 +99,20 @@ export interface ShotNodeData {
   action?: string;
   cameraMovement?: string;
   durationSeconds?: number;
+  durationSec?: number;
+  imagePrompt?: string;
+  videoPrompt?: string;
   promptNotes?: string;
   negativePromptNotes?: string;
+  lens?: string;
+  lighting?: string;
+  mood?: string;
+  dialogue?: string;
+  narration?: string;
+  soundEffect?: string;
+  sourceExcerpt?: string;
+  characterTempIds?: string[];
+  locationTempId?: string;
   characterAssetIds?: string[];
   locationAssetId?: string;
 }
@@ -107,6 +124,8 @@ export interface CharacterAssetNodeData {
   personality?: string;
   wardrobe?: string;
   consistencyPrompt?: string;
+  identityPrompt?: string;
+  assetKey?: string;
 }
 
 export interface LocationAssetNodeData {
@@ -115,6 +134,9 @@ export interface LocationAssetNodeData {
   mood?: string;
   visualStyle?: string;
   consistencyPrompt?: string;
+  locationPrompt?: string;
+  locationType?: string;
+  assetKey?: string;
 }
 
 export interface ImageNodeData {
