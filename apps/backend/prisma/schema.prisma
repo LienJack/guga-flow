@@ -1,0 +1,300 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  runtime      = "nodejs"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CanvasNodeType {
+  novel
+  scene_frame
+  scene
+  shot
+  character_asset
+  location_asset
+  style_asset
+  prop_asset
+  image
+  video
+  editor_package
+  note
+}
+
+enum CanvasEdgeRelation {
+  derived_from
+  belongs_to_scene
+  references_character
+  references_location
+  references_style
+  references_prop
+  generated_image
+  generated_video
+  first_frame_for
+  selected_version_for
+  sent_to_editor
+  sequence_next
+}
+
+enum NodeStatus {
+  draft
+  queued
+  running
+  provider_waiting
+  succeeded
+  failed
+  cancelled
+}
+
+enum AssetType {
+  image
+  video
+  document
+  package
+}
+
+enum AssetPurpose {
+  uploaded
+  shot_keyframe
+  character_reference
+  location_reference
+  style_reference
+  shot_clip
+  editor_package
+}
+
+enum GenerationJobStatus {
+  queued
+  running
+  provider_waiting
+  succeeded
+  failed
+  cancelled
+}
+
+enum GenerationOperation {
+  novel_to_storyboard
+  shot_to_image
+  character_to_image
+  location_to_image
+  image_to_video
+  shot_to_video
+  batch_shots_to_images
+  batch_images_to_videos
+  editor_export
+}
+
+enum EditorExportStatus {
+  queued
+  running
+  succeeded
+  failed
+}
+
+enum ProviderKind {
+  llm
+  image
+  video
+  editor
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String?   @unique
+  name      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  projects  Project[]
+}
+
+model Project {
+  id                 String              @id @default(cuid())
+  ownerUserId        String
+  title              String
+  description        String?
+  defaultAspectRatio String              @default("9:16")
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  owner              User                @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
+  novels             NovelDocument[]
+  canvasDocuments    CanvasDocument[]
+  nodes              CanvasNode[]
+  edges              CanvasEdge[]
+  assets             Asset[]
+  generationJobs     GenerationJob[]
+  editorExports      EditorExport[]
+  providerConfigs    ProviderConfig[]
+
+  @@index([ownerUserId])
+}
+
+model NovelDocument {
+  id         String   @id @default(cuid())
+  projectId  String
+  title      String
+  content    String
+  sourceType String
+  wordCount  Int
+  language   String   @default("zh")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model CanvasDocument {
+  id           String       @id @default(cuid())
+  projectId    String
+  snapshotJson Json         @default("{}")
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  nodes        CanvasNode[]
+  edges        CanvasEdge[]
+
+  @@unique([projectId])
+}
+
+model CanvasNode {
+  id               String             @id @default(cuid())
+  projectId        String
+  canvasDocumentId String
+  tldrawShapeId    String
+  type             CanvasNodeType
+  title            String?
+  x                Float              @default(0)
+  y                Float              @default(0)
+  width            Float              @default(320)
+  height           Float              @default(220)
+  zIndex           Int                @default(0)
+  status           NodeStatus         @default(draft)
+  dataJson         Json               @default("{}")
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  project          Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  canvasDocument   CanvasDocument     @relation(fields: [canvasDocumentId], references: [id], onDelete: Cascade)
+  sourceEdges      CanvasEdge[]       @relation("SourceNodeEdges")
+  targetEdges      CanvasEdge[]       @relation("TargetNodeEdges")
+  sourceJobs       GenerationJob[]    @relation("SourceNodeJobs")
+  targetJobs       GenerationJob[]    @relation("TargetNodeJobs")
+  versions         NodeVersion[]
+
+  @@unique([canvasDocumentId, tldrawShapeId])
+  @@index([projectId, type])
+  @@index([canvasDocumentId])
+}
+
+model CanvasEdge {
+  id                 String             @id @default(cuid())
+  projectId          String
+  canvasDocumentId   String
+  sourceNodeId       String
+  targetNodeId       String
+  sourceShapeId      String?
+  targetShapeId      String?
+  visualArrowShapeId String?
+  relation           CanvasEdgeRelation
+  dataJson           Json?
+  createdAt          DateTime           @default(now())
+  project            Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  canvasDocument     CanvasDocument     @relation(fields: [canvasDocumentId], references: [id], onDelete: Cascade)
+  sourceNode         CanvasNode         @relation("SourceNodeEdges", fields: [sourceNodeId], references: [id], onDelete: Cascade)
+  targetNode         CanvasNode         @relation("TargetNodeEdges", fields: [targetNodeId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, relation])
+  @@index([canvasDocumentId])
+  @@index([sourceNodeId])
+  @@index([targetNodeId])
+}
+
+model Asset {
+  id               String          @id @default(cuid())
+  projectId        String
+  type             AssetType
+  purpose          AssetPurpose
+  storageKey       String
+  mimeType         String
+  originalFilename String?
+  sizeBytes        Int?
+  width            Int?
+  height           Int?
+  durationMs       Int?
+  metadataJson     Json?
+  createdAt        DateTime        @default(now())
+  project          Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  editorExports    EditorExport[]
+
+  @@unique([projectId, storageKey])
+  @@index([projectId, type])
+}
+
+model GenerationJob {
+  id             String              @id @default(cuid())
+  projectId      String
+  operation      GenerationOperation
+  status         GenerationJobStatus @default(queued)
+  provider       String
+  model          String?
+  sourceNodeId   String?
+  targetNodeId   String?
+  providerTaskId String?
+  inputJson      Json                @default("{}")
+  outputJson     Json?
+  errorMessage   String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  project        Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceNode     CanvasNode?         @relation("SourceNodeJobs", fields: [sourceNodeId], references: [id], onDelete: SetNull)
+  targetNode     CanvasNode?         @relation("TargetNodeJobs", fields: [targetNodeId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status])
+  @@index([providerTaskId])
+}
+
+model EditorExport {
+  id            String             @id @default(cuid())
+  projectId     String
+  packageAssetId String?
+  status        EditorExportStatus @default(queued)
+  timelineJson  Json               @default("{}")
+  storyboardCsv String?
+  errorMessage  String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  project       Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  packageAsset  Asset?             @relation(fields: [packageAssetId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status])
+}
+
+model NodeVersion {
+  id        String     @id @default(cuid())
+  nodeId    String
+  label     String?
+  dataJson  Json       @default("{}")
+  createdAt DateTime   @default(now())
+  node      CanvasNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([nodeId])
+}
+
+model ProviderConfig {
+  id           String       @id @default(cuid())
+  projectId    String?
+  kind         ProviderKind
+  provider     String
+  enabled      Boolean      @default(false)
+  displayName  String?
+  defaultModel String?
+  paramsJson   Json?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, kind, provider])
+  @@index([kind, provider])
+}
