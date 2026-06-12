@@ -4,7 +4,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildStoryboardDraftUiState,
   formatStoryboardValidationIssues,
+  hasExistingStoryboardImports,
   isStoryboardDraftReadyForImport,
+  isStoryboardDraftImportable,
+  mergeStoryboardImportGraph,
+  summarizeStoryboardImport,
   summarizeStoryboard,
   summarizeStoryboardActionError,
   updateStoryboardCharacter,
@@ -199,6 +203,8 @@ describe("storyboard data helpers", () => {
     const uiState = buildStoryboardDraftUiState(invalidDraft);
 
     expect(isStoryboardDraftReadyForImport(invalidDraft)).toBe(false);
+    expect(isStoryboardDraftImportable(draft({ status: "ready", readyForImport: true }))).toBe(true);
+    expect(isStoryboardDraftImportable(draft({ status: "ready", readyForImport: true }), true)).toBe(false);
     expect(uiState).toMatchObject({
       label: "Draft needs fixes",
       isValid: false,
@@ -221,5 +227,75 @@ describe("storyboard data helpers", () => {
     expect(summarizeStoryboardActionError(new Error("mock-llm mock failure requested"))).toBe(
       "mock-llm mock failure requested",
     );
+  });
+
+  it("detects import provenance, summarizes imports, and merges graph updates", () => {
+    const importedNode = {
+      id: "node_imported",
+      projectId: "project_1",
+      canvasDocumentId: "canvas_1",
+      tldrawShapeId: "shape:shot-1",
+      type: "shot" as const,
+      x: 0,
+      y: 0,
+      width: 320,
+      height: 220,
+      zIndex: 1,
+      status: "draft" as const,
+      dataJson: {
+        storyboardImport: {
+          batchId: "batch_1",
+          draftId: "draft_1",
+          novelDocumentId: "novel_1",
+          entityKind: "shot",
+          version: 1,
+        },
+      },
+      createdAt: "2026-06-12T00:00:00.000Z",
+      updatedAt: "2026-06-12T00:00:00.000Z",
+    };
+    const manualNode = {
+      ...importedNode,
+      id: "node_manual",
+      tldrawShapeId: "shape:manual",
+      dataJson: {},
+    };
+    const result = {
+      importBatchId: "batch_1",
+      summary: {
+        importBatchId: "batch_1",
+        duplicatePolicy: "new_version" as const,
+        version: 1,
+        createdNodeCount: 14,
+        reusedNodeCount: 1,
+        createdEdgeCount: 20,
+        sceneCount: 2,
+        shotCount: 6,
+        characterCount: 2,
+        locationCount: 1,
+      },
+      nodes: [importedNode],
+      edges: [
+        {
+          id: "edge_1",
+          projectId: "project_1",
+          canvasDocumentId: "canvas_1",
+          sourceNodeId: "node_character",
+          targetNodeId: "node_imported",
+          relation: "references_character" as const,
+          createdAt: "2026-06-12T00:00:00.000Z",
+        },
+      ],
+    };
+
+    expect(hasExistingStoryboardImports([manualNode])).toBe(false);
+    expect(hasExistingStoryboardImports([manualNode, importedNode])).toBe(true);
+    expect(summarizeStoryboardImport(result.summary)).toBe(
+      "Imported 2 scenes / 6 shots / 2 characters / 1 locations / 14 nodes, 1 reused / 20 edges",
+    );
+    expect(mergeStoryboardImportGraph({ nodes: [manualNode], edges: [] }, result)).toMatchObject({
+      nodes: [manualNode, importedNode],
+      edges: result.edges,
+    });
   });
 });

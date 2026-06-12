@@ -1,13 +1,17 @@
 import type {
+  CanvasEdgeRecord,
+  CanvasNodeRecord,
   CharacterDraft,
+  ImportStoryboardToCanvasResult,
   LocationDraft,
   SceneDraft,
   ShotDraft,
   StoryboardDraftRecord,
+  StoryboardImportSummary,
   StoryboardResult,
   StoryboardValidationIssue,
 } from "@guga-flow/shared-types";
-import { validateStoryboardResult } from "@guga-flow/shared-types";
+import { hasStoryboardImportProvenance, validateStoryboardResult } from "@guga-flow/shared-types";
 
 type MutableStoryboardObject = Record<string, unknown>;
 
@@ -31,6 +35,11 @@ export interface StoryboardDraftUiState {
   canMarkReady: boolean;
   issueSummary: string;
   issues: StoryboardValidationIssue[];
+}
+
+export interface StoryboardImportGraphState {
+  nodes: CanvasNodeRecord[];
+  edges: CanvasEdgeRecord[];
 }
 
 export type StoryboardOverviewPatch = Partial<Pick<StoryboardResult, "title" | "logline">>;
@@ -108,6 +117,43 @@ export function isStoryboardDraftReadyForImport(draft: StoryboardDraftRecord | u
   }
 
   return validateStoryboardResult(draft.storyboard).success;
+}
+
+export function isStoryboardDraftImportable(
+  draft: StoryboardDraftRecord | undefined,
+  dirty = false,
+): boolean {
+  return !dirty && isStoryboardDraftReadyForImport(draft);
+}
+
+export function hasExistingStoryboardImports(nodes: readonly CanvasNodeRecord[]): boolean {
+  return nodes.some((node) => hasStoryboardImportProvenance(node.dataJson));
+}
+
+export function summarizeStoryboardImport(summary: StoryboardImportSummary | undefined): string {
+  if (!summary) {
+    return "";
+  }
+
+  const reused = summary.reusedNodeCount > 0 ? `, ${summary.reusedNodeCount} reused` : "";
+  return [
+    `Imported ${summary.sceneCount} scenes`,
+    `${summary.shotCount} shots`,
+    `${summary.characterCount} characters`,
+    `${summary.locationCount} locations`,
+    `${summary.createdNodeCount} nodes${reused}`,
+    `${summary.createdEdgeCount} edges`,
+  ].join(" / ");
+}
+
+export function mergeStoryboardImportGraph(
+  state: StoryboardImportGraphState,
+  result: ImportStoryboardToCanvasResult,
+): StoryboardImportGraphState {
+  return {
+    nodes: mergeById(state.nodes, result.nodes),
+    edges: mergeById(state.edges, result.edges),
+  };
 }
 
 export function formatStoryboardValidationIssues(
@@ -220,6 +266,22 @@ function updateByTempId<TItem extends { tempId: string }>(
         } as TItem)
       : item,
   );
+}
+
+function mergeById<TItem extends { id: string }>(items: readonly TItem[], updates: readonly TItem[]): TItem[] {
+  if (updates.length === 0) {
+    return [...items];
+  }
+
+  const updateById = new Map(updates.map((item) => [item.id, item]));
+  const existingIds = new Set(items.map((item) => item.id));
+  const merged = items.map((item) => updateById.get(item.id) ?? item);
+  for (const update of updates) {
+    if (!existingIds.has(update.id)) {
+      merged.push(update);
+    }
+  }
+  return merged;
 }
 
 function compactPatch<TPatch extends MutableStoryboardObject>(patch: TPatch): Partial<TPatch> {

@@ -16,6 +16,8 @@ import type {
   GenerateStoryboardResult,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
+  ImportStoryboardToCanvasInput,
+  ImportStoryboardToCanvasResult,
   MarkStoryboardDraftReadyResult,
   NovelDocumentRecord,
   ProjectDetail,
@@ -227,6 +229,19 @@ export function markStoryboardDraftReady(
   return requestJson<MarkStoryboardDraftReadyResult>(
     `/projects/${projectId}/novels/${novelId}/storyboard-draft/${draftId}/ready`,
     { method: "POST" },
+  );
+}
+
+export function importStoryboardToCanvas(
+  projectId: string,
+  input: ImportStoryboardToCanvasInput,
+): Promise<ImportStoryboardToCanvasResult> {
+  return requestJson<ImportStoryboardToCanvasResult>(
+    `/projects/${projectId}/canvas/import-storyboard`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
   );
 }
 

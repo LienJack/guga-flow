@@ -6,6 +6,7 @@ import {
   createNovelDocument,
   generateStoryboardDraft,
   getActiveStoryboardDraft,
+  importStoryboardToCanvas,
   importNovelSource,
   markStoryboardDraftReady,
   updateStoryboardDraft,
@@ -199,6 +200,11 @@ describe("frontend api client", () => {
     await getActiveStoryboardDraft("project_1", "novel_1");
     await updateStoryboardDraft("project_1", "novel_1", "draft_1", { storyboard });
     await markStoryboardDraftReady("project_1", "novel_1", "draft_1");
+    await importStoryboardToCanvas("project_1", {
+      novelDocumentId: "novel_1",
+      storyboardDraftId: "draft_1",
+      duplicatePolicy: "new_version",
+    });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -222,6 +228,18 @@ describe("frontend api client", () => {
       4,
       "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/storyboard-draft/draft_1/ready",
       expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/import-storyboard",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          novelDocumentId: "novel_1",
+          storyboardDraftId: "draft_1",
+          duplicatePolicy: "new_version",
+        }),
+      }),
     );
   });
 });
