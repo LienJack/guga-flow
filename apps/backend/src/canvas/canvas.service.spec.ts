@@ -18,6 +18,29 @@ function canvasDocument(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function canvasNode(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "node_1",
+    projectId: "project_1",
+    canvasDocumentId: "canvas_1",
+    tldrawShapeId: "shape:shot-1",
+    type: "shot",
+    title: "Shot 001",
+    x: 10,
+    y: 20,
+    width: 360,
+    height: 220,
+    zIndex: 0,
+    status: "draft",
+    dataJson: {
+      visualDescription: "Wide shot of the launch platform.",
+    },
+    createdAt,
+    updatedAt,
+    ...overrides,
+  };
+}
+
 function asset(overrides: Record<string, unknown> = {}) {
   return {
     id: "asset_1",
@@ -38,6 +61,7 @@ function asset(overrides: Record<string, unknown> = {}) {
 }
 
 type MockAsset = ReturnType<typeof asset>;
+type MockCanvasNode = ReturnType<typeof canvasNode>;
 
 function createPrismaMock() {
   return {
@@ -48,13 +72,18 @@ function createPrismaMock() {
       upsert: vi.fn(),
     },
     canvasNode: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async (): Promise<MockCanvasNode[]> => []),
+      findFirst: vi.fn(async (): Promise<MockCanvasNode | null> => null),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
     },
     canvasEdge: {
       findMany: vi.fn(async () => []),
     },
     asset: {
       findMany: vi.fn(async (): Promise<MockAsset[]> => []),
+      delete: vi.fn(),
     },
   };
 }
@@ -112,6 +141,141 @@ describe("CanvasService", () => {
     expect(result.canvasDocument.snapshotJson).toEqual(snapshotJson);
   });
 
+  it("creates project-scoped business canvas nodes", async () => {
+    const dataJson = {
+      visualDescription: "Wide shot of the launch platform.",
+      cameraMovement: "Slow push-in",
+    };
+    prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
+    prisma.canvasNode.create.mockResolvedValue(
+      canvasNode({
+        dataJson,
+      }),
+    );
+
+    const result = await service.createNode("project_1", {
+      tldrawShapeId: "shape:shot-1",
+      type: "shot",
+      title: " Shot 001 ",
+      x: 10,
+      y: 20,
+      width: 360,
+      height: 220,
+      dataJson,
+    });
+
+    expect(prisma.canvasDocument.upsert).toHaveBeenCalledWith({
+      where: { projectId: "project_1" },
+      update: {},
+      create: { projectId: "project_1" },
+    });
+    expect(prisma.canvasNode.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        canvasDocumentId: "canvas_1",
+        tldrawShapeId: "shape:shot-1",
+        type: "shot",
+        title: "Shot 001",
+        x: 10,
+        y: 20,
+        width: 360,
+        height: 220,
+        zIndex: 0,
+        status: "draft",
+        dataJson,
+      }),
+    });
+    expect(result.node.dataJson).toEqual(dataJson);
+  });
+
+  it("updates business fields for project-scoped canvas nodes", async () => {
+    const dataJson = {
+      visualDescription: "Closer shot with brighter practical lights.",
+      action: "Ari tightens the cable.",
+    };
+    prisma.canvasNode.findFirst.mockResolvedValue(canvasNode());
+    prisma.canvasNode.update.mockResolvedValue(
+      canvasNode({
+        title: "Shot 001A",
+        status: "succeeded",
+        dataJson,
+      }),
+    );
+
+    const result = await service.updateNode("project_1", "node_1", {
+      title: "Shot 001A",
+      status: "succeeded",
+      dataJson,
+    });
+
+    expect(prisma.canvasNode.findFirst).toHaveBeenCalledWith({
+      where: { id: "node_1", projectId: "project_1" },
+    });
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "node_1" },
+      data: {
+        title: "Shot 001A",
+        status: "succeeded",
+        dataJson,
+      },
+    });
+    expect(result.node.title).toBe("Shot 001A");
+    expect(result.node.dataJson).toEqual(dataJson);
+  });
+
+  it("updates business node geometry and validates finite positive dimensions", async () => {
+    prisma.canvasNode.findFirst.mockResolvedValue(canvasNode());
+    prisma.canvasNode.update.mockResolvedValue(
+      canvasNode({
+        x: 100,
+        y: 120,
+        width: 400,
+        height: 260,
+        zIndex: 4,
+      }),
+    );
+
+    const result = await service.updateNodeGeometry("project_1", "node_1", {
+      x: 100,
+      y: 120,
+      width: 400,
+      height: 260,
+      zIndex: 4,
+    });
+
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "node_1" },
+      data: {
+        x: 100,
+        y: 120,
+        width: 400,
+        height: 260,
+        zIndex: 4,
+      },
+    });
+    expect(result.node).toMatchObject({ x: 100, y: 120, width: 400, height: 260 });
+
+    await expect(
+      service.updateNodeGeometry("project_1", "node_1", {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 220,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("deletes business nodes without deleting unrelated assets", async () => {
+    prisma.canvasNode.findFirst.mockResolvedValue(canvasNode());
+    prisma.canvasNode.delete.mockResolvedValue(canvasNode());
+
+    const result = await service.deleteNode("project_1", "node_1");
+
+    expect(prisma.canvasNode.delete).toHaveBeenCalledWith({ where: { id: "node_1" } });
+    expect(prisma.asset.delete).not.toHaveBeenCalled();
+    expect(result).toEqual({ deleted: true, nodeId: "node_1" });
+  });
+
   it("returns project assets using public preview metadata", async () => {
     prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
     prisma.asset.findMany.mockResolvedValue([asset()]);
@@ -136,6 +300,15 @@ describe("CanvasService", () => {
     await expect(service.saveSnapshot("missing", { snapshotJson: {} })).rejects.toBeInstanceOf(
       NotFoundException,
     );
+    await expect(
+      service.createNode("missing", {
+        tldrawShapeId: "shape:shot-1",
+        type: "shot",
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.updateNode("missing", "node_1", { title: "Nope" })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it("rejects invalid snapshot payloads", async () => {
@@ -147,6 +320,30 @@ describe("CanvasService", () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(
       service.saveSnapshot("project_1", { snapshotJson: null }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("rejects invalid business node payloads", async () => {
+    prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
+    prisma.canvasNode.findFirst.mockResolvedValue(canvasNode());
+
+    await expect(
+      service.createNode("project_1", {
+        tldrawShapeId: "shape:shot-1",
+        type: "style_asset" as never,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.createNode("project_1", {
+        tldrawShapeId: "shape:shot-1",
+        type: "shot",
+        dataJson: null,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.updateNode("project_1", "node_1", {
+        dataJson: { broken: undefined } as never,
+      }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

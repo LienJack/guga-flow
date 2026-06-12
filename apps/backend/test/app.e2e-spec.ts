@@ -57,9 +57,11 @@ function createPrismaE2eMock() {
   const projects = new Map<string, StoredProject>();
   const assets = new Map<string, Record<string, unknown>>();
   const canvasDocuments = new Map<string, Record<string, unknown>>();
+  const canvasNodes = new Map<string, Record<string, unknown>>();
   let projectSequence = 1;
   let assetSequence = 1;
   let canvasSequence = 1;
+  let nodeSequence = 1;
 
   function nextDate() {
     return new Date(`2026-06-12T00:${String(projectSequence).padStart(2, "0")}:00.000Z`);
@@ -117,6 +119,11 @@ function createPrismaE2eMock() {
         }
         projects.delete(where.id);
         canvasDocuments.delete(where.id);
+        for (const [nodeId, node] of canvasNodes.entries()) {
+          if (node.projectId === where.id) {
+            canvasNodes.delete(nodeId);
+          }
+        }
         return existing;
       }),
     },
@@ -146,7 +153,71 @@ function createPrismaE2eMock() {
       }),
     },
     canvasNode: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async ({ where }) =>
+        Array.from(canvasNodes.values())
+          .filter(
+            (node) =>
+              node.projectId === where.projectId &&
+              node.canvasDocumentId === where.canvasDocumentId,
+          )
+          .sort(
+            (left, right) =>
+              ((left.zIndex as number | undefined) ?? 0) -
+                ((right.zIndex as number | undefined) ?? 0) ||
+              (left.createdAt as Date).getTime() - (right.createdAt as Date).getTime(),
+          ),
+      ),
+      findFirst: vi.fn(async ({ where }) => {
+        const node = canvasNodes.get(where.id);
+        if (!node || node.projectId !== where.projectId) {
+          return null;
+        }
+        return node;
+      }),
+      create: vi.fn(async ({ data }) => {
+        const id = `node_${nodeSequence}`;
+        nodeSequence += 1;
+        const node = {
+          id,
+          projectId: data.projectId,
+          canvasDocumentId: data.canvasDocumentId,
+          tldrawShapeId: data.tldrawShapeId,
+          type: data.type,
+          title: data.title ?? null,
+          x: data.x ?? 0,
+          y: data.y ?? 0,
+          width: data.width ?? 320,
+          height: data.height ?? 220,
+          zIndex: data.zIndex ?? 0,
+          status: data.status ?? "draft",
+          dataJson: data.dataJson ?? {},
+          createdAt: new Date("2026-06-12T00:50:00.000Z"),
+          updatedAt: new Date("2026-06-12T00:50:00.000Z"),
+        };
+        canvasNodes.set(id, node);
+        return node;
+      }),
+      update: vi.fn(async ({ where, data }) => {
+        const existing = canvasNodes.get(where.id);
+        if (!existing) {
+          throw new Error("Canvas node not found");
+        }
+        const updated = {
+          ...existing,
+          ...data,
+          updatedAt: new Date("2026-06-12T00:55:00.000Z"),
+        };
+        canvasNodes.set(where.id, updated);
+        return updated;
+      }),
+      delete: vi.fn(async ({ where }) => {
+        const existing = canvasNodes.get(where.id);
+        if (!existing) {
+          throw new Error("Canvas node not found");
+        }
+        canvasNodes.delete(where.id);
+        return existing;
+      }),
     },
     canvasEdge: {
       findMany: vi.fn(async () => []),
@@ -414,5 +485,129 @@ describe("project api e2e", () => {
       .expect(({ body }) => {
         expect(body.canvasDocument.snapshotJson).toEqual(snapshotJson);
       });
+  });
+
+  it("creates, updates, moves, lists, and deletes business canvas nodes", async () => {
+    const createdProject = await request(app.getHttpServer())
+      .post("/api/v1/projects")
+      .send({ title: "Business Canvas Project" })
+      .expect(201);
+    const projectId = createdProject.body.id;
+
+    const createdNode = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/nodes`)
+      .send({
+        tldrawShapeId: "shape:shot-1",
+        type: "shot",
+        title: "Shot 001",
+        x: 10,
+        y: 20,
+        width: 360,
+        height: 220,
+        dataJson: {
+          visualDescription: "Wide shot of the launch platform.",
+          cameraMovement: "Slow push-in",
+        },
+      })
+      .expect(201);
+
+    expect(createdNode.body.node).toMatchObject({
+      projectId,
+      tldrawShapeId: "shape:shot-1",
+      type: "shot",
+      title: "Shot 001",
+      status: "draft",
+    });
+
+    const nodeId = createdNode.body.node.id;
+    const updatedDescription = "Closer shot with brighter practical lights.";
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/projects/${projectId}/canvas/nodes/${nodeId}`)
+      .send({
+        title: "Shot 001A",
+        status: "succeeded",
+        dataJson: {
+          visualDescription: updatedDescription,
+          action: "Ari tightens the cable.",
+        },
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.node.title).toBe("Shot 001A");
+        expect(body.node.dataJson.visualDescription).toBe(updatedDescription);
+      });
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/projects/${projectId}/canvas/nodes/${nodeId}/geometry`)
+      .send({ x: 120, y: 140, width: 420, height: 260, zIndex: 5 })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.node).toMatchObject({ x: 120, y: 140, width: 420, height: 260, zIndex: 5 });
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/assets/upload`)
+      .attach("file", Buffer.from("# Asset Notes"), {
+        filename: "asset-notes.md",
+        contentType: "text/markdown",
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/canvas`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.nodes).toHaveLength(1);
+        expect(body.nodes[0]).toMatchObject({
+          id: nodeId,
+          title: "Shot 001A",
+          x: 120,
+          dataJson: { visualDescription: updatedDescription },
+        });
+        expect(body.assets).toHaveLength(1);
+      });
+
+    await request(app.getHttpServer())
+      .delete(`/api/v1/projects/${projectId}/canvas/nodes/${nodeId}`)
+      .expect(200)
+      .expect({ deleted: true, nodeId });
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/canvas`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.nodes).toEqual([]);
+        expect(body.assets).toHaveLength(1);
+      });
+  });
+
+  it("rejects invalid business canvas node input", async () => {
+    const createdProject = await request(app.getHttpServer())
+      .post("/api/v1/projects")
+      .send({ title: "Invalid Business Canvas Project" })
+      .expect(201);
+    const projectId = createdProject.body.id;
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/nodes`)
+      .send({
+        tldrawShapeId: "shape:style-1",
+        type: "style_asset",
+      })
+      .expect(400);
+
+    const createdNode = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/canvas/nodes`)
+      .send({
+        tldrawShapeId: "shape:shot-1",
+        type: "shot",
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/projects/${projectId}/canvas/nodes/${createdNode.body.node.id}/geometry`)
+      .send({ x: 0, y: 0, width: 0, height: 220 })
+      .expect(400);
   });
 });

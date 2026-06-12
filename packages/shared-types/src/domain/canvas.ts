@@ -16,6 +16,19 @@ export const CANVAS_NODE_TYPES = [
 ] as const;
 export type CanvasNodeType = (typeof CANVAS_NODE_TYPES)[number];
 
+export const PHASE_3_CANVAS_NODE_TYPES = [
+  "novel",
+  "scene_frame",
+  "scene",
+  "shot",
+  "character_asset",
+  "location_asset",
+  "image",
+  "video",
+  "editor_package",
+] as const;
+export type Phase3CanvasNodeType = (typeof PHASE_3_CANVAS_NODE_TYPES)[number];
+
 export const CANVAS_EDGE_RELATIONS = [
   "derived_from",
   "belongs_to_scene",
@@ -54,6 +67,88 @@ export type CanvasSnapshotJson =
   | CanvasSnapshotJson[]
   | { [key: string]: CanvasSnapshotJson };
 
+export interface NovelNodeData {
+  sourceText?: string;
+  synopsis?: string;
+  language?: string;
+}
+
+export interface SceneFrameNodeData {
+  label?: string;
+  order?: number;
+  description?: string;
+}
+
+export interface SceneNodeData {
+  sceneNumber?: string;
+  synopsis?: string;
+  location?: string;
+  timeOfDay?: string;
+  mood?: string;
+}
+
+export interface ShotNodeData {
+  shotNumber?: string;
+  visualDescription?: string;
+  action?: string;
+  cameraMovement?: string;
+  durationSeconds?: number;
+  promptNotes?: string;
+  negativePromptNotes?: string;
+}
+
+export interface CharacterAssetNodeData {
+  name?: string;
+  role?: string;
+  appearance?: string;
+  personality?: string;
+  wardrobe?: string;
+  consistencyPrompt?: string;
+}
+
+export interface LocationAssetNodeData {
+  name?: string;
+  environment?: string;
+  mood?: string;
+  visualStyle?: string;
+  consistencyPrompt?: string;
+}
+
+export interface ImageNodeData {
+  prompt?: string;
+  assetId?: string;
+  description?: string;
+}
+
+export interface VideoNodeData {
+  prompt?: string;
+  assetId?: string;
+  durationSeconds?: number;
+  description?: string;
+}
+
+export interface EditorPackageNodeData {
+  packageName?: string;
+  format?: string;
+  assetId?: string;
+  notes?: string;
+}
+
+export interface Phase3CanvasNodeDataByType {
+  novel: NovelNodeData;
+  scene_frame: SceneFrameNodeData;
+  scene: SceneNodeData;
+  shot: ShotNodeData;
+  character_asset: CharacterAssetNodeData;
+  location_asset: LocationAssetNodeData;
+  image: ImageNodeData;
+  video: VideoNodeData;
+  editor_package: EditorPackageNodeData;
+}
+
+export type Phase3CanvasNodeData<TType extends Phase3CanvasNodeType = Phase3CanvasNodeType> =
+  Phase3CanvasNodeDataByType[TType];
+
 export interface CanvasDocumentRecord {
   id: string;
   projectId: string;
@@ -79,6 +174,9 @@ export interface CanvasNodeRecord<TData = unknown> {
   createdAt: string;
   updatedAt: string;
 }
+
+export type Phase3CanvasNodeRecord<TType extends Phase3CanvasNodeType = Phase3CanvasNodeType> =
+  CanvasNodeRecord<Phase3CanvasNodeData<TType>> & { type: TType };
 
 export interface CanvasEdgeRecord<TData = unknown> {
   id: string;
@@ -107,4 +205,48 @@ export interface SaveCanvasSnapshotInput {
 
 export interface SaveCanvasSnapshotResult {
   canvasDocument: CanvasDocumentRecord;
+}
+
+export interface CreateCanvasNodeInput<TData = CanvasSnapshotJson> {
+  tldrawShapeId: string;
+  type: Phase3CanvasNodeType;
+  title?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  zIndex?: number;
+  status?: NodeStatus;
+  dataJson?: TData;
+}
+
+export interface CreateCanvasNodeResult {
+  node: CanvasNodeRecord;
+}
+
+export interface UpdateCanvasNodeInput<TData = CanvasSnapshotJson> {
+  title?: string;
+  status?: NodeStatus;
+  dataJson?: TData;
+}
+
+export interface UpdateCanvasNodeResult {
+  node: CanvasNodeRecord;
+}
+
+export interface UpdateCanvasNodeGeometryInput {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex?: number;
+}
+
+export interface UpdateCanvasNodeGeometryResult {
+  node: CanvasNodeRecord;
+}
+
+export interface DeleteCanvasNodeResult {
+  deleted: true;
+  nodeId: string;
 }
