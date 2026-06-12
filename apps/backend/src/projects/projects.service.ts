@@ -9,6 +9,7 @@ import {
 } from "@guga-flow/shared-types";
 
 import { PrismaService } from "../prisma/prisma.service";
+import { LocalStorageService } from "../storage/local-storage.service";
 
 const DEFAULT_USER_ID = "default-user";
 const DEFAULT_PROJECT_ASPECT_RATIO: ProjectAspectRatio = "9:16";
@@ -53,7 +54,10 @@ function toProjectAspectRatio(value: string | undefined): ProjectAspectRatio {
 
 @Injectable()
 export class ProjectsService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(LocalStorageService) private readonly storage: LocalStorageService,
+  ) {}
 
   async listProjects(): Promise<ProjectListItem[]> {
     const projects = await this.prisma.project.findMany({
@@ -152,6 +156,15 @@ export class ProjectsService {
 
   async deleteProject(projectId: string): Promise<{ deleted: true }> {
     await this.getProject(projectId);
+    const assets = await this.prisma.asset.findMany({
+      where: { projectId },
+      select: { storageKey: true },
+    });
+
+    for (const asset of assets) {
+      await this.storage.deleteObject(asset.storageKey);
+    }
+
     await this.prisma.project.delete({ where: { id: projectId } });
 
     return { deleted: true };

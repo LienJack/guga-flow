@@ -48,9 +48,14 @@ export function AssetLibrary({ projectId, initialAssets = [] }: AssetLibraryProp
       .then((result) => {
         if (!ignore) {
           setAssets(result);
-          setSelectedAsset((current) =>
-            current ? (result.find((asset) => asset.id === current.id) as AssetDetail) ?? null : null,
-          );
+          setSelectedAsset((current) => {
+            if (!current) {
+              return null;
+            }
+
+            const refreshed = result.find((asset) => asset.id === current.id);
+            return refreshed ? { ...current, ...refreshed } : null;
+          });
         }
       })
       .catch((loadError: unknown) => {

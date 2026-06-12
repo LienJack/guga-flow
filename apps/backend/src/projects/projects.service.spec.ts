@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PrismaService } from "../prisma/prisma.service";
+import { LocalStorageService } from "../storage/local-storage.service";
 import { ProjectsService } from "./projects.service";
 
 const createdAt = new Date("2026-06-12T00:00:00.000Z");
@@ -33,16 +34,30 @@ function createPrismaMock() {
       update: vi.fn(),
       delete: vi.fn(),
     },
+    asset: {
+      findMany: vi.fn(),
+    },
+  };
+}
+
+function createStorageMock() {
+  return {
+    deleteObject: vi.fn(async () => undefined),
   };
 }
 
 describe("ProjectsService", () => {
   let prisma: ReturnType<typeof createPrismaMock>;
+  let storage: ReturnType<typeof createStorageMock>;
   let service: ProjectsService;
 
   beforeEach(() => {
     prisma = createPrismaMock();
-    service = new ProjectsService(prisma as unknown as PrismaService);
+    storage = createStorageMock();
+    service = new ProjectsService(
+      prisma as unknown as PrismaService,
+      storage as unknown as LocalStorageService,
+    );
   });
 
   it("creates projects for the default owner and normalizes output", async () => {
@@ -119,5 +134,24 @@ describe("ProjectsService", () => {
     prisma.project.findUnique.mockResolvedValue(null);
 
     await expect(service.getProject("missing")).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("cleans up asset objects before deleting a project", async () => {
+    prisma.project.findUnique.mockResolvedValue(project());
+    prisma.asset.findMany.mockResolvedValue([
+      { storageKey: "project_1/hero.png" },
+      { storageKey: "project_1/notes.md" },
+    ]);
+    prisma.project.delete.mockResolvedValue(project());
+
+    await expect(service.deleteProject("project_1")).resolves.toEqual({ deleted: true });
+
+    expect(prisma.asset.findMany).toHaveBeenCalledWith({
+      where: { projectId: "project_1" },
+      select: { storageKey: true },
+    });
+    expect(storage.deleteObject).toHaveBeenNthCalledWith(1, "project_1/hero.png");
+    expect(storage.deleteObject).toHaveBeenNthCalledWith(2, "project_1/notes.md");
+    expect(prisma.project.delete).toHaveBeenCalledWith({ where: { id: "project_1" } });
   });
 });
