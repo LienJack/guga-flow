@@ -8,6 +8,7 @@ import {
   createNovelDocument,
   generateStoryboardDraft,
   getActiveStoryboardDraft,
+  getImageProviderCatalog,
   importStoryboardToCanvas,
   importNovelSource,
   listGenerationJobs,
@@ -156,9 +157,15 @@ describe("frontend api client", () => {
     await createGenerationJob("project_1", {
       operation: "shot_to_image",
       sourceNodeId: "shot_1",
+      provider: "image2",
+      model: "gpt-image-2",
+      aspectRatio: "9:16",
+      count: 2,
+      providerParams: { quality: "high" },
     });
     await listGenerationJobs("project_1");
     await retryGenerationJob("project_1", "job_1");
+    await getImageProviderCatalog();
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -168,6 +175,11 @@ describe("frontend api client", () => {
         body: JSON.stringify({
           operation: "shot_to_image",
           sourceNodeId: "shot_1",
+          provider: "image2",
+          model: "gpt-image-2",
+          aspectRatio: "9:16",
+          count: 2,
+          providerParams: { quality: "high" },
         }),
       }),
     );
@@ -180,6 +192,11 @@ describe("frontend api client", () => {
       3,
       "http://localhost:3002/api/v1/projects/project_1/generation/jobs/job_1/retry",
       expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:3002/api/v1/providers/image",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
   });
 

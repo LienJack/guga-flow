@@ -18,6 +18,7 @@ import type {
   ComposeShotPromptInput,
   GenerateStoryboardResult,
   GenerationJobListResult,
+  ImageProviderCatalogResult,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
   ImportStoryboardToCanvasInput,
@@ -355,6 +356,10 @@ export function createGenerationJob(
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function getImageProviderCatalog(): Promise<ImageProviderCatalogResult> {
+  return requestJson<ImageProviderCatalogResult>("/providers/image");
 }
 
 export function listGenerationJobs(projectId: string): Promise<GenerationJobListResult> {

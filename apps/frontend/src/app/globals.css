@@ -580,6 +580,29 @@ select {
   gap: 8px;
 }
 
+.generation-settings {
+  display: grid;
+  gap: 8px;
+}
+
+.generation-field-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.generation-field {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.generation-field label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .generation-status {
   margin: 0;
   color: var(--muted);
@@ -601,6 +624,19 @@ select {
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
+}
+
+.generation-disabled-list {
+  display: grid;
+  gap: 4px;
+}
+
+.generation-disabled-note {
+  margin: 0;
+  color: #8a5b1d;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .canvas-edge-inspector {
@@ -821,6 +857,8 @@ select {
 .project-form select,
 .asset-upload input,
 .asset-upload select,
+.generation-settings input,
+.generation-settings select,
 .novel-source-form input,
 .novel-source-form textarea,
 .novel-import-form input,

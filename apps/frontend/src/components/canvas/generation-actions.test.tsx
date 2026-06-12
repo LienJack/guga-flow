@@ -1,12 +1,18 @@
-import type { CanvasNodeRecord, GenerationJobRecord, ImageNodeData } from "@guga-flow/shared-types";
+import type {
+  CanvasNodeRecord,
+  GenerationJobRecord,
+  ImageNodeData,
+  ImageProviderCatalogResult,
+} from "@guga-flow/shared-types";
 import { renderToStaticMarkup } from "react-dom/server";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { GenerationActions } from "./generation-actions";
+import { buildGenerationJobInputForOperation, GenerationActions } from "./generation-actions";
 
 vi.mock("../../lib/api", () => ({
   createGenerationJob: vi.fn(),
+  getImageProviderCatalog: vi.fn(),
   retryGenerationJob: vi.fn(),
 }));
 
@@ -15,6 +21,7 @@ describe("GenerationActions", () => {
     const html = renderToStaticMarkup(
       <GenerationActions
         generationJobs={[]}
+        imageProviderCatalog={catalogFixture()}
         projectId="project_1"
         node={node("shot_1", "shot")}
         onGenerationChanged={vi.fn()}
@@ -23,6 +30,24 @@ describe("GenerationActions", () => {
 
     expect(html).toContain("Generation");
     expect(html).toContain("Generate Image");
+    expect(html).toContain("Provider");
+    expect(html).toContain("Mock Image");
+  });
+
+  it("renders disabled real image providers without secret values", () => {
+    const html = renderToStaticMarkup(
+      <GenerationActions
+        generationJobs={[]}
+        imageProviderCatalog={catalogFixture()}
+        projectId="project_1"
+        node={node("shot_1", "shot")}
+      />,
+    );
+
+    expect(html).toContain("Image 2 unavailable");
+    expect(html).toContain("Nano Banana unavailable");
+    expect(html).toContain("Image 2 server-side key is not configured");
+    expect(html).not.toContain("sk-test");
   });
 
   it("renders an ImageNode video generation action when an asset is bound", () => {
@@ -35,6 +60,7 @@ describe("GenerationActions", () => {
     );
 
     expect(html).toContain("Generate Video");
+    expect(html).not.toContain("Provider");
   });
 
   it("does not render image-to-video action before an image asset exists", () => {
@@ -64,7 +90,112 @@ describe("GenerationActions", () => {
     expect(html).toContain("running");
     expect(html).toContain("Retry");
   });
+
+  it("builds image generation job inputs with selected provider settings", () => {
+    expect(
+      buildGenerationJobInputForOperation("shot_to_image", "shot_1", {
+        provider: "image2",
+        model: "gpt-image-2",
+        aspectRatio: "9:16",
+        count: 3,
+        providerParams: { quality: "high" },
+      }),
+    ).toEqual({
+      operation: "shot_to_image",
+      sourceNodeId: "shot_1",
+      provider: "image2",
+      model: "gpt-image-2",
+      aspectRatio: "9:16",
+      count: 3,
+      providerParams: { quality: "high" },
+    });
+
+    expect(buildGenerationJobInputForOperation("image_to_video", "image_1")).toEqual({
+      operation: "image_to_video",
+      sourceNodeId: "image_1",
+    });
+  });
 });
+
+function catalogFixture(): ImageProviderCatalogResult {
+  return {
+    providers: [
+      {
+        id: "mock-image",
+        displayName: "Mock Image",
+        enabled: true,
+        requiresApiKey: false,
+        defaultModel: "mock-image-v1",
+        models: [{ id: "mock-image-v1", displayName: "Mock Image v1", default: true }],
+        supportedModes: ["text_to_image", "multi_reference"],
+        supportsReferenceImages: true,
+        maxReferenceImages: 99,
+        supportsMultipleOutputs: false,
+        maxOutputs: 1,
+        defaultAspectRatio: "16:9",
+        supportedAspectRatios: ["9:16", "16:9", "1:1"],
+        parameters: [],
+      },
+      {
+        id: "image2",
+        displayName: "Image 2",
+        enabled: false,
+        disabledReason: "Image 2 server-side key is not configured",
+        requiresApiKey: true,
+        defaultModel: "gpt-image-2",
+        models: [{ id: "gpt-image-2", displayName: "GPT Image 2", default: true }],
+        supportedModes: ["text_to_image", "multi_reference"],
+        supportsReferenceImages: true,
+        maxReferenceImages: 4,
+        supportsMultipleOutputs: true,
+        maxOutputs: 4,
+        defaultAspectRatio: "16:9",
+        supportedAspectRatios: ["9:16", "16:9", "1:1"],
+        parameters: [
+          {
+            id: "quality",
+            label: "Quality",
+            type: "select",
+            defaultValue: "medium",
+            options: [
+              { value: "low", label: "Low" },
+              { value: "medium", label: "Medium" },
+              { value: "high", label: "High" },
+            ],
+          },
+        ],
+      },
+      {
+        id: "banana",
+        displayName: "Nano Banana",
+        enabled: false,
+        disabledReason: "Nano Banana server-side key is not configured",
+        requiresApiKey: true,
+        defaultModel: "gemini-2.5-flash-image",
+        models: [{ id: "gemini-2.5-flash-image", displayName: "Gemini 2.5 Flash Image", default: true }],
+        supportedModes: ["text_to_image", "multi_reference"],
+        supportsReferenceImages: true,
+        maxReferenceImages: 3,
+        supportsMultipleOutputs: false,
+        maxOutputs: 1,
+        defaultAspectRatio: "16:9",
+        supportedAspectRatios: ["9:16", "16:9", "1:1"],
+        parameters: [
+          {
+            id: "imageSize",
+            label: "Image size",
+            type: "select",
+            defaultValue: "1K",
+            options: [
+              { value: "1K", label: "1K" },
+              { value: "2K", label: "2K" },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
 
 function node<TData = Record<string, never>>(
   id: string,

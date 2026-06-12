@@ -13,6 +13,7 @@ vi.mock("../../lib/api", () => ({
   deleteAsset: vi.fn(),
   deleteCanvasEdge: vi.fn(),
   getAsset: vi.fn(),
+  getImageProviderCatalog: vi.fn(async () => ({ providers: [] })),
   listAssets: vi.fn(async () => []),
   retryGenerationJob: vi.fn(),
   updateCanvasNode: vi.fn(),
