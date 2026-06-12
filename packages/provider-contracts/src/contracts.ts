@@ -1,4 +1,11 @@
-import type { CanvasSnapshotJson, ProjectAspectRatio, StoryboardResult } from "@guga-flow/shared-types";
+import type {
+  CanvasSnapshotJson,
+  ProjectAspectRatio,
+  StoryboardResult,
+  VideoProviderMode,
+  VideoProviderResolution,
+  VideoProviderTaskStatus,
+} from "@guga-flow/shared-types";
 
 export interface ProviderCapability {
   id: string;
@@ -58,9 +65,16 @@ export interface ImageGenerationInput {
 export interface VideoGenerationInput {
   projectId: string;
   prompt: string;
+  mode?: VideoProviderMode;
+  model?: string;
   sourceImageAssetId?: string;
+  firstFrameAssetId?: string;
+  lastFrameAssetId?: string;
   durationSec?: number;
+  aspectRatio?: ProjectAspectRatio;
+  resolution?: VideoProviderResolution;
   referenceAssetIds?: string[];
+  providerParams?: CanvasSnapshotJson;
   forceFailure?: boolean;
 }
 
@@ -92,6 +106,14 @@ export interface ImageProviderResult {
 
 export interface MockAssetOutput extends ImageProviderOutput {}
 
+export interface VideoProviderTaskResult {
+  status: VideoProviderTaskStatus;
+  providerTaskId: string;
+  output?: MockAssetOutput;
+  error?: ProviderErrorShape;
+  rawJson?: CanvasSnapshotJson;
+}
+
 export interface MockEditorPackageOutput {
   packageAssetId: string;
   manifestAssetId: string;
@@ -110,6 +132,9 @@ export interface ImageProvider {
 
 export interface VideoProvider {
   capability: ProviderCapability;
+  createTask(input: VideoGenerationInput): Promise<VideoProviderTaskResult>;
+  getTask(providerTaskId: string): Promise<VideoProviderTaskResult>;
+  cancelTask(providerTaskId: string): Promise<VideoProviderTaskResult>;
   generateVideo(input: VideoGenerationInput): Promise<MockAssetOutput>;
 }
 

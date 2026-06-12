@@ -10,6 +10,7 @@ import type {
   ProviderRegistry,
   VideoGenerationInput,
   VideoProvider,
+  VideoProviderTaskResult,
 } from "./contracts";
 import { ProviderError } from "./contracts";
 import type { StoryboardResult } from "@guga-flow/shared-types";
@@ -199,6 +200,8 @@ export class MockVideoProvider implements VideoProvider {
     requiresApiKey: false,
   };
 
+  private readonly tasks = new Map<string, VideoProviderTaskResult>();
+
   async generateVideo(input: VideoGenerationInput): Promise<MockAssetOutput> {
     failIfRequested(this.capability.id, input.forceFailure);
 
@@ -213,6 +216,61 @@ export class MockVideoProvider implements VideoProvider {
       prompt: input.prompt,
       referenceAssetIds: input.referenceAssetIds ?? [],
     };
+  }
+
+  async createTask(input: VideoGenerationInput): Promise<VideoProviderTaskResult> {
+    const providerTaskId = stableId(
+      "task_video",
+      `${input.projectId}-${input.prompt}-${input.durationSec ?? 4}-${input.model ?? "mock-video-v1"}`,
+    );
+    const output = {
+      ...(await this.generateVideo(input)),
+      providerTaskId,
+    };
+    const result: VideoProviderTaskResult = {
+      status: "succeeded",
+      providerTaskId,
+      output,
+      rawJson: {
+        provider: this.capability.id,
+        mode: input.mode ?? "image_to_video",
+        mock: true,
+      },
+    };
+
+    this.tasks.set(providerTaskId, result);
+    return result;
+  }
+
+  async getTask(providerTaskId: string): Promise<VideoProviderTaskResult> {
+    const task = this.tasks.get(providerTaskId);
+    if (task) {
+      return task;
+    }
+
+    return {
+      status: "failed",
+      providerTaskId,
+      error: {
+        provider: this.capability.id,
+        code: "MOCK_TASK_NOT_FOUND",
+        message: `${this.capability.id} task was not found.`,
+        retryable: false,
+      },
+    };
+  }
+
+  async cancelTask(providerTaskId: string): Promise<VideoProviderTaskResult> {
+    const result: VideoProviderTaskResult = {
+      status: "cancelled",
+      providerTaskId,
+      rawJson: {
+        provider: this.capability.id,
+        mock: true,
+      },
+    };
+    this.tasks.set(providerTaskId, result);
+    return result;
   }
 }
 

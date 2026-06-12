@@ -34,6 +34,36 @@ describe("mock providers", () => {
     expect(editorPackage.videoAssetIds).toEqual([video.assetId]);
   });
 
+  it("supports async video task lifecycle contracts", async () => {
+    const registry = createMockProviderRegistry();
+
+    const created = await registry.video.createTask({
+      projectId: "project_1",
+      prompt: "slow dolly across a generated frame",
+      mode: "image_to_video",
+      sourceImageAssetId: "asset_image_1",
+      durationSec: 5,
+      aspectRatio: "16:9",
+      resolution: "720p",
+      providerParams: {
+        motionStrength: "medium",
+      },
+    });
+    const fetched = await registry.video.getTask(created.providerTaskId);
+    const cancelled = await registry.video.cancelTask(created.providerTaskId);
+
+    expect(created.status).toBe("succeeded");
+    expect(created.output?.providerTaskId).toBe(created.providerTaskId);
+    expect(fetched).toMatchObject({
+      status: "succeeded",
+      providerTaskId: created.providerTaskId,
+    });
+    expect(cancelled).toMatchObject({
+      status: "cancelled",
+      providerTaskId: created.providerTaskId,
+    });
+  });
+
   it("normalizes forced mock provider failures", async () => {
     const registry = createMockProviderRegistry();
 

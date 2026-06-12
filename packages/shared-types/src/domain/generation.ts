@@ -34,6 +34,23 @@ export type ImageProviderId = (typeof IMAGE_PROVIDER_IDS)[number];
 export const IMAGE_PROVIDER_MODES = ["text_to_image", "image_to_image", "multi_reference"] as const;
 export type ImageProviderMode = (typeof IMAGE_PROVIDER_MODES)[number];
 
+export const VIDEO_PROVIDER_IDS = ["mock-video", "seedance", "happyhorse"] as const;
+export type VideoProviderId = (typeof VIDEO_PROVIDER_IDS)[number];
+
+export const VIDEO_PROVIDER_MODES = ["text_to_video", "image_to_video", "reference_to_video", "video_edit"] as const;
+export type VideoProviderMode = (typeof VIDEO_PROVIDER_MODES)[number];
+
+export const VIDEO_PROVIDER_RESOLUTIONS = ["720p", "1080p"] as const;
+export type VideoProviderResolution = (typeof VIDEO_PROVIDER_RESOLUTIONS)[number];
+
+export const VIDEO_PROVIDER_TASK_STATUSES = [
+  "provider_waiting",
+  "succeeded",
+  "failed",
+  "cancelled",
+] as const;
+export type VideoProviderTaskStatus = (typeof VIDEO_PROVIDER_TASK_STATUSES)[number];
+
 export type GenerationJobStatusCounts = Record<GenerationJobStatus, number>;
 
 export interface ImageProviderModelOption {
@@ -80,6 +97,37 @@ export interface ImageProviderCatalogResult {
   providers: ImageProviderCatalogItem[];
 }
 
+export type VideoProviderModelOption = ImageProviderModelOption;
+export type VideoProviderParameterOption = ImageProviderParameterOption;
+export type VideoProviderParameterDefinition = ImageProviderParameterDefinition;
+
+export interface VideoProviderCatalogItem {
+  id: VideoProviderId;
+  displayName: string;
+  enabled: boolean;
+  disabledReason?: string;
+  requiresApiKey: boolean;
+  defaultModel: string;
+  models: VideoProviderModelOption[];
+  supportedModes: VideoProviderMode[];
+  supportsFirstFrame: boolean;
+  supportsLastFrame: boolean;
+  supportsReferenceImages: boolean;
+  maxReferenceImages: number;
+  supportsCancel: boolean;
+  defaultDurationSeconds: number;
+  supportedDurationSeconds: number[];
+  defaultResolution: VideoProviderResolution;
+  supportedResolutions: VideoProviderResolution[];
+  defaultAspectRatio: ProjectAspectRatio;
+  supportedAspectRatios: ProjectAspectRatio[];
+  parameters: VideoProviderParameterDefinition[];
+}
+
+export interface VideoProviderCatalogResult {
+  providers: VideoProviderCatalogItem[];
+}
+
 export interface ImageGenerationSettings {
   provider?: ImageProviderId;
   model?: string;
@@ -88,11 +136,23 @@ export interface ImageGenerationSettings {
   providerParams?: CanvasSnapshotJson;
 }
 
+export interface VideoGenerationSettings {
+  videoProvider?: VideoProviderId;
+  videoModel?: string;
+  videoAspectRatio?: ProjectAspectRatio;
+  durationSeconds?: number;
+  resolution?: VideoProviderResolution;
+  videoProviderParams?: CanvasSnapshotJson;
+}
+
 export interface GenerationQueueSummary {
   counts: GenerationJobStatusCounts;
   queued: number;
   running: number;
+  providerWaiting?: number;
+  succeeded?: number;
   failed: number;
+  cancelled?: number;
 }
 
 export interface GenerationJobRecord<TInput = unknown, TOutput = unknown> {
@@ -112,14 +172,31 @@ export interface GenerationJobRecord<TInput = unknown, TOutput = unknown> {
   updatedAt: string;
 }
 
-export interface CreateGenerationJobInput extends ImageGenerationSettings {
+export interface CreateGenerationJobInput extends ImageGenerationSettings, VideoGenerationSettings {
   operation: Phase8GenerationOperation;
   sourceNodeId: string;
   forceFailure?: boolean;
 }
 
+export interface CreateBatchImagesToVideosJobInput extends VideoGenerationSettings {
+  operation: "batch_images_to_videos";
+  sourceNodeIds: string[];
+  forceFailure?: boolean;
+}
+
 export interface CreateGenerationJobResult<TInput = GenerationJobInput> {
   job: GenerationJobRecord<TInput>;
+  queueSummary: GenerationQueueSummary;
+}
+
+export interface BatchImagesToVideosSkippedNode {
+  nodeId: string;
+  reason: string;
+}
+
+export interface CreateBatchImagesToVideosJobResult {
+  jobs: Array<GenerationJobRecord<ImageToVideoJobInput>>;
+  skipped: BatchImagesToVideosSkippedNode[];
   queueSummary: GenerationQueueSummary;
 }
 
@@ -145,6 +222,18 @@ export interface WorkerGenerationJobSucceedInput {
 
 export interface WorkerGenerationJobFailInput {
   error: ProviderFailure;
+}
+
+export interface WorkerGenerationJobWaitInput {
+  providerTaskId: string;
+  provider: string;
+  model?: string;
+  rawJson?: CanvasSnapshotJson;
+}
+
+export interface WorkerGenerationJobCancelInput {
+  reason?: string;
+  rawJson?: CanvasSnapshotJson;
 }
 
 export type GenerationJobInput = ShotToImageJobInput | ImageToVideoJobInput;
@@ -178,12 +267,28 @@ export interface ImageToVideoJobInput {
   sourceImageAssetId: string;
   prompt: string;
   durationSeconds: number;
+  aspectRatio?: ProjectAspectRatio;
+  resolution?: VideoProviderResolution;
   parentShotNodeId?: string;
   parentShotTitle?: string;
   referenceAssetIds: string[];
   sourceNodeIds: string[];
   provider: string;
   model?: string;
+  providerParams?: CanvasSnapshotJson;
+  forceFailure?: boolean;
+}
+
+export interface BatchImagesToVideosJobInput {
+  operation: "batch_images_to_videos";
+  projectId: string;
+  sourceNodeIds: string[];
+  childJobIds: string[];
+  provider: string;
+  model?: string;
+  durationSeconds?: number;
+  aspectRatio?: ProjectAspectRatio;
+  resolution?: VideoProviderResolution;
   providerParams?: CanvasSnapshotJson;
   forceFailure?: boolean;
 }
@@ -232,3 +337,39 @@ export interface ProviderFailure {
   message: string;
   retryable: boolean;
 }
+
+export interface VideoProviderTaskWaitingResult {
+  status: "provider_waiting";
+  provider: string;
+  providerTaskId: string;
+  rawJson?: CanvasSnapshotJson;
+}
+
+export interface VideoProviderTaskSucceededResult {
+  status: "succeeded";
+  provider: string;
+  providerTaskId: string;
+  output: GeneratedMediaProviderOutput;
+  rawJson?: CanvasSnapshotJson;
+}
+
+export interface VideoProviderTaskFailedResult {
+  status: "failed";
+  provider: string;
+  providerTaskId?: string;
+  error: ProviderFailure;
+  rawJson?: CanvasSnapshotJson;
+}
+
+export interface VideoProviderTaskCancelledResult {
+  status: "cancelled";
+  provider: string;
+  providerTaskId: string;
+  rawJson?: CanvasSnapshotJson;
+}
+
+export type VideoProviderTaskResult =
+  | VideoProviderTaskWaitingResult
+  | VideoProviderTaskSucceededResult
+  | VideoProviderTaskFailedResult
+  | VideoProviderTaskCancelledResult;

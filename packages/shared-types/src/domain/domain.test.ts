@@ -17,16 +17,23 @@ import {
   STORYBOARD_IMPORT_DUPLICATE_POLICIES,
   STORYBOARD_DRAFT_STATUSES,
   UPLOADABLE_ASSET_MIME_TYPES,
+  VIDEO_PROVIDER_IDS,
+  VIDEO_PROVIDER_MODES,
+  VIDEO_PROVIDER_RESOLUTIONS,
+  VIDEO_PROVIDER_TASK_STATUSES,
   buildStoryboardImportPlan,
   composeShotPrompt,
   findStoryboardImportLayoutOverlaps,
   hasStoryboardImportProvenance,
   type AssetListItem,
+  type BatchImagesToVideosJobInput,
   type CharacterAssetNodeData,
   type CanvasEdgeData,
   type CanvasEdgeRecord,
   type CanvasLoadResult,
   type CanvasNodeRecord,
+  type CreateBatchImagesToVideosJobInput,
+  type CreateBatchImagesToVideosJobResult,
   type CreateCanvasEdgeInput,
   type CreateCanvasEdgeResult,
   type CreateGenerationJobInput,
@@ -56,6 +63,11 @@ import {
   type UpdateCanvasNodeInput,
   type UpdateNovelDocumentInput,
   type UpdateStoryboardDraftInput,
+  type VideoProviderCatalogItem,
+  type VideoProviderCatalogResult,
+  type VideoProviderTaskResult,
+  type WorkerGenerationJobCancelInput,
+  type WorkerGenerationJobWaitInput,
   validateStoryboardResult,
 } from "../index";
 
@@ -77,6 +89,20 @@ describe("shared domain constants", () => {
     expect(PHASE_8_GENERATION_OPERATIONS).toEqual(["shot_to_image", "image_to_video"]);
     expect(IMAGE_PROVIDER_IDS).toEqual(["mock-image", "image2", "banana"]);
     expect(IMAGE_PROVIDER_MODES).toEqual(["text_to_image", "image_to_image", "multi_reference"]);
+    expect(VIDEO_PROVIDER_IDS).toEqual(["mock-video", "seedance", "happyhorse"]);
+    expect(VIDEO_PROVIDER_MODES).toEqual([
+      "text_to_video",
+      "image_to_video",
+      "reference_to_video",
+      "video_edit",
+    ]);
+    expect(VIDEO_PROVIDER_RESOLUTIONS).toEqual(["720p", "1080p"]);
+    expect(VIDEO_PROVIDER_TASK_STATUSES).toEqual([
+      "provider_waiting",
+      "succeeded",
+      "failed",
+      "cancelled",
+    ]);
   });
 
   it("includes Phase 1 project and upload asset contracts", () => {
@@ -512,6 +538,62 @@ describe("shared domain constants", () => {
     const catalog: ImageProviderCatalogResult = {
       providers: [catalogProvider],
     };
+    const videoCreateInput: CreateGenerationJobInput = {
+      operation: "image_to_video",
+      sourceNodeId: "image_1",
+      videoProvider: "seedance",
+      videoModel: "seedance-1-0-pro",
+      videoAspectRatio: "16:9",
+      durationSeconds: 5,
+      resolution: "1080p",
+      videoProviderParams: {
+        cameraFixed: false,
+      },
+    };
+    const videoCatalogProvider: VideoProviderCatalogItem = {
+      id: "happyhorse",
+      displayName: "Happy Horse",
+      enabled: false,
+      disabledReason: "Server-side FAL key is not configured",
+      requiresApiKey: true,
+      defaultModel: "alibaba/happy-horse/image-to-video",
+      models: [
+        {
+          id: "alibaba/happy-horse/image-to-video",
+          displayName: "Happy Horse Image to Video",
+          default: true,
+        },
+      ],
+      supportedModes: ["image_to_video"],
+      supportsFirstFrame: true,
+      supportsLastFrame: false,
+      supportsReferenceImages: true,
+      maxReferenceImages: 1,
+      supportsCancel: true,
+      defaultDurationSeconds: 5,
+      supportedDurationSeconds: [5, 10],
+      defaultResolution: "720p",
+      supportedResolutions: ["720p", "1080p"],
+      defaultAspectRatio: "16:9",
+      supportedAspectRatios: ["9:16", "16:9", "1:1"],
+      parameters: [
+        {
+          id: "motionStrength",
+          label: "Motion strength",
+          type: "select",
+          defaultValue: "medium",
+          options: [
+            {
+              value: "medium",
+              label: "Medium",
+            },
+          ],
+        },
+      ],
+    };
+    const videoCatalog: VideoProviderCatalogResult = {
+      providers: [videoCatalogProvider],
+    };
     const shotInput: ShotToImageJobInput = {
       operation: "shot_to_image",
       projectId: "project_1",
@@ -559,8 +641,57 @@ describe("shared domain constants", () => {
       parentShotTitle: "Shot 01",
       referenceAssetIds: ["asset_ref_1"],
       sourceNodeIds: ["image_1", "shot_1"],
-      provider: "mock-video",
-      model: "mock-video-v1",
+      provider: videoCreateInput.videoProvider ?? "mock-video",
+      model: videoCreateInput.videoModel,
+      aspectRatio: videoCreateInput.videoAspectRatio,
+      resolution: videoCreateInput.resolution,
+      providerParams: videoCreateInput.videoProviderParams,
+    };
+    const waitInput: WorkerGenerationJobWaitInput = {
+      providerTaskId: "seedance_task_1",
+      provider: videoInput.provider,
+      model: videoInput.model,
+      rawJson: {
+        statusUrl: "https://provider.example/tasks/seedance_task_1",
+      },
+    };
+    const cancelInput: WorkerGenerationJobCancelInput = {
+      reason: "User cancelled from queue panel",
+      rawJson: {
+        requestedBy: "user",
+      },
+    };
+    const videoTaskResult: VideoProviderTaskResult = {
+      status: "provider_waiting",
+      provider: videoInput.provider,
+      providerTaskId: waitInput.providerTaskId,
+      rawJson: {
+        submitted: true,
+      },
+    };
+    const batchCreateInput: CreateBatchImagesToVideosJobInput = {
+      operation: "batch_images_to_videos",
+      sourceNodeIds: ["image_1", "image_missing"],
+      videoProvider: "happyhorse",
+      videoModel: "alibaba/happy-horse/image-to-video",
+      durationSeconds: 10,
+      resolution: "720p",
+      videoAspectRatio: "16:9",
+      videoProviderParams: {
+        motionStrength: "medium",
+      },
+    };
+    const batchParentInput: BatchImagesToVideosJobInput = {
+      operation: "batch_images_to_videos",
+      projectId: "project_1",
+      sourceNodeIds: batchCreateInput.sourceNodeIds,
+      childJobIds: ["job_2"],
+      provider: batchCreateInput.videoProvider ?? "mock-video",
+      model: batchCreateInput.videoModel,
+      durationSeconds: batchCreateInput.durationSeconds,
+      aspectRatio: batchCreateInput.videoAspectRatio,
+      resolution: batchCreateInput.resolution,
+      providerParams: batchCreateInput.videoProviderParams,
     };
     const output: GeneratedMediaJobOutput = {
       operation: "shot_to_image",
@@ -630,9 +761,14 @@ describe("shared domain constants", () => {
       counts,
       queued: counts.queued,
       running: counts.running,
+      providerWaiting: counts.provider_waiting,
+      succeeded: counts.succeeded,
       failed: counts.failed,
+      cancelled: counts.cancelled,
     };
-    const listResult: GenerationJobListResult<ShotToImageJobInput | ImageToVideoJobInput> = {
+    const listResult: GenerationJobListResult<
+      ShotToImageJobInput | ImageToVideoJobInput | BatchImagesToVideosJobInput
+    > = {
       jobs: [
         {
           id: "job_1",
@@ -660,6 +796,40 @@ describe("shared domain constants", () => {
           createdAt: "2026-06-12T00:00:02.000Z",
           updatedAt: "2026-06-12T00:00:02.000Z",
         },
+        {
+          id: "job_3",
+          projectId: "project_1",
+          operation: "batch_images_to_videos",
+          status: "provider_waiting",
+          provider: batchParentInput.provider,
+          model: batchParentInput.model,
+          inputJson: batchParentInput,
+          createdAt: "2026-06-12T00:00:03.000Z",
+          updatedAt: "2026-06-12T00:00:03.000Z",
+        },
+      ],
+      queueSummary,
+    };
+    const batchResult: CreateBatchImagesToVideosJobResult = {
+      jobs: [
+        {
+          id: "job_2",
+          projectId: "project_1",
+          operation: "image_to_video",
+          status: "queued",
+          provider: videoInput.provider,
+          model: videoInput.model,
+          sourceNodeId: "image_1",
+          inputJson: videoInput,
+          createdAt: "2026-06-12T00:00:02.000Z",
+          updatedAt: "2026-06-12T00:00:02.000Z",
+        },
+      ],
+      skipped: [
+        {
+          nodeId: "image_missing",
+          reason: "No source image asset",
+        },
       ],
       queueSummary,
     };
@@ -679,14 +849,40 @@ describe("shared domain constants", () => {
 
     expect(createInput.operation).toBe("shot_to_image");
     expect(catalog.providers[0]?.disabledReason).not.toContain("key=");
+    expect(videoCatalog.providers[0]).toMatchObject({
+      id: "happyhorse",
+      supportsCancel: true,
+      supportedResolutions: ["720p", "1080p"],
+    });
     expect(shotInput).toMatchObject({
       provider: "image2",
       model: "gpt-image-2",
       aspectRatio: "16:9",
       count: 3,
     });
-    expect(listResult.jobs.map((job) => job.operation)).toEqual(["shot_to_image", "image_to_video"]);
-    expect(listResult.queueSummary).toMatchObject({ queued: 1, running: 2, failed: 1 });
+    expect(videoInput).toMatchObject({
+      provider: "seedance",
+      model: "seedance-1-0-pro",
+      durationSeconds: 5,
+      resolution: "1080p",
+    });
+    expect(videoTaskResult.status).toBe("provider_waiting");
+    expect(cancelInput.reason).toContain("cancelled");
+    expect(batchParentInput.childJobIds).toEqual(["job_2"]);
+    expect(batchResult.skipped[0]?.reason).toContain("source image");
+    expect(listResult.jobs.map((job) => job.operation)).toEqual([
+      "shot_to_image",
+      "image_to_video",
+      "batch_images_to_videos",
+    ]);
+    expect(listResult.queueSummary).toMatchObject({
+      queued: 1,
+      running: 2,
+      providerWaiting: 0,
+      succeeded: 3,
+      failed: 1,
+      cancelled: 0,
+    });
     expect(imageNodeData.generationJobId).toBe("job_1");
     expect(imageNodeData.inputJson).toMatchObject({ prompt: "cinematic image prompt" });
     expect(imageNodeData.outputJson).toMatchObject({

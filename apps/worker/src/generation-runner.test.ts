@@ -20,6 +20,15 @@ function createClientMock(): GenerationWorkerClient {
 }
 
 function createRegistryMock(): GenerationExecutorRegistry {
+  const videoOutput = {
+    assetId: "provider_video_1",
+    storageKey: "mock/videos/provider_video_1.mp4",
+    mimeType: "video/mp4",
+    provider: "mock-video",
+    model: "mock-video-v1",
+    prompt: "Video prompt",
+    referenceAssetIds: ["asset_ref_1"],
+  };
   const imageProvider = {
     capability: {
       id: "mock-image",
@@ -61,15 +70,24 @@ function createRegistryMock(): GenerationExecutorRegistry {
         displayName: "Mock Video",
         requiresApiKey: false,
       },
-      generateVideo: vi.fn(async () => ({
-        assetId: "provider_video_1",
-        storageKey: "mock/videos/provider_video_1.mp4",
-        mimeType: "video/mp4",
-        provider: "mock-video",
-        model: "mock-video-v1",
-        prompt: "Video prompt",
-        referenceAssetIds: ["asset_ref_1"],
+      createTask: vi.fn(async () => ({
+        status: "succeeded",
+        providerTaskId: "provider_task_1",
+        output: {
+          ...videoOutput,
+          providerTaskId: "provider_task_1",
+        },
       })),
+      getTask: vi.fn(async () => ({
+        status: "succeeded",
+        providerTaskId: "provider_task_1",
+        output: videoOutput,
+      })),
+      cancelTask: vi.fn(async () => ({
+        status: "cancelled",
+        providerTaskId: "provider_task_1",
+      })),
+      generateVideo: vi.fn(async () => videoOutput),
     } as VideoProvider,
   };
 }
