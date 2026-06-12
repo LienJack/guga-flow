@@ -59,11 +59,13 @@ function createPrismaE2eMock() {
   const canvasDocuments = new Map<string, Record<string, unknown>>();
   const canvasNodes = new Map<string, Record<string, unknown>>();
   const canvasEdges = new Map<string, Record<string, unknown>>();
+  const novelDocuments = new Map<string, Record<string, unknown>>();
   let projectSequence = 1;
   let assetSequence = 1;
   let canvasSequence = 1;
   let nodeSequence = 1;
   let edgeSequence = 1;
+  let novelSequence = 1;
 
   function nextDate() {
     return new Date(`2026-06-12T00:${String(projectSequence).padStart(2, "0")}:00.000Z`);
@@ -131,6 +133,69 @@ function createPrismaE2eMock() {
             canvasEdges.delete(edgeId);
           }
         }
+        for (const [novelId, novel] of novelDocuments.entries()) {
+          if (novel.projectId === where.id) {
+            novelDocuments.delete(novelId);
+          }
+        }
+        return existing;
+      }),
+    },
+    novelDocument: {
+      findMany: vi.fn(async ({ where }) =>
+        Array.from(novelDocuments.values())
+          .filter((novel) => novel.projectId === where.projectId)
+          .sort(
+            (left, right) =>
+              (right.updatedAt as Date).getTime() - (left.updatedAt as Date).getTime(),
+          ),
+      ),
+      create: vi.fn(async ({ data }) => {
+        const id = `novel_${novelSequence}`;
+        novelSequence += 1;
+        const now = new Date("2026-06-12T00:35:00.000Z");
+        const novel = {
+          id,
+          projectId: data.projectId,
+          title: data.title,
+          content: data.content,
+          sourceType: data.sourceType,
+          wordCount: data.wordCount,
+          language: data.language,
+          createdAt: now,
+          updatedAt: now,
+        };
+        novelDocuments.set(id, novel);
+        return novel;
+      }),
+      findFirst: vi.fn(async ({ where }) => {
+        const novel = novelDocuments.get(where.id);
+        if (!novel || novel.projectId !== where.projectId) {
+          return null;
+        }
+        return novel;
+      }),
+      update: vi.fn(async ({ where, data }) => {
+        const existing = novelDocuments.get(where.id);
+        if (!existing) {
+          throw new Error("Novel not found");
+        }
+        const updated = {
+          ...existing,
+          ...Object.fromEntries(
+            Object.entries(data).filter(([, value]) => value !== undefined),
+          ),
+          updatedAt: new Date("2026-06-12T00:36:00.000Z"),
+        };
+        novelDocuments.set(where.id, updated);
+        return updated;
+      }),
+      delete: vi.fn(async ({ where }) => {
+        const existing = novelDocuments.get(where.id);
+        if (!existing) {
+          throw new Error("Novel not found");
+        }
+        novelDocuments.delete(where.id);
         return existing;
       }),
     },
@@ -537,6 +602,88 @@ describe("project api e2e", () => {
         contentType: "application/octet-stream",
       })
       .expect(400);
+  });
+
+  it("creates, imports, lists, updates, and deletes project novels", async () => {
+    const createdProject = await request(app.getHttpServer())
+      .post("/api/v1/projects")
+      .send({ title: "Novel Project" })
+      .expect(201);
+    const projectId = createdProject.body.id;
+
+    const createdNovel = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels`)
+      .send({
+        title: "Rooftop Signal",
+        content: "A hero watches the city lights.",
+      })
+      .expect(201);
+
+    expect(createdNovel.body.novel).toMatchObject({
+      projectId,
+      title: "Rooftop Signal",
+      sourceType: "paste",
+      wordCount: 6,
+      language: "en",
+    });
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels/import`)
+      .send({
+        title: "Imported Markdown",
+        content: "# Opening\nA character enters.",
+        sourceType: "md",
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.novel.sourceType).toBe("md");
+        expect(body.novel.wordCount).toBe(4);
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/novels`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toHaveLength(2);
+      });
+
+    const novelId = createdNovel.body.novel.id;
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/projects/${projectId}/novels/${novelId}`)
+      .send({ content: "新的城市镜头" })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.novel.language).toBe("zh");
+        expect(body.novel.wordCount).toBe(6);
+      });
+
+    await request(app.getHttpServer())
+      .delete(`/api/v1/projects/${projectId}/novels/${novelId}`)
+      .expect(200)
+      .expect({ deleted: true, novelId });
+  });
+
+  it("rejects invalid novel input and project-scoped novel access", async () => {
+    const createdProject = await request(app.getHttpServer())
+      .post("/api/v1/projects")
+      .send({ title: "Novel Validation Project" })
+      .expect(201);
+    const projectId = createdProject.body.id;
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels`)
+      .send({ title: "Blank", content: "" })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels/import`)
+      .send({ title: "Bad", content: "Story", sourceType: "paste" })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/novels/missing`)
+      .expect(404);
   });
 
   it("creates, saves, and reloads project canvas snapshots", async () => {

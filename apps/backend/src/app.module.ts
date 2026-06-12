@@ -5,6 +5,7 @@ import { AssetsModule } from "./assets/assets.module";
 import { CanvasModule } from "./canvas/canvas.module";
 import { readAppConfig } from "./config/app-config";
 import { HealthController } from "./health/health.controller";
+import { NovelsModule } from "./novels/novels.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { ProjectsModule } from "./projects/projects.module";
 
@@ -18,6 +19,7 @@ import { ProjectsModule } from "./projects/projects.module";
     ProjectsModule,
     AssetsModule,
     CanvasModule,
+    NovelsModule,
   ],
   controllers: [HealthController],
 })
