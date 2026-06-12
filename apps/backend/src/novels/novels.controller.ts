@@ -1,6 +1,11 @@
 import { Body, Controller, Delete, Get, Inject, Param, Patch, Post } from "@nestjs/common";
 
-import { CreateNovelDocumentDto, ImportNovelSourceDto, UpdateNovelDocumentDto } from "./dto";
+import {
+  CreateNovelDocumentDto,
+  ImportNovelSourceDto,
+  UpdateNovelDocumentDto,
+  UpdateStoryboardDraftDto,
+} from "./dto";
 import { NovelsService } from "./novels.service";
 
 @Controller("projects/:projectId/novels")
@@ -39,5 +44,37 @@ export class NovelsController {
   @Delete(":novelId")
   deleteNovel(@Param("projectId") projectId: string, @Param("novelId") novelId: string) {
     return this.novelsService.deleteNovel(projectId, novelId);
+  }
+
+  @Post(":novelId/generate-storyboard")
+  generateStoryboard(@Param("projectId") projectId: string, @Param("novelId") novelId: string) {
+    return this.novelsService.generateStoryboard(projectId, novelId);
+  }
+
+  @Get(":novelId/storyboard-draft")
+  getActiveStoryboardDraft(
+    @Param("projectId") projectId: string,
+    @Param("novelId") novelId: string,
+  ) {
+    return this.novelsService.getActiveStoryboardDraft(projectId, novelId);
+  }
+
+  @Patch(":novelId/storyboard-draft/:draftId")
+  updateStoryboardDraft(
+    @Param("projectId") projectId: string,
+    @Param("novelId") novelId: string,
+    @Param("draftId") draftId: string,
+    @Body() body: UpdateStoryboardDraftDto,
+  ) {
+    return this.novelsService.updateStoryboardDraft(projectId, novelId, draftId, body);
+  }
+
+  @Post(":novelId/storyboard-draft/:draftId/ready")
+  markStoryboardDraftReady(
+    @Param("projectId") projectId: string,
+    @Param("novelId") novelId: string,
+    @Param("draftId") draftId: string,
+  ) {
+    return this.novelsService.markStoryboardDraftReady(projectId, novelId, draftId);
   }
 }

@@ -60,12 +60,14 @@ function createPrismaE2eMock() {
   const canvasNodes = new Map<string, Record<string, unknown>>();
   const canvasEdges = new Map<string, Record<string, unknown>>();
   const novelDocuments = new Map<string, Record<string, unknown>>();
+  const storyboardDrafts = new Map<string, Record<string, unknown>>();
   let projectSequence = 1;
   let assetSequence = 1;
   let canvasSequence = 1;
   let nodeSequence = 1;
   let edgeSequence = 1;
   let novelSequence = 1;
+  let storyboardDraftSequence = 1;
 
   function nextDate() {
     return new Date(`2026-06-12T00:${String(projectSequence).padStart(2, "0")}:00.000Z`);
@@ -138,6 +140,11 @@ function createPrismaE2eMock() {
             novelDocuments.delete(novelId);
           }
         }
+        for (const [draftId, draft] of storyboardDrafts.entries()) {
+          if (draft.projectId === where.id) {
+            storyboardDrafts.delete(draftId);
+          }
+        }
         return existing;
       }),
     },
@@ -196,7 +203,63 @@ function createPrismaE2eMock() {
           throw new Error("Novel not found");
         }
         novelDocuments.delete(where.id);
+        for (const [draftId, draft] of storyboardDrafts.entries()) {
+          if (draft.novelDocumentId === where.id) {
+            storyboardDrafts.delete(draftId);
+          }
+        }
         return existing;
+      }),
+    },
+    storyboardDraft: {
+      create: vi.fn(async ({ data }) => {
+        const id = `storyboard_draft_${storyboardDraftSequence}`;
+        storyboardDraftSequence += 1;
+        const now = new Date("2026-06-12T00:37:00.000Z");
+        const draft = {
+          id,
+          projectId: data.projectId,
+          novelDocumentId: data.novelDocumentId,
+          status: data.status ?? "draft",
+          storyboardJson: data.storyboardJson ?? null,
+          validationIssuesJson: data.validationIssuesJson ?? [],
+          provider: data.provider,
+          model: data.model ?? null,
+          errorMessage: data.errorMessage ?? null,
+          readyForImport: data.readyForImport ?? false,
+          createdAt: now,
+          updatedAt: now,
+        };
+        storyboardDrafts.set(id, draft);
+        return draft;
+      }),
+      findFirst: vi.fn(async ({ where }) =>
+        Array.from(storyboardDrafts.values())
+          .filter(
+            (draft) =>
+              draft.projectId === where.projectId &&
+              (!where.id || draft.id === where.id) &&
+              (!where.novelDocumentId || draft.novelDocumentId === where.novelDocumentId),
+          )
+          .sort(
+            (left, right) =>
+              (right.updatedAt as Date).getTime() - (left.updatedAt as Date).getTime(),
+          )[0] ?? null,
+      ),
+      update: vi.fn(async ({ where, data }) => {
+        const existing = storyboardDrafts.get(where.id);
+        if (!existing) {
+          throw new Error("Storyboard draft not found");
+        }
+        const updated = {
+          ...existing,
+          ...Object.fromEntries(
+            Object.entries(data).filter(([, value]) => value !== undefined),
+          ),
+          updatedAt: new Date("2026-06-12T00:38:00.000Z"),
+        };
+        storyboardDrafts.set(where.id, updated);
+        return updated;
       }),
     },
     canvasDocument: {
@@ -684,6 +747,92 @@ describe("project api e2e", () => {
     await request(app.getHttpServer())
       .get(`/api/v1/projects/${projectId}/novels/missing`)
       .expect(404);
+  });
+
+  it("generates, edits, and marks storyboard drafts ready without canvas import", async () => {
+    const createdProject = await request(app.getHttpServer())
+      .post("/api/v1/projects")
+      .send({ title: "Storyboard Project" })
+      .expect(201);
+    const projectId = createdProject.body.id;
+
+    const createdNovel = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels`)
+      .send({
+        title: "Storyboard Source",
+        content: "A hero watches the city lights before choosing the next shot.",
+      })
+      .expect(201);
+    const novelId = createdNovel.body.novel.id;
+
+    const generated = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels/${novelId}/generate-storyboard`)
+      .expect(201);
+
+    expect(generated.body.validation.success).toBe(true);
+    expect(generated.body.draft).toMatchObject({
+      projectId,
+      novelDocumentId: novelId,
+      status: "valid",
+      provider: "mock-llm",
+      readyForImport: false,
+    });
+    expect(generated.body.draft.storyboard.scenes[0].shots[0].imagePrompt).toContain("rooftop");
+
+    const draftId = generated.body.draft.id;
+    const editedStoryboard = {
+      ...generated.body.draft.storyboard,
+      logline: "Edited logline",
+      scenes: [
+        {
+          ...generated.body.draft.storyboard.scenes[0],
+          shots: [
+            {
+              ...generated.body.draft.storyboard.scenes[0].shots[0],
+              durationSec: 6,
+              imagePrompt: "edited rooftop prompt",
+            },
+          ],
+        },
+      ],
+    };
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/novels/${novelId}/storyboard-draft`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.id).toBe(draftId);
+      });
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/projects/${projectId}/novels/${novelId}/storyboard-draft/${draftId}`)
+      .send({ storyboard: editedStoryboard })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.draft.storyboard.logline).toBe("Edited logline");
+        expect(body.draft.storyboard.scenes[0].shots[0].durationSec).toBe(6);
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/novels/${novelId}/storyboard-draft/${draftId}/ready`)
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.draft.status).toBe("ready");
+        expect(body.draft.readyForImport).toBe(true);
+      });
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/projects/${projectId}/novels/${novelId}/storyboard-draft/${draftId}`)
+      .send({ storyboard: { ...editedStoryboard, scenes: [] } })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/canvas`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.nodes).toHaveLength(0);
+        expect(body.edges).toHaveLength(0);
+      });
   });
 
   it("creates, saves, and reloads project canvas snapshots", async () => {

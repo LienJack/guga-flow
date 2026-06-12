@@ -3,16 +3,31 @@ import type {
   CreateNovelDocumentInput,
   CreateNovelDocumentResult,
   DeleteNovelDocumentResult,
+  GenerateStoryboardResult,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
+  MarkStoryboardDraftReadyResult,
   NovelDocumentRecord,
   NovelLanguage,
   NovelSourceType,
+  StoryboardDraftRecord,
+  StoryboardDraftStatus,
+  StoryboardValidationIssue,
+  StoryboardValidationResult,
+  UpdateStoryboardDraftInput,
+  UpdateStoryboardDraftResult,
   UpdateNovelDocumentInput,
   UpdateNovelDocumentResult,
 } from "@guga-flow/shared-types";
-import { NOVEL_LANGUAGES, NOVEL_SOURCE_TYPES } from "@guga-flow/shared-types";
+import {
+  NOVEL_LANGUAGES,
+  NOVEL_SOURCE_TYPES,
+  STORYBOARD_DRAFT_STATUSES,
+  validateStoryboardResult,
+} from "@guga-flow/shared-types";
+import { createMockProviderRegistry } from "@guga-flow/provider-contracts";
 
+import { readAppConfig } from "../config/app-config";
 import { PrismaService } from "../prisma/prisma.service";
 
 type NovelDocumentModel = {
@@ -23,6 +38,21 @@ type NovelDocumentModel = {
   sourceType: string;
   wordCount: number;
   language: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+type StoryboardDraftModel = {
+  id: string;
+  projectId: string;
+  novelDocumentId: string;
+  status: string;
+  storyboardJson: unknown | null;
+  validationIssuesJson: unknown;
+  provider: string;
+  model: string | null;
+  errorMessage: string | null;
+  readyForImport: boolean;
   createdAt: Date | string;
   updatedAt: Date | string;
 };
@@ -162,6 +192,119 @@ export class NovelsService {
     return { deleted: true, novelId: existing.id };
   }
 
+  async generateStoryboard(
+    projectId: string,
+    novelId: string,
+  ): Promise<GenerateStoryboardResult> {
+    const novel = await this.findNovel(projectId, novelId);
+    const config = readAppConfig();
+    const provider = createMockProviderRegistry().llm;
+    let validation: StoryboardValidationResult;
+
+    try {
+      const candidate = await provider.generateStoryboard({
+        projectId,
+        title: novel.title,
+        novelText: novel.content,
+      });
+      validation = validateStoryboardResult(candidate);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : "Storyboard generation failed",
+      );
+    }
+
+    if (!validation.success) {
+      return { validation };
+    }
+
+    const draft = await this.prisma.storyboardDraft.create({
+      data: {
+        projectId,
+        novelDocumentId: novel.id,
+        status: "valid",
+        storyboardJson: validation.data,
+        validationIssuesJson: [],
+        provider: provider.capability.id,
+        model: config.llmModel,
+        errorMessage: null,
+        readyForImport: false,
+      },
+    });
+
+    return {
+      draft: this.toStoryboardDraftRecord(draft),
+      validation,
+    };
+  }
+
+  async getActiveStoryboardDraft(
+    projectId: string,
+    novelId: string,
+  ): Promise<StoryboardDraftRecord> {
+    await this.findNovel(projectId, novelId);
+    const draft = await this.prisma.storyboardDraft.findFirst({
+      where: { projectId, novelDocumentId: novelId },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!draft) {
+      throw new NotFoundException("Storyboard draft not found");
+    }
+
+    return this.toStoryboardDraftRecord(draft);
+  }
+
+  async updateStoryboardDraft(
+    projectId: string,
+    novelId: string,
+    draftId: string,
+    input: UpdateStoryboardDraftInput,
+  ): Promise<UpdateStoryboardDraftResult> {
+    const existing = await this.findStoryboardDraft(projectId, novelId, draftId);
+    const validation = validateStoryboardResult(input.storyboard);
+    if (!validation.success) {
+      throw new BadRequestException(this.validationMessage(validation.issues));
+    }
+
+    const draft = await this.prisma.storyboardDraft.update({
+      where: { id: existing.id },
+      data: {
+        status: "valid",
+        storyboardJson: validation.data,
+        validationIssuesJson: [],
+        errorMessage: null,
+        readyForImport: false,
+      },
+    });
+
+    return { draft: this.toStoryboardDraftRecord(draft) };
+  }
+
+  async markStoryboardDraftReady(
+    projectId: string,
+    novelId: string,
+    draftId: string,
+  ): Promise<MarkStoryboardDraftReadyResult> {
+    const existing = await this.findStoryboardDraft(projectId, novelId, draftId);
+    const validation = validateStoryboardResult(existing.storyboardJson);
+    if (!validation.success) {
+      throw new BadRequestException(this.validationMessage(validation.issues));
+    }
+
+    const draft = await this.prisma.storyboardDraft.update({
+      where: { id: existing.id },
+      data: {
+        status: "ready",
+        storyboardJson: validation.data,
+        validationIssuesJson: [],
+        errorMessage: null,
+        readyForImport: true,
+      },
+    });
+
+    return { draft: this.toStoryboardDraftRecord(draft) };
+  }
+
   private async ensureProjectExists(projectId: string): Promise<void> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -182,6 +325,21 @@ export class NovelsService {
     return novel;
   }
 
+  private async findStoryboardDraft(
+    projectId: string,
+    novelId: string,
+    draftId: string,
+  ): Promise<StoryboardDraftModel> {
+    await this.findNovel(projectId, novelId);
+    const draft = await this.prisma.storyboardDraft.findFirst({
+      where: { id: draftId, projectId, novelDocumentId: novelId },
+    });
+    if (!draft) {
+      throw new NotFoundException("Storyboard draft not found");
+    }
+    return draft;
+  }
+
   private toNovelRecord(novel: NovelDocumentModel): NovelDocumentRecord {
     return {
       id: novel.id,
@@ -198,5 +356,60 @@ export class NovelsService {
       createdAt: toIsoString(novel.createdAt),
       updatedAt: toIsoString(novel.updatedAt),
     };
+  }
+
+  private toStoryboardDraftRecord(draft: StoryboardDraftModel): StoryboardDraftRecord {
+    const validation = validateStoryboardResult(draft.storyboardJson);
+    return {
+      id: draft.id,
+      projectId: draft.projectId,
+      novelDocumentId: draft.novelDocumentId,
+      status: this.toStoryboardDraftStatus(draft.status),
+      storyboard: validation.success ? validation.data : undefined,
+      validationIssues: this.toValidationIssues(draft.validationIssuesJson),
+      provider: draft.provider,
+      model: draft.model ?? undefined,
+      errorMessage: draft.errorMessage ?? undefined,
+      readyForImport: draft.readyForImport,
+      createdAt: toIsoString(draft.createdAt),
+      updatedAt: toIsoString(draft.updatedAt),
+    };
+  }
+
+  private toStoryboardDraftStatus(value: string): StoryboardDraftStatus {
+    return STORYBOARD_DRAFT_STATUSES.includes(value as StoryboardDraftStatus)
+      ? (value as StoryboardDraftStatus)
+      : "invalid";
+  }
+
+  private toValidationIssues(value: unknown): StoryboardValidationIssue[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value.flatMap((item) => {
+      if (
+        typeof item === "object" &&
+        item !== null &&
+        Array.isArray((item as { path?: unknown }).path) &&
+        typeof (item as { message?: unknown }).message === "string"
+      ) {
+        return [
+          {
+            path: (item as { path: unknown[] }).path.filter(
+              (part): part is string | number =>
+                typeof part === "string" || typeof part === "number",
+            ),
+            message: (item as { message: string }).message,
+          },
+        ];
+      }
+      return [];
+    });
+  }
+
+  private validationMessage(issues: StoryboardValidationIssue[]): string {
+    return issues.length > 0
+      ? issues.map((issue) => issue.message).join(", ")
+      : "Storyboard draft is invalid";
   }
 }

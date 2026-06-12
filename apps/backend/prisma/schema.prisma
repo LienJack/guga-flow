@@ -101,6 +101,13 @@ enum ProviderKind {
   editor
 }
 
+enum StoryboardDraftStatus {
+  draft
+  valid
+  invalid
+  ready
+}
+
 model User {
   id        String    @id @default(cuid())
   email     String?   @unique
@@ -120,6 +127,7 @@ model Project {
   updatedAt          DateTime            @updatedAt
   owner              User                @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
   novels             NovelDocument[]
+  storyboardDrafts   StoryboardDraft[]
   canvasDocuments    CanvasDocument[]
   nodes              CanvasNode[]
   edges              CanvasEdge[]
@@ -142,8 +150,29 @@ model NovelDocument {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  drafts     StoryboardDraft[]
 
   @@index([projectId])
+}
+
+model StoryboardDraft {
+  id                   String                @id @default(cuid())
+  projectId            String
+  novelDocumentId      String
+  status               StoryboardDraftStatus @default(draft)
+  storyboardJson       Json?
+  validationIssuesJson Json                  @default("[]")
+  provider             String
+  model                String?
+  errorMessage         String?
+  readyForImport       Boolean               @default(false)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  project              Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  novelDocument        NovelDocument         @relation(fields: [novelDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status])
+  @@index([novelDocumentId])
 }
 
 model CanvasDocument {

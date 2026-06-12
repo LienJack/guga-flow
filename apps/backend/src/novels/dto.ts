@@ -3,10 +3,11 @@ import type {
   ImportNovelSourceInput,
   NovelLanguage,
   NovelSourceType,
+  UpdateStoryboardDraftInput,
   UpdateNovelDocumentInput,
 } from "@guga-flow/shared-types";
 import { NOVEL_LANGUAGES, NOVEL_SOURCE_TYPES } from "@guga-flow/shared-types";
-import { IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsDefined, IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 const IMPORT_SOURCE_TYPES = NOVEL_SOURCE_TYPES.filter(
   (sourceType): sourceType is Exclude<NovelSourceType, "paste"> => sourceType !== "paste",
@@ -64,4 +65,9 @@ export class UpdateNovelDocumentDto implements UpdateNovelDocumentInput {
   @IsOptional()
   @IsIn(NOVEL_LANGUAGES)
   language?: NovelLanguage;
+}
+
+export class UpdateStoryboardDraftDto implements UpdateStoryboardDraftInput {
+  @IsDefined()
+  storyboard!: UpdateStoryboardDraftInput["storyboard"];
 }
