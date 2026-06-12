@@ -263,6 +263,20 @@ function numberText(data: Record<string, unknown>, key: string, suffix = ""): st
   return typeof value === "number" && Number.isFinite(value) ? `${value}${suffix}` : "";
 }
 
+function stringArray(data: Record<string, unknown>, key: string): string[] {
+  const value = data[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function shotReferenceText(data: Record<string, unknown>): string {
+  const characterCount = new Set(stringArray(data, "characterAssetIds")).size;
+  const locationReference = text(data, "locationAssetId") ? "Location ref" : "";
+  const characterReference =
+    characterCount > 0 ? `${characterCount} character ref${characterCount === 1 ? "" : "s"}` : "";
+
+  return compact([characterReference, locationReference], "");
+}
+
 function titleFromData(type: Phase3CanvasNodeType, data: Record<string, unknown>): string {
   switch (type) {
     case "character_asset":
@@ -290,7 +304,12 @@ function summaryForNode(
     case "scene":
       return firstText(text(data, "synopsis"), text(data, "mood"), fallback);
     case "shot":
-      return firstText(text(data, "visualDescription"), text(data, "action"), fallback);
+      return firstText(
+        text(data, "visualDescription"),
+        text(data, "action"),
+        shotReferenceText(data),
+        fallback,
+      );
     case "character_asset":
       return firstText(text(data, "appearance"), text(data, "role"), fallback);
     case "location_asset":
@@ -313,12 +332,20 @@ function detailForNode(
     case "novel":
       return firstText(text(data, "language"), fallback);
     case "scene_frame":
-      return firstText(numberText(data, "order", ""), fallback);
+      return compact(
+        [numberText(data, "order", ""), text(data, "locationAssetId") ? "Location ref" : ""],
+        fallback,
+      );
     case "scene":
       return compact([text(data, "location"), text(data, "timeOfDay"), text(data, "mood")], fallback);
     case "shot":
       return compact(
-        [text(data, "cameraMovement"), numberText(data, "durationSeconds", "s"), text(data, "promptNotes")],
+        [
+          shotReferenceText(data),
+          text(data, "cameraMovement"),
+          numberText(data, "durationSeconds", "s"),
+          text(data, "promptNotes"),
+        ],
         fallback,
       );
     case "character_asset":

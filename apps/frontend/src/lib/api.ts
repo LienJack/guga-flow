@@ -3,9 +3,12 @@ import type {
   AssetListItem,
   AssetPurpose,
   CanvasLoadResult,
+  CreateCanvasEdgeInput,
+  CreateCanvasEdgeResult,
   CreateCanvasNodeInput,
   CreateCanvasNodeResult,
   CreateProjectInput,
+  DeleteCanvasEdgeResult,
   DeleteCanvasNodeResult,
   ProjectDetail,
   ProjectListItem,
@@ -142,6 +145,16 @@ export function createCanvasNode<TData = unknown>(
   });
 }
 
+export function createCanvasEdge<TData = unknown>(
+  projectId: string,
+  input: CreateCanvasEdgeInput<TData>,
+): Promise<CreateCanvasEdgeResult> {
+  return requestJson<CreateCanvasEdgeResult>(`/projects/${projectId}/canvas/edges`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function updateCanvasNode(
   projectId: string,
   nodeId: string,
@@ -172,6 +185,15 @@ export function deleteCanvasNode(
   nodeId: string,
 ): Promise<DeleteCanvasNodeResult> {
   return requestJson<DeleteCanvasNodeResult>(`/projects/${projectId}/canvas/nodes/${nodeId}`, {
+    method: "DELETE",
+  });
+}
+
+export function deleteCanvasEdge(
+  projectId: string,
+  edgeId: string,
+): Promise<DeleteCanvasEdgeResult> {
+  return requestJson<DeleteCanvasEdgeResult>(`/projects/${projectId}/canvas/edges/${edgeId}`, {
     method: "DELETE",
   });
 }

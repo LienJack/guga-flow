@@ -69,6 +69,37 @@ describe("business node data helpers", () => {
     expect(model.detail).toContain("cinematic");
   });
 
+  it("surfaces Shot semantic reference state without requiring form fields", () => {
+    const model = buildBusinessNodeCardModel({
+      ...baseNode,
+      type: "shot",
+      title: "Shot 002",
+      dataJson: {
+        characterAssetIds: ["character_1", "character_2", "character_1"],
+        locationAssetId: "location_1",
+      },
+    });
+
+    expect(model.summary).toContain("2 character refs");
+    expect(model.detail).toContain("2 character refs");
+    expect(model.detail).toContain("Location ref");
+  });
+
+  it("surfaces SceneFrame location reference state", () => {
+    const model = buildBusinessNodeCardModel({
+      ...baseNode,
+      type: "scene_frame",
+      title: "Frame 1",
+      dataJson: {
+        order: 2,
+        locationAssetId: "location_1",
+      },
+    });
+
+    expect(model.detail).toContain("2");
+    expect(model.detail).toContain("Location ref");
+  });
+
   it("keeps Character and Location consistency fields available", () => {
     const character = createDefaultBusinessNodeData("character_asset");
     const location = createDefaultBusinessNodeData("location_asset");

@@ -19,6 +19,8 @@ const shotNode: CanvasNodeRecord = {
   dataJson: {
     visualDescription: "Old visual",
     action: "Old action",
+    characterAssetIds: ["character_1"],
+    locationAssetId: "location_1",
     providerMeta: { requestId: "req_1", version: 2 },
     tags: ["night", "rooftop"],
   },
@@ -37,6 +39,8 @@ describe("dataJsonFromForm", () => {
     ).toEqual({
       visualDescription: "New visual",
       durationSeconds: 12,
+      characterAssetIds: ["character_1"],
+      locationAssetId: "location_1",
       providerMeta: { requestId: "req_1", version: 2 },
       tags: ["night", "rooftop"],
     });
