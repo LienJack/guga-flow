@@ -132,9 +132,9 @@ export function saveCanvasSnapshot(
   });
 }
 
-export function createCanvasNode(
+export function createCanvasNode<TData = unknown>(
   projectId: string,
-  input: CreateCanvasNodeInput,
+  input: CreateCanvasNodeInput<TData>,
 ): Promise<CreateCanvasNodeResult> {
   return requestJson<CreateCanvasNodeResult>(`/projects/${projectId}/canvas/nodes`, {
     method: "POST",

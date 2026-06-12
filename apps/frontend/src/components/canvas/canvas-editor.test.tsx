@@ -17,6 +17,7 @@ vi.mock("tldraw", () => ({
     string: { type: "string" },
   },
   Tldraw: () => <div>Mock tldraw</div>,
+  createShapeId: (id: string) => `shape:${id}`,
   resizeBox: (shape: unknown) => shape,
 }));
 

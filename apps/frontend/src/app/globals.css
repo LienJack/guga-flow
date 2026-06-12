@@ -214,6 +214,54 @@ select {
   box-shadow: 0 8px 20px rgba(20, 32, 46, 0.1);
 }
 
+.business-node-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: min(560px, calc(100% - 108px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 6px;
+  box-shadow: 0 8px 20px rgba(20, 32, 46, 0.1);
+}
+
+.business-node-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 32px;
+  gap: 5px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.business-node-tool:hover:not(:disabled) {
+  border-color: var(--line);
+  background: var(--panel-strong);
+}
+
+.business-node-tool:disabled {
+  color: var(--muted);
+}
+
+.business-node-tool span {
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .canvas-editor-state {
   position: absolute;
   inset: 0;
@@ -259,6 +307,10 @@ select {
 .canvas-save-error span {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.node-action-error {
+  bottom: 64px;
 }
 
 .business-node-html-container {
@@ -397,6 +449,65 @@ select {
   font-size: 11px;
   line-height: 1.35;
   -webkit-line-clamp: 2;
+}
+
+.canvas-inspector {
+  display: grid;
+  gap: 18px;
+}
+
+.inspector-section,
+.asset-library {
+  min-width: 0;
+}
+
+.inspector-state {
+  margin-bottom: 4px;
+}
+
+.business-node-form {
+  display: grid;
+  gap: 12px;
+}
+
+.business-node-field-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.field-label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.field-label input,
+.field-label textarea,
+.field-label select {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--ink);
+  padding: 8px 9px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.field-label textarea {
+  resize: vertical;
+}
+
+.form-success {
+  margin: 0;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .canvas-placeholder {

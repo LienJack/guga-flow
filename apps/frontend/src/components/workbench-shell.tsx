@@ -92,28 +92,31 @@ export function WorkbenchShell({
         </section>
 
         <aside className="inspector" aria-label="Inspector">
-          <h2 className="panel-title">Inspector</h2>
-          <ul className="property-list">
-            <li className="property-item">
-              <span>Selection</span>
-              <span className="property-value">None</span>
-            </li>
-            <li className="property-item">
-              <span>Provider mode</span>
-              <span className="property-value">Mock</span>
-            </li>
-            <li className="property-item">
-              <span>Canvas status</span>
-              <span className="property-value">Ready</span>
-            </li>
-            {projectId ? (
-              <li className="property-item">
-                <span>Project</span>
-                <span className="property-value">{projectId}</span>
-              </li>
-            ) : null}
-          </ul>
-          {inspectorSlot}
+          {inspectorSlot ?? (
+            <>
+              <h2 className="panel-title">Inspector</h2>
+              <ul className="property-list">
+                <li className="property-item">
+                  <span>Selection</span>
+                  <span className="property-value">None</span>
+                </li>
+                <li className="property-item">
+                  <span>Provider mode</span>
+                  <span className="property-value">Mock</span>
+                </li>
+                <li className="property-item">
+                  <span>Canvas status</span>
+                  <span className="property-value">Ready</span>
+                </li>
+                {projectId ? (
+                  <li className="property-item">
+                    <span>Project</span>
+                    <span className="property-value">{projectId}</span>
+                  </li>
+                ) : null}
+              </ul>
+            </>
+          )}
         </aside>
       </section>
 
