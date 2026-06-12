@@ -109,6 +109,25 @@ describe("createCanvasAutosaveController", () => {
     expect(statuses).toEqual(["idle", "saving", "saved"]);
   });
 
+  it("persists the latest pending snapshot when disposed before debounce fires", () => {
+    const saveSnapshot = vi.fn(async () => undefined);
+    const statuses: string[] = [];
+    const controller = createCanvasAutosaveController({
+      projectId: "project_1",
+      debounceMs: 500,
+      saveSnapshot,
+      onStatusChange: (status) => statuses.push(status),
+    });
+
+    controller.schedule({ document: { records: ["pending"] } });
+    controller.dispose();
+
+    expect(saveSnapshot).toHaveBeenCalledWith("project_1", {
+      document: { records: ["pending"] },
+    });
+    expect(statuses).toEqual([]);
+  });
+
   it("does not let stale save failures overwrite a newer pending snapshot", async () => {
     let rejectFirstSave: ((error: Error) => void) | undefined;
     const saveSnapshot = vi

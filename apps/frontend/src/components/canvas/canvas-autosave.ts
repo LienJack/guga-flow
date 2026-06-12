@@ -33,6 +33,7 @@ export function createCanvasAutosaveController(
   let disposed = false;
   let activeRunId = 0;
   let currentError: string | null = null;
+  let inFlightSnapshot: CanvasSnapshotJson | undefined;
 
   function clearTimer() {
     if (timer) {
@@ -54,6 +55,7 @@ export function createCanvasAutosaveController(
     clearTimer();
     const runId = activeRunId + 1;
     activeRunId = runId;
+    inFlightSnapshot = snapshotJson;
     setStatus("saving");
     if (currentError !== null) {
       setError(null);
@@ -65,6 +67,7 @@ export function createCanvasAutosaveController(
         return;
       }
       failedSnapshot = undefined;
+      latestSnapshot = undefined;
       setStatus("saved");
     } catch (error) {
       if (disposed || runId !== activeRunId || latestSnapshot !== snapshotJson) {
@@ -73,6 +76,10 @@ export function createCanvasAutosaveController(
       failedSnapshot = snapshotJson;
       setError(errorMessage(error));
       setStatus("failed");
+    } finally {
+      if (inFlightSnapshot === snapshotJson) {
+        inFlightSnapshot = undefined;
+      }
     }
   }
 
@@ -122,9 +129,13 @@ export function createCanvasAutosaveController(
     },
 
     dispose() {
+      const pendingSnapshot = latestSnapshot;
       disposed = true;
       activeRunId += 1;
       clearTimer();
+      if (pendingSnapshot !== undefined && pendingSnapshot !== inFlightSnapshot) {
+        void options.saveSnapshot(projectId, pendingSnapshot).catch(() => undefined);
+      }
     },
   };
 }
