@@ -1,0 +1,13 @@
+NODE .processChapter() [src=/Users/lienli/Documents/GitHub/video-ref/Toonflow-app/src/utils/cleanNovel.ts loc=L27 community=1]
+NODE CleanNovel [src=/Users/lienli/Documents/GitHub/video-ref/Toonflow-app/src/utils/cleanNovel.ts loc=L17 community=1]
+NODE .start() [src=/Users/lienli/Documents/GitHub/video-ref/Toonflow-app/src/utils/cleanNovel.ts loc=L63 community=1]
+NODE cleanNovel.ts [src=/Users/lienli/Documents/GitHub/video-ref/Toonflow-app/src/utils/cleanNovel.ts loc=L1 community=1]
+NODE .constructor() [src=/Users/lienli/Documents/GitHub/video-ref/Toonflow-app/src/utils/cleanNovel.ts loc=L22 community=1]
+NODE getPlanData.ts [src=/Users/lienli/Documents/GitHub/video-ref/Toonflow-app/src/routes/scriptAgent/getPlanData.ts loc=L1 community=97]
+NODE setPlanData.ts [src=/Users/lienli/Documents/GitHub/video-ref/Toonflow-app/src/routes/scriptAgent/setPlanData.ts loc=L1 community=98]
+NODE getImageAndVideoModel.ts [src=/Users/lienli/Documents/GitHub/video-ref/Toonflow-app/src/routes/setting/modelMap/getImageAndVideoModel.ts loc=L1 community=171]
+NODE updateNovel.ts [src=/Users/lienli/Documents/GitHub/video-ref/Toonflow-app/src/routes/novel/updateNovel.ts loc=L1 community=86]
+EDGE cleanNovel.ts --contains [EXTRACTED]--> CleanNovel
+EDGE CleanNovel --method [EXTRACTED]--> .constructor()
+EDGE CleanNovel --method [EXTRACTED]--> .processChapter()
+EDGE CleanNovel --method [EXTRACTED]--> .start()

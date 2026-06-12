@@ -1,0 +1,1805 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+The content has been processed where line numbers have been added.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: src/routes/assets/**/*.ts, src/routes/assetsGenerate/**/*.ts, src/routes/cornerScape/**/*.ts, src/utils/taskRecord.ts, src/utils/image.ts
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Line numbers have been added to the beginning of each line
+- Long base64 data strings (e.g., data:image/png;base64,...) have been truncated to reduce token count
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+src/
+  routes/
+    assets/
+      addAssets.ts
+      addAudioAssets.ts
+      batchDelete.ts
+      batchGenerationData.ts
+      delAssets.ts
+      delImage.ts
+      getAssetsApi.ts
+      getImage.ts
+      getMaterialData.ts
+      pollingImageAssets.ts
+      pollingPromptAssets.ts
+      saveAssets.ts
+      updateAssets.ts
+      updateAudioAssets.ts
+      uploadClip.ts
+    assetsGenerate/
+      batchGenerateImageAssets.ts
+      batchPolishAssetsPrompt.ts
+      cancelGenerate.ts
+      generateAssets.ts
+      polishAssetsPrompt.ts
+    cornerScape/
+      batchBindAudio.ts
+      getAllAssets.ts
+      pollingAudio.ts
+      updateAssetsAudio.ts
+  utils/
+    image.ts
+    taskRecord.ts
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/routes/assets/addAssets.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: // 新增资产
+ 9: export default router.post(
+10:   "/",
+11:   validateFields({
+12:     name: z.string(),
+13:     describe: z.string(),
+14:     type: z.string(),
+15:     projectId: z.number(),
+16:     remark: z.string().optional().nullable(),
+17:     prompt: z.string().optional().nullable(),
+18:   }),
+19:   async (req, res) => {
+20:     const { name, describe, type, projectId, remark, prompt } = req.body;
+21:     await u.db("o_assets").insert({
+22:       name,
+23:       describe,
+24:       type,
+25:       projectId,
+26:       remark,
+27:       prompt,
+28:       startTime: Date.now(),
+29:     });
+30:     res.status(200).send(success({ message: "新增资产成功" }));
+31:   },
+32: );
+</file>
+
+<file path="src/routes/assets/addAudioAssets.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: // 新增资产
+ 9: export default router.post(
+10:   "/",
+11:   validateFields({
+12:     name: z.string(),
+13:     describe: z.string(),
+14:     projectId: z.number(),
+15:     assetsItem: z.array(
+16:       z.object({
+17:         base64: z.string(),
+18:         prompt: z.string(),
+19:         describe: z.string(),
+20:         name: z.string(),
+21:       }),
+22:     ),
+23:   }),
+24:   async (req, res) => {
+25:     const { name, describe, projectId, assetsItem } = req.body;
+26:     await Promise.all(
+27:       assetsItem.map(async (i: { src?: string; base64: string; prompt: string }) => {
+28:         if (i.base64) {
+29:           const mimeMatch = i.base64.match(/^data:audio\/([^;]+);base64,/);
+30:           const mimeExt = mimeMatch ? mimeMatch[1] : "mp3";
+31:           const mimeToExt: Record<string, string> = {
+32:             mpeg: "mp3",
+33:             "x-wav": "wav",
+34:             "x-aiff": "aiff",
+35:             "x-m4a": "m4a",
+36:             "x-flac": "flac",
+37:           };
+38:           const ext = mimeToExt[mimeExt] ?? mimeExt;
+39:           const savePath = `/${projectId}/assets/audio/${u.uuid()}.${ext}`;
+40:           const base64Data = i.base64.replace(/^data:[^;]+;base64,/, "");
+41:           await u.oss.writeFile(savePath, base64Data);
+42:           i.src = savePath;
+43:         }
+44:       }),
+45:     );
+46: 
+47:     const [id] = await u.db("o_assets").insert({
+48:       name,
+49:       describe,
+50:       type: "audio",
+51:       projectId,
+52:       startTime: Date.now(),
+53:     });
+54:     for (const item of assetsItem) {
+55:       const [assetsId] = await u.db("o_assets").insert({
+56:         prompt: item.prompt,
+57:         assetsId: id,
+58:         type: "audio",
+59:         describe: item.describe,
+60:         name: item.name,
+61:         projectId,
+62:         startTime: Date.now(),
+63:       });
+64:       const [imageId] = await u.db("o_image").insert({
+65:         filePath: item.src,
+66:         type: "audio",
+67:         assetsId,
+68:         state: "已完成",
+69:       });
+70:       await u.db("o_assets").where("id", assetsId).update({
+71:         imageId,
+72:       });
+73:     }
+74: 
+75:     res.status(200).send(success({ message: "新增资产成功" }));
+76:   },
+77: );
+</file>
+
+<file path="src/routes/assets/batchDelete.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: import { id } from "zod/locales";
+ 7: const router = express.Router();
+ 8: 
+ 9: // 批量删除资产
+10: export default router.post(
+11:   "/",
+12:   validateFields({
+13:     id: z.array(z.number()),
+14:   }),
+15:   async (req, res) => {
+16:     const { id } = req.body;
+17:     await u.db("o_assets").whereIn("id", id).delete();
+18:     res.status(200).send(success({ message: "删除资产成功" }));
+19:   },
+20: );
+</file>
+
+<file path="src/routes/assets/batchGenerationData.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: // 获取资产
+ 9: export default router.post(
+10:   "/",
+11:   validateFields({
+12:     projectId: z.number(),
+13:     type: z.string(),
+14:     name: z.string().optional(),
+15:     page: z.number(),
+16:     limit: z.number(),
+17:   }),
+18:   async (req, res) => {
+19:     const { projectId, type, name, page = 1, limit = 10 } = req.body;
+20:     const offset = (page - 1) * limit;
+21:     let query = u.db("o_assets").select("*").where("projectId", projectId).andWhere("type", type);
+22:     if (name) {
+23:       query = query.andWhere("name", "like", `%${name}%`);
+24:     }
+25:     // 分页查询
+26:     const parentAssets = await query.offset(offset).limit(limit);
+27: 
+28:     // 统计总数
+29:     const totalQuery = (await u
+30:       .db("o_assets")
+31:       .where("projectId", projectId)
+32:       .andWhere("type", type)
+33:       .andWhere((qb) => {
+34:         if (name) {
+35:           qb.andWhere("name", "like", `%${name}%`);
+36:         }
+37:       })
+38:       .count("* as total")
+39:       .first()) as any;
+40:     res.status(200).send(success({ data: parentAssets, total: totalQuery?.total }));
+41:   },
+42: );
+</file>
+
+<file path="src/routes/assets/delAssets.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     id: z.number(),
+12:   }),
+13:   async (req, res) => {
+14:     const { id } = req.body;
+15:     const assetsData = await u.db("o_image").where("assetsId", id);
+16:     await Promise.all(
+17:       assetsData.map((i) =>
+18:         i.filePath
+19:           ? u.oss.deleteFile(i.filePath).catch((e) => {
+20:               if (e?.code !== "ENOENT") throw e;
+21:             })
+22:           : Promise.resolve(),
+23:       ),
+24:     );
+25:     const imageIds = assetsData.map((i) => i.id).filter(Boolean);
+26:     if (imageIds.length > 0) {
+27:       await u.db("o_assets").whereIn("imageId", imageIds).update({ imageId: null });
+28:     }
+29:     await u.db("o_image").where({ assetsId: id }).delete();
+30:     await u.db("o_assets").where({ id }).delete();
+31:     await u.db("o_assets").where("assetsId", id).delete();
+32:     res.status(200).send(success({ message: "删除资产成功" }));
+33:   },
+34: );
+</file>
+
+<file path="src/routes/assets/delImage.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     id: z.number(),
+12:   }),
+13:   async (req, res) => {
+14:     const { id } = req.body;
+15:     await u.db("o_assets").where({ imageId: id }).update({
+16:       imageId: null,
+17:     });
+18:     await u.db("o_image").where({ id: id }).delete();
+19:     const assetsData = await u.db("o_image").where("id", id);
+20:     await Promise.all(assetsData.map((i) => i.filePath && u.oss.deleteFile(i.filePath)));
+21:     res.status(200).send(success({ message: "资产图片删除成功" }));
+22:   },
+23: );
+</file>
+
+<file path="src/routes/assets/getAssetsApi.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: // 获取资产
+ 9: export default router.post(
+10:   "/",
+11:   validateFields({
+12:     projectId: z.number(),
+13:     type: z.string(),
+14:     name: z.string().optional(),
+15:     page: z.number(),
+16:     limit: z.number(),
+17:   }),
+18:   async (req, res) => {
+19:     const { projectId, type, name, page = 1, limit = 10 } = req.body;
+20:     const offset = (page - 1) * limit;
+21:     let query = u
+22:       .db("o_assets")
+23:       .leftJoin("o_image", "o_assets.imageId", "o_image.id")
+24:       .select("o_assets.*", "o_image.filePath", "o_image.state")
+25:       .where("o_assets.projectId", projectId)
+26:       .andWhere("o_assets.type", type);
+27:     if (name) {
+28:       query = query.andWhere("name", "like", `%${name}%`);
+29:     }
+30:     // 分页查询
+31:     const parentAssets = await query.where("o_assets.assetsId", null).offset(offset).limit(limit);
+32: 
+33:     // 获取所有子资产供关联使用
+34:     let childQuery = u
+35:       .db("o_assets")
+36:       .leftJoin("o_image", "o_assets.imageId", "o_image.id")
+37:       .select("o_assets.*", "o_image.filePath", "o_image.state", "o_image.errorReason")
+38:       .where("o_assets.projectId", projectId)
+39:       .andWhere("o_assets.type", type)
+40:       .whereNotNull("o_assets.assetsId");
+41:     if (name) {
+42:       childQuery = childQuery.andWhere("o_assets.name", "like", `%${name}%`);
+43:     }
+44:     const childAssets = await childQuery;
+45: 
+46:     // 为每个子资产添加图片地址
+47:     const childAssetsWithSrc = await Promise.all(
+48:       childAssets.map(async (child) => ({
+49:         ...child,
+50:         src: child.filePath && (await filterTypeGetFileUrl(child.filePath!, child.type)),
+51:       })),
+52:     );
+53: 
+54:     // 为每个父资产添加子资产
+55:     const result = await Promise.all(
+56:       parentAssets.map(async (parent) => ({
+57:         ...parent,
+58:         sonAssets: childAssetsWithSrc.filter((child) => child.assetsId === parent.id),
+59:         src: parent.filePath && (await filterTypeGetFileUrl(parent.filePath!, parent.type)),
+60:         ...(parent.type == "audio" ? { sex: parent.describe?.split("|")[0], describe: parent.describe?.split("|")[1] } : {}),
+61:       })),
+62:     );
+63: 
+64:     // 统计总数
+65:     const totalQuery = (await u
+66:       .db("o_assets")
+67:       .where("projectId", projectId)
+68:       .andWhere("type", type)
+69:       .andWhere("assetsId", null)
+70:       .andWhere((qb) => {
+71:         if (name) {
+72:           qb.andWhere("name", "like", `%${name}%`);
+73:         }
+74:       })
+75:       .count("* as total")
+76:       .first()) as any;
+77:     res.status(200).send(success({ data: result, total: totalQuery?.total }));
+78:   },
+79: );
+80: 
+81: async function filterTypeGetFileUrl(url: string, type: string) {
+82:   if (type == "role" || type == "tool" || type == "scene") {
+83:     return await u.oss.getSmallImageUrl(url);
+84:   } else {
+85:     return await u.oss.getFileUrl(url);
+86:   }
+87: }
+</file>
+
+<file path="src/routes/assets/getImage.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { success } from "@/lib/responseFormat";
+ 4: import { z } from "zod";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: // 获取生成图片
+ 9: export default router.post(
+10:   "/",
+11:   validateFields({
+12:     assetsId: z.number(),
+13:   }),
+14:   async (req, res) => {
+15:     const { assetsId } = req.body;
+16: 
+17:     const assets = await u.db("o_assets").where("id", assetsId).select("id", "imageId", "type").first();
+18: 
+19:     const rawTempAssets = await u.db("o_image").where("assetsId", assetsId).select("id", "filePath", "assetsId", "type", "state");
+20: 
+21:     const tempAssets = await Promise.all(
+22:       rawTempAssets.map(async (item) => ({
+23:         ...item,
+24:         filePath: item.filePath ? await u.oss.getSmallImageUrl(item.filePath) : "",
+25:         selected: assets?.imageId != null && Number(item.id) === Number(assets.imageId),
+26:       })),
+27:     );
+28: 
+29:     const data = {
+30:       id: assets!.id,
+31:       imageId: assets!.imageId ?? null,
+32:       tempAssets,
+33:     };
+34:     res.status(200).send(success(data));
+35:   },
+36: );
+</file>
+
+<file path="src/routes/assets/getMaterialData.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: // 获取生成图片
+ 9: export default router.post(
+10:   "/",
+11:   validateFields({
+12:     projectId: z.number(),
+13:     scriptId: z.number().optional(),
+14:   }),
+15:   async (req, res) => {
+16:     const { projectId, scriptId } = req.body;
+17:     const list = await u
+18:       .db("o_assets")
+19:       .leftJoin("o_image", "o_assets.id", "=", "o_image.assetsId")
+20:       .where("o_assets.type", "clip")
+21:       .andWhere("o_assets.projectId", projectId)
+22:       .select("*");
+23:     const data = await Promise.all(
+24:       list.map(async (item) => ({
+25:         ...item,
+26:         filePath: item.filePath ? await u.oss.getFileUrl(item.filePath) : "",
+27:       })),
+28:     );
+29:     //拿到本地片尾视频并插入到data中
+30:     const ending = await u.oss.getFileUrl("/ending.mp4", "assets");
+31:     data.push({
+32:       id: 0,
+33:       name: "Toonflow片尾",
+34:       filePath: ending,
+35:       type: "clip",
+36:     });
+37:     // 查询视频轨道
+38:     const trackRows = await u
+39:       .db("o_videoTrack")
+40:       .where("o_videoTrack.scriptId", scriptId)
+41:       .andWhere("o_videoTrack.projectId", projectId)
+42:       .select("o_videoTrack.id as trackId","o_videoTrack.videoId");
+43:     // 按轨道分组处理视频
+44:     const video = await Promise.all(
+45:       trackRows.map(async (track) => {
+46:         const videoItems = await u.db("o_video").where("o_video.videoTrackId", track.trackId).andWhere("o_video.state", "生成成功").select("*");
+47:         const videoList = await Promise.all(
+48:           videoItems.map(async (v) => ({
+49:             id: v.id,
+50:             filePath: v.filePath ? await u.oss.getFileUrl(v.filePath) : "",
+51:             videoTrackId: v.videoTrackId,
+52:           })),
+53:         );
+54:         return {
+55:           id: track.trackId,
+56:           videoId: track.videoId,
+57:           video: videoList,
+58:         };
+59:       }),
+60:     ).then((tracks) => tracks.filter((track) => track.video.length > 0));
+61: 
+62:     res.status(200).send(success({ data, video }));
+63:   },
+64: );
+</file>
+
+<file path="src/routes/assets/pollingImageAssets.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     ids: z.array(z.number()),
+12:   }),
+13:   async (req, res) => {
+14:     const { ids } = req.body;
+15:     const data = await u
+16:       .db("o_assets")
+17:       .leftJoin("o_image", "o_assets.imageId", "o_image.id")
+18:       .whereIn("o_assets.id", ids)
+19:       .whereNot("o_image.state", "生成中")
+20:       .select("o_image.state", "o_assets.id", "o_image.filePath");
+21:     const result = await Promise.all(
+22:       data.map(async (item: any) => ({
+23:         ...item,
+24:         filePath: item.filePath ? await u.oss.getSmallImageUrl(item.filePath) : null,
+25:       })),
+26:     );
+27:     res.status(200).send(success(result));
+28:   },
+29: );
+</file>
+
+<file path="src/routes/assets/pollingPromptAssets.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     ids: z.array(z.number()),
+12:   }),
+13:   async (req, res) => {
+14:     const { ids } = req.body;
+15:     const data = await u.db("o_assets").whereIn("id", ids).whereNot("promptState", "生成中").select("*");
+16:     res.status(200).send(success(data));
+17:   },
+18: );
+</file>
+
+<file path="src/routes/assets/saveAssets.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { v4 as uuidv4 } from "uuid";
+ 5: import { success } from "@/lib/responseFormat";
+ 6: import { validateFields } from "@/middleware/middleware";
+ 7: import { stat } from "original-fs";
+ 8: const router = express.Router();
+ 9: 
+10: // 保存资产图片
+11: export default router.post(
+12:   "/",
+13:   validateFields({
+14:     id: z.number(),
+15:     projectId: z.number(),
+16:     base64: z.string().optional().nullable(),
+17:     type: z.enum(["role", "scene", "tool"]),
+18:     prompt: z.string().optional().nullable(),
+19:     imageId: z.number().optional().nullable(),
+20:   }),
+21:   async (req, res) => {
+22:     const { id, base64, type, prompt, projectId, imageId } = req.body;
+23:     if (base64) {
+24:       //自定义上传选择的图片
+25:       const matches = base64.match(/^data:image\/\w+;base64,(.+)$/);
+26:       const realBase64 = matches ? matches[1] : base64;
+27:       // 生成新的图片路径
+28:       const savePath = `/${projectId}/${type}/${uuidv4()}.png`;
+29:       // 写入文件
+30:       await u.oss.writeFile(savePath, Buffer.from(realBase64, "base64"));
+31:       // 插入图片表
+32:       const [idData] = await u.db("o_image").insert({
+33:         assetsId: id,
+34:         filePath: savePath,
+35:         type: type,
+36:         state: "已完成",
+37:       });
+38:       // 更新资产表图片为新图片
+39:       await u
+40:         .db("o_assets")
+41:         .where("id", id)
+42:         .update({
+43:           prompt: prompt ?? "",
+44:           imageId: idData,
+45:         });
+46:     } else {
+47:       await u
+48:         .db("o_assets")
+49:         .where("id", id)
+50:         .update({
+51:           prompt: prompt ?? "",
+52:           imageId: imageId,
+53:         });
+54:     }
+55:     res.status(200).send(success({ message: "保存资产图片成功" }));
+56:   },
+57: );
+</file>
+
+<file path="src/routes/assets/updateAssets.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: import { id } from "zod/locales";
+ 7: const router = express.Router();
+ 8: 
+ 9: // 更新资产
+10: export default router.post(
+11:   "/",
+12:   validateFields({
+13:     id: z.number(),
+14:     name: z.string(),
+15:     describe: z.string(),
+16:     remark: z.string().optional().nullable(),
+17:     prompt: z.string().optional().nullable(),
+18:   }),
+19:   async (req, res) => {
+20:     const { id, name, describe, remark, prompt } = req.body;
+21:     await u.db("o_assets").where({ id }).update({
+22:       name,
+23:       describe,
+24:       remark,
+25:       prompt,
+26:     });
+27:     res.status(200).send(success({ message: "更新资产成功" }));
+28:   },
+29: );
+</file>
+
+<file path="src/routes/assets/updateAudioAssets.ts">
+  1: import express from "express";
+  2: import u from "@/utils";
+  3: import { z } from "zod";
+  4: import { success } from "@/lib/responseFormat";
+  5: import { validateFields } from "@/middleware/middleware";
+  6: const router = express.Router();
+  7: 
+  8: // 新增资产
+  9: export default router.post(
+ 10:   "/",
+ 11:   validateFields({
+ 12:     id: z.number(),
+ 13:     name: z.string(),
+ 14:     describe: z.string(),
+ 15:     projectId: z.number(),
+ 16:     assetsItem: z.array(
+ 17:       z.object({
+ 18:         src: z.string().optional(),
+ 19:         id: z.number().optional(),
+ 20:         base64: z.string().optional(),
+ 21:         prompt: z.string(),
+ 22:         describe: z.string(),
+ 23:         name: z.string(),
+ 24:       }),
+ 25:     ),
+ 26:   }),
+ 27:   async (req, res) => {
+ 28:     const { id, name, describe, projectId, assetsItem } = req.body;
+ 29:     await Promise.all(
+ 30:       assetsItem.map(async (i: { src?: string; id?: number; base64: string; prompt: string }) => {
+ 31:         if (i.src) {
+ 32:           i.src = u.replaceUrl(i.src);
+ 33:         }
+ 34:         if (i.base64) {
+ 35:           const mimeMatch = i.base64.match(/^data:audio\/([^;]+);base64,/);
+ 36:           const mimeExt = mimeMatch ? mimeMatch[1] : "mp3";
+ 37:           const mimeToExt: Record<string, string> = {
+ 38:             mpeg: "mp3",
+ 39:             "x-wav": "wav",
+ 40:             "x-aiff": "aiff",
+ 41:             "x-m4a": "m4a",
+ 42:             "x-flac": "flac",
+ 43:           };
+ 44:           const ext = mimeToExt[mimeExt] ?? mimeExt;
+ 45:           const savePath = `/${projectId}/assets/audio/${u.uuid()}.${ext}`;
+ 46:           const base64Data = i.base64.replace(/^data:[^;]+;base64,/, "");
+ 47:           await u.oss.writeFile(savePath, base64Data);
+ 48:           i.src = savePath;
+ 49:         }
+ 50:       }),
+ 51:     );
+ 52: 
+ 53:     await u.db("o_assets").where("id", id).update({
+ 54:       name,
+ 55:       describe,
+ 56:     });
+ 57: 
+ 58:     // 删除不在 assetsItem 中的子项
+ 59:     const existingItems = await u.db("o_assets").where("assetsId", id).select("id");
+ 60:     const existingIds = existingItems.map((i: { id?: number }) => i.id!);
+ 61:     const incomingIds = assetsItem.filter((i: { id?: number }) => i.id).map((i: { id?: number }) => i.id);
+ 62:     const toDeleteIds = existingIds.filter((eid: number) => !incomingIds.includes(eid));
+ 63:     if (toDeleteIds.length > 0) {
+ 64:       const deleteItems = await u.db("o_assets").whereIn("id", toDeleteIds).select("imageId");
+ 65:       const deleteImageIds = deleteItems.map((i: { imageId?: number | null }) => i.imageId!).filter(Boolean);
+ 66:       // 先将 o_assets.imageId 置空，解除外键约束，再删除 o_image，最后删除 o_assets
+ 67:       await u.db("o_assets").whereIn("id", toDeleteIds).update({ imageId: null });
+ 68:       if (deleteImageIds.length > 0) {
+ 69:         await u.db("o_image").whereIn("id", deleteImageIds).delete();
+ 70:       }
+ 71:       await u.db("o_assets").whereIn("id", toDeleteIds).delete();
+ 72:     }
+ 73: 
+ 74:     for (const item of assetsItem) {
+ 75:       if (item.id) {
+ 76:         await u.db("o_assets").where("id", item.id).update({
+ 77:           prompt: item.prompt,
+ 78:           describe: item.describe,
+ 79:           name: item.name,
+ 80:         });
+ 81:         const itemData = await u.db("o_assets").where("id", item.id).select("imageId").first();
+ 82:         await u.db("o_image").where("id", itemData?.imageId).update({
+ 83:           filePath: item.src,
+ 84:         });
+ 85:       } else {
+ 86:         const [assetsId] = await u.db("o_assets").insert({
+ 87:           prompt: item.prompt,
+ 88:           assetsId: id,
+ 89:           type: "audio",
+ 90:           projectId,
+ 91:           describe: item.describe,
+ 92:           name: item.name,
+ 93:           startTime: Date.now(),
+ 94:         });
+ 95:         const [imageId] = await u.db("o_image").insert({
+ 96:           filePath: item.src,
+ 97:           type: "audio",
+ 98:           assetsId,
+ 99:           state: "已完成",
+100:         });
+101:         await u.db("o_assets").where("id", assetsId).update({
+102:           imageId,
+103:         });
+104:       }
+105:     }
+106: 
+107:     res.status(200).send(success({ message: "新增资产成功" }));
+108:   },
+109: );
+</file>
+
+<file path="src/routes/assets/uploadClip.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { success } from "@/lib/responseFormat";
+ 4: import { validateFields } from "@/middleware/middleware";
+ 5: import { z } from "zod";
+ 6: import { v4 as uuid } from "uuid";
+ 7: const router = express.Router();
+ 8: 
+ 9: // 根据 base64 头部获取文件扩展名
+10: function getExtFromBase64(base64Data: string): string {
+11:   const mime = base64Data.match(/^data:([^;]+);base64,/)?.[1] ?? "";
+12:   const mimeMap: Record<string, string> = {
+13:     // 图片
+14:     "image/jpeg": "jpeg",
+15:     "image/jpg": "jpg",
+16:     "image/png": "png",
+17:     // 音频
+18:     "audio/mpeg": "mp3",
+19:     "audio/mp3": "mp3",
+20:     "audio/wav": "wav",
+21:     // 视频
+22:     "video/mp4": "mp4",
+23:     "video/webm": "webm",
+24:   };
+25:   return mimeMap[mime] ?? "bin";
+26: }
+27: 
+28: // 文件上传（支持图片、音频、视频）
+29: export default router.post(
+30:   "/",
+31:   validateFields({
+32:     projectId: z.number(),
+33:     base64Data: z.string(),
+34:     type: z.string().optional().default("clip"),
+35:     name: z.string(),
+36:   }),
+37:   async (req, res) => {
+38:     const { base64Data, projectId, type = "clip", name } = req.body;
+39:     const ext = getExtFromBase64(base64Data);
+40:     const savePath = `/${projectId}/assets/${uuid()}.${ext}`;
+41: 
+42:     await u.oss.writeFile(savePath, Buffer.from(base64Data.match(/base64,([A-Za-z0-9+/=]+)/)[1] ?? "", "base64"));
+43:     const [id] = await u.db("o_assets").insert({
+44:       type: type,
+45:       projectId: projectId,
+46:       name,
+47:       startTime: Date.now(),
+48:     });
+49:     const [imageId] = await u.db("o_image").insert({
+50:       filePath: savePath,
+51:       type,
+52:       assetsId: id,
+53:       state: "已完成",
+54:     });
+55:     await u.db("o_assets").where("id", id).update({
+56:       imageId: imageId,
+57:     });
+58:     res.status(200).send(success("上传成功"));
+59:   },
+60: );
+</file>
+
+<file path="src/routes/assetsGenerate/batchGenerateImageAssets.ts">
+  1: import express from "express";
+  2: import pLimit from "p-limit";
+  3: import u from "@/utils";
+  4: import { z } from "zod";
+  5: import { v4 as uuidv4 } from "uuid";
+  6: import { error, success } from "@/lib/responseFormat";
+  7: import { validateFields } from "@/middleware/middleware";
+  8: 
+  9: const router = express.Router();
+ 10: 
+ 11: type AssetType = "role" | "scene" | "tool";
+ 12: 
+ 13: interface AssetTypeConfig {
+ 14:   label: string;
+ 15:   taskClass: string;
+ 16:   dir: string;
+ 17:   promptTitle: string;
+ 18:   promptEnd: string;
+ 19: }
+ 20: 
+ 21: const assetTypeConfig: Record<AssetType, AssetTypeConfig> = {
+ 22:   role: {
+ 23:     label: "角色",
+ 24:     taskClass: "角色图生成",
+ 25:     dir: "role",
+ 26:     promptTitle: "角色标准四视图",
+ 27:     promptEnd: "人物角色四视图",
+ 28:   },
+ 29:   scene: {
+ 30:     label: "场景",
+ 31:     taskClass: "场景图生成",
+ 32:     dir: "scene",
+ 33:     promptTitle: "标准场景图",
+ 34:     promptEnd: "标准场景图",
+ 35:   },
+ 36:   tool: {
+ 37:     label: "道具",
+ 38:     taskClass: "道具图生成",
+ 39:     dir: "props",
+ 40:     promptTitle: "标准道具图",
+ 41:     promptEnd: "标准道具图",
+ 42:   },
+ 43: };
+ 44: 
+ 45: function buildPrompt(cfg: AssetTypeConfig, artStyle: string, name: string, prompt: string): string {
+ 46:   return `
+ 47:     请根据以下参数生成${cfg.promptTitle}：
+ 48: 
+ 49:     **基础参数：**
+ 50:     - 画风风格: ${artStyle || "未指定"}
+ 51: 
+ 52:     **${cfg.label}设定：**
+ 53:     - 名称:${name},
+ 54:     - 提示词:${prompt},
+ 55: 
+ 56:     请严格按照系统规范生成${cfg.promptEnd}。
+ 57:   `;
+ 58: }
+ 59: 
+ 60: const requestSchema = {
+ 61:   projectId: z.number(),
+ 62:   model: z.string(),
+ 63:   resolution: z.string(),
+ 64:   concurrentCount: z.number().int().min(1).optional(),
+ 65:   items: z.array(
+ 66:     z.object({
+ 67:       id: z.number(),
+ 68:       type: z.enum(["role", "scene", "tool", "storyboard"]),
+ 69:       name: z.string(),
+ 70:       prompt: z.string(),
+ 71:       base64: z.string().optional().nullable(),
+ 72:     }),
+ 73:   ),
+ 74: };
+ 75: 
+ 76: export default router.post("/", validateFields(requestSchema), async (req, res) => {
+ 77:   const { projectId, model, resolution, concurrentCount, items } = req.body;
+ 78: 
+ 79:   // 1. 查询项目
+ 80:   const project = await u.db("o_project").where("id", projectId).select("artStyle", "type", "intro").first();
+ 81:   if (!project) return res.status(500).send(error("项目为空"));
+ 82: 
+ 83:   // 2. 逐条插入 o_image 占位记录，收集 imageId 列表
+ 84:   const totalNovelId: number[] = [];
+ 85:   for (const item of items) {
+ 86:     const [imageId] = await u.db("o_image").insert({
+ 87:       type: item.type,
+ 88:       state: "生成中",
+ 89:       assetsId: item.id,
+ 90:     });
+ 91:     await u.db("o_assets").where("id", item.id).update({ imageId });
+ 92:     totalNovelId.push(imageId);
+ 93:   }
+ 94: 
+ 95:   // 3. 后台异步并发生成，不阻塞响应
+ 96:   const limit = pLimit(concurrentCount ?? 1);
+ 97: 
+ 98:   const tasks = items.map((item: { id: number; type: string; name: string; prompt: string; base64: string | null | undefined }, index: number) =>
+ 99:     limit(async () => {
+100:       const imageId = totalNovelId[index];
+101:       const data = await u.db("o_image").where("id", imageId).select("state").first();
+102:       if (data?.state === "生成失败") {
+103:         return;
+104:       }
+105:       const cfg = assetTypeConfig[item.type as AssetType];
+106:       if (!cfg) return;
+107: 
+108:       await u.db("o_assets").where("id", item.id).update({ imageId });
+109: 
+110:       const imagePath = `/${projectId}/${cfg.dir}/${uuidv4()}.jpg`;
+111:       const userPrompt = buildPrompt(cfg, project.artStyle ?? "", item.name, item.prompt);
+112:       const describe = `生成${cfg.label}图，名称：${item.name}，提示词：${item.prompt}`;
+113:       const relatedObjects = { id: item.id, projectId, type: cfg.label };
+114:       try {
+115:         const aiImage = u.Ai.Image(model);
+116:         await aiImage.run(
+117:           {
+118:             prompt: userPrompt,
+119:             referenceList: item.base64 ? [{ base64: item.base64, type: "image" }] : [],
+120:             size: resolution,
+121:             aspectRatio: "16:9",
+122:           },
+123:           {
+124:             taskClass: cfg.taskClass,
+125:             describe,
+126:             projectId,
+127:             relatedObjects: JSON.stringify(relatedObjects),
+128:           },
+129:         );
+130:         aiImage.save(imagePath);
+131: 
+132:         const imageData = await u.db("o_image").where("id", imageId).select("*").first();
+133:         if (!imageData) return res.status(500).send("资产已被删除");
+134:         if (!imageData) return;
+135:         if (imageData.state === "生成失败") return;
+136:         await u
+137:           .db("o_image")
+138:           .where("id", imageId)
+139:           .update({
+140:             state: "已完成",
+141:             filePath: imagePath,
+142:             type: item.type,
+143:             model: model.split(/:(.+)/)[1],
+144:             resolution,
+145:           });
+146: 
+147:         await u.db("o_assets").where("id", item.id).update({ imageId });
+148:       } catch (e: any) {
+149:         await u
+150:           .db("o_image")
+151:           .where("id", imageId)
+152:           .update({ state: "生成失败", errorReason: u.error(e).message });
+153:       }
+154:     }),
+155:   );
+156: 
+157:   // 后台执行，不等待结果
+158:   Promise.all(tasks).catch(() => {});
+159: 
+160:   return res.status(200).send(success({ total: items.length }));
+161: });
+</file>
+
+<file path="src/routes/assetsGenerate/batchPolishAssetsPrompt.ts">
+  1: import express from "express";
+  2: import u from "@/utils";
+  3: import pLimit from "p-limit";
+  4: import * as zod from "zod";
+  5: import { error, success } from "@/lib/responseFormat";
+  6: import { validateFields } from "@/middleware/middleware";
+  7: const router = express.Router();
+  8: interface OutlineItem {
+  9:   description: string;
+ 10:   name: string;
+ 11: }
+ 12: 
+ 13: interface OutlineData {
+ 14:   chapterRange: number[];
+ 15:   characters?: OutlineItem[];
+ 16:   props?: OutlineItem[];
+ 17:   scenes?: OutlineItem[];
+ 18: }
+ 19: 
+ 20: interface NovelChapter {
+ 21:   id: number;
+ 22:   reel: string;
+ 23:   chapter: string;
+ 24:   chapterData: string;
+ 25:   projectId: number;
+ 26: }
+ 27: 
+ 28: type ItemType = "characters" | "props" | "scenes";
+ 29: 
+ 30: //润色提示词
+ 31: export default router.post(
+ 32:   "/",
+ 33:   validateFields({
+ 34:     items: zod.array(
+ 35:       zod.object({
+ 36:         assetsId: zod.number(),
+ 37:         type: zod.string(),
+ 38:         name: zod.string(),
+ 39:         describe: zod.string(),
+ 40:       }),
+ 41:     ),
+ 42:     projectId: zod.number(),
+ 43:     concurrentCount: zod.number().int().min(1).optional(),
+ 44:     otherTextPrompt: zod.string(),
+ 45:   }),
+ 46:   async (req, res) => {
+ 47:     const { projectId, items, concurrentCount, otherTextPrompt } = req.body;
+ 48:     //获取风格
+ 49:     const project = await u.db("o_project").where("id", projectId).select("artStyle", "type", "intro").first();
+ 50:     //如果没有找到对应的项目，返回错误
+ 51:     if (!project) return res.status(500).send(success({ message: "项目为空" }));
+ 52: 
+ 53:     // 预加载公共数据
+ 54:     const assetsIds = items.map((item: { assetsId: number }) => item.assetsId);
+ 55:     //查询所有资产，用于判断每个资产是否是衍生资产
+ 56:     const assetsDataList = await u.db("o_assets").whereIn("id", assetsIds).select("id", "assetsId");
+ 57:     if (!assetsDataList || assetsDataList.length === 0) return res.status(500).send(error("资产不存在"));
+ 58:     const assetsDataMap = new Map(assetsDataList.map((a: any) => [a.id, a]));
+ 59:     // 所有前置检测通过后，再批量更新状态为生成中
+ 60:     await u.db("o_assets").whereIn("id", assetsIds).update({ promptState: "生成中" });
+ 61: 
+ 62:     const getTypeConfig = (
+ 63:       isDerivative: boolean,
+ 64:     ): Record<string, { promptKey: string; itemType: ItemType; label: string; nameLabel: string; visualManual: string }> => ({
+ 65:       role: {
+ 66:         promptKey: "role-polish",
+ 67:         itemType: "characters",
+ 68:         label: "角色标准四视图",
+ 69:         nameLabel: "角色",
+ 70:         visualManual: isDerivative ? "art_character_derivative" : "art_character",
+ 71:       },
+ 72:       scene: {
+ 73:         promptKey: "scene-polish",
+ 74:         itemType: "scenes",
+ 75:         label: "场景图",
+ 76:         nameLabel: "场景",
+ 77:         visualManual: isDerivative ? "art_scene_derivative" : "art_scene",
+ 78:       },
+ 79:       tool: {
+ 80:         promptKey: "tool-polish",
+ 81:         itemType: "props",
+ 82:         label: "道具图",
+ 83:         nameLabel: "道具",
+ 84:         visualManual: isDerivative ? "art_prop_derivative" : "art_prop",
+ 85:       },
+ 86:     });
+ 87: 
+ 88:     // 后台异步并发生成，不阻塞响应
+ 89:     const limit = pLimit(concurrentCount ?? 1);
+ 90:     const tasks = items.map((item: { assetsId: number; type: string; name: string; describe: string }) =>
+ 91:       limit(async () => {
+ 92:         const assetData = assetsDataMap.get(item.assetsId);
+ 93:         if (!assetData) return;
+ 94:         const typeConfig = getTypeConfig(!!assetData.assetsId);
+ 95:         const config = typeConfig[item.type];
+ 96:         if (!config) return;
+ 97:         //获取到视觉手册
+ 98:         const visualManual = await u.getArtPrompt(project.artStyle as string, "art_skills", config.visualManual);
+ 99:         if (!visualManual) {
+100:           await u.db("o_assets").where("id", item.assetsId).update({ promptState: "生成失败", promptErrorReason: "视觉手册未定义" });
+101:           return;
+102:         }
+103:         const systemPrompt = visualManual;
+104:         try {
+105:           const { _output } = (await u.Ai.Text("universalAi").invoke({
+106:             system: systemPrompt + "\n" + otherTextPrompt,
+107:             messages: [
+108:               {
+109:                 role: "user",
+110:                 content: `
+111:                     **基础参数：**
+112:       **${config.nameLabel}设定：**
+113:       - ${config.nameLabel}名称:${item.name},
+114:       - ${config.nameLabel}描述:${item.describe},`,
+115:               },
+116:             ],
+117:           })) as any;
+118: 
+119:           if (!_output) {
+120:             await u.db("o_assets").where("id", item.assetsId).update({ promptState: "生成失败" });
+121:             return;
+122:           }
+123: 
+124:           await u.db("o_assets").where("id", item.assetsId).update({ prompt: _output, promptState: "已完成" });
+125:         } catch (e: any) {
+126:           await u
+127:             .db("o_assets")
+128:             .where("id", item.assetsId)
+129:             .update({ promptState: "失败", promptErrorReason: u.error(e).message });
+130:         }
+131:       }),
+132:     );
+133: 
+134:     // 后台执行，不等待结果
+135:     Promise.all(tasks).catch((err: any) => {
+136:       res.status(500).send(error(err));
+137:     });
+138: 
+139:     return res.status(200).send(success({ total: items.length }));
+140:   },
+141: );
+</file>
+
+<file path="src/routes/assetsGenerate/cancelGenerate.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: // 取消生成
+ 9: export default router.post(
+10:   "/",
+11:   validateFields({
+12:     id: z.number(),
+13:   }),
+14:   async (req, res) => {
+15:     const { id } = req.body;
+16:     await u.db("o_image").where("id", id).update({
+17:       state: "生成失败",
+18:     });
+19:     res.status(200).send(success({ message: "取消成功" }));
+20:   },
+21: );
+</file>
+
+<file path="src/routes/assetsGenerate/generateAssets.ts">
+  1: import express from "express";
+  2: import u from "@/utils";
+  3: import { z } from "zod";
+  4: import { v4 as uuidv4 } from "uuid";
+  5: import { error, success } from "@/lib/responseFormat";
+  6: import { validateFields } from "@/middleware/middleware";
+  7: 
+  8: const router = express.Router();
+  9: 
+ 10: type AssetType = "role" | "scene" | "tool";
+ 11: 
+ 12: interface AssetTypeConfig {
+ 13:   label: string;
+ 14:   taskClass: string;
+ 15:   dir: string;
+ 16:   promptTitle: string;
+ 17:   promptEnd: string;
+ 18: }
+ 19: 
+ 20: const assetTypeConfig: Record<AssetType, AssetTypeConfig> = {
+ 21:   role: {
+ 22:     label: "角色",
+ 23:     taskClass: "角色图生成",
+ 24:     dir: "role",
+ 25:     promptTitle: "角色标准四视图",
+ 26:     promptEnd: "人物角色四视图",
+ 27:   },
+ 28:   scene: {
+ 29:     label: "场景",
+ 30:     taskClass: "场景图生成",
+ 31:     dir: "scene",
+ 32:     promptTitle: "标准场景图",
+ 33:     promptEnd: "标准场景图",
+ 34:   },
+ 35:   tool: {
+ 36:     label: "道具",
+ 37:     taskClass: "道具图生成",
+ 38:     dir: "props",
+ 39:     promptTitle: "标准道具图",
+ 40:     promptEnd: "标准道具图",
+ 41:   },
+ 42: };
+ 43: 
+ 44: // ─── 构建生成提示词 ──────────────────────────────────────────
+ 45: 
+ 46: function buildPrompt(cfg: AssetTypeConfig, artStyle: string, name: string, prompt: string): string {
+ 47:   return `
+ 48:     请根据以下参数生成${cfg.promptTitle}：
+ 49: 
+ 50:     **基础参数：**
+ 51:     - 画风风格: ${artStyle || "未指定"}
+ 52: 
+ 53:     **${cfg.label}设定：**
+ 54:     - 名称:${name},
+ 55:     - 提示词:${prompt},
+ 56: 
+ 57:     请严格按照系统规范生成${cfg.promptEnd}。
+ 58:   `;
+ 59: }
+ 60: 
+ 61: // ─── 生成资产图片 ────────────────────────────────────────────
+ 62: 
+ 63: const requestSchema = {
+ 64:   projectId: z.number(),
+ 65:   model: z.string(),
+ 66:   resolution: z.string(),
+ 67:   id: z.number(),
+ 68:   type: z.enum(["role", "scene", "tool", "storyboard"]),
+ 69:   name: z.string(),
+ 70:   prompt: z.string(),
+ 71:   base64: z.string().optional().nullable(),
+ 72: };
+ 73: 
+ 74: export default router.post("/", validateFields(requestSchema), async (req, res) => {
+ 75:   const { projectId, model, resolution, id, type, name, prompt, base64 } = req.body;
+ 76: 
+ 77:   // 1. 查询项目 & 获取类型配置
+ 78:   const project = await u.db("o_project").where("id", projectId).select("artStyle", "type", "intro").first();
+ 79:   if (!project) return res.status(500).send(success({ message: "项目为空" }));
+ 80: 
+ 81:   const cfg = assetTypeConfig[type as AssetType];
+ 82:   if (!cfg) return res.status(400).send(error("不支持的类型"));
+ 83: 
+ 84:   // 2. 创建图片占位记录
+ 85:   const [imageId] = await u.db("o_image").insert({
+ 86:     type,
+ 87:     state: "生成中",
+ 88:     assetsId: id,
+ 89:     model: model.split(/:(.+)/)[1],
+ 90:     resolution,
+ 91:   });
+ 92:   await u.db("o_assets").where("id", id).update({ imageId });
+ 93: 
+ 94:   // 3. 准备生成参数
+ 95:   const imagePath = `/${projectId}/${cfg.dir}/${uuidv4()}.jpg`;
+ 96:   const userPrompt = buildPrompt(cfg, project.artStyle!, name, prompt);
+ 97:   const describe = `生成${cfg.label}图，名称：${name}，提示词：${prompt}`;
+ 98:   const relatedObjects = { id, projectId, type: cfg.label };
+ 99: 
+100:   try {
+101:     const aiImage = u.Ai.Image(model);
+102:     await aiImage.run(
+103:       {
+104:         prompt: userPrompt,
+105:         referenceList: base64 ? [{ type: "image", base64 }] : [],
+106:         size: resolution,
+107:         aspectRatio: "16:9",
+108:       },
+109:       {
+110:         taskClass: cfg.taskClass,
+111:         describe,
+112:         projectId,
+113:         relatedObjects: JSON.stringify(relatedObjects),
+114:       },
+115:     );
+116:     aiImage.save(imagePath);
+117:     // 5. 更新记录 & 返回结果
+118:     const imageData = await u.db("o_image").where("id", imageId).select("*").first();
+119:     if (!imageData) return res.status(500).send("资产已被删除");
+120:     if (imageData.state === "生成失败") return;
+121:     await u
+122:       .db("o_image")
+123:       .where("id", imageId)
+124:       .update({
+125:         state: "已完成",
+126:         filePath: imagePath,
+127:         type,
+128:         model: model.split(/:(.+)/)[1],
+129:         resolution,
+130:       });
+131: 
+132:     const path = await u.oss.getSmallImageUrl(imagePath);
+133:     await u.db("o_assets").where("id", id).update({ imageId });
+134: 
+135:     return res.status(200).send(success({ path, assetsId: id }));
+136:   } catch (e) {
+137:     await u
+138:       .db("o_image")
+139:       .where("id", imageId)
+140:       .update({ state: "生成失败", errorReason: u.error(e).message });
+141:     return res.status(400).send(error(u.error(e).message || "图片生成失败"));
+142:   }
+143: });
+</file>
+
+<file path="src/routes/assetsGenerate/polishAssetsPrompt.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import * as zod from "zod";
+ 4: import { error, success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: 
+ 9: type ItemType = "characters" | "props" | "scenes";
+10: 
+11: //润色提示词
+12: export default router.post(
+13:   "/",
+14:   validateFields({
+15:     assetsId: zod.number(),
+16:     projectId: zod.number(),
+17:     type: zod.string(),
+18:     name: zod.string(),
+19:     describe: zod.string(),
+20:   }),
+21:   async (req, res) => {
+22:     const { assetsId, projectId, type, name, describe } = req.body;
+23:     //获取风格
+24:     const project = await u.db("o_project").where("id", projectId).select("artStyle", "type", "intro").first();
+25:     //如果没有找到对应的项目，返回错误
+26:     if (!project) return res.status(500).send(success({ message: "项目为空" }));
+27: 
+28:     await u.db("o_assets").where("id", assetsId).update({ promptState: "生成中" });
+29: 
+30:     //查询资产是否是衍生资产
+31:     const assetsData = await u.db("o_assets").where("id", assetsId).select("assetsId").first();
+32:     if (!assetsData) return { code: 500, message: "资产不存在" };
+33:     const typeConfig: Record<string, { promptKey: string; itemType: ItemType; label: string; nameLabel: string; visualManual: string }> = {
+34:       role: {
+35:         promptKey: "role-polish",
+36:         itemType: "characters",
+37:         label: "角色标准四视图",
+38:         nameLabel: "角色",
+39:         visualManual: assetsData.assetsId ? "art_character_derivative" : "art_character",
+40:       },
+41:       scene: {
+42:         promptKey: "scene-polish",
+43:         itemType: "scenes",
+44:         label: "场景图",
+45:         nameLabel: "场景",
+46:         visualManual: assetsData.assetsId ? "art_scene_derivative" : "art_scene",
+47:       },
+48:       tool: {
+49:         promptKey: "tool-polish",
+50:         itemType: "props",
+51:         label: "道具图",
+52:         nameLabel: "道具",
+53:         visualManual: assetsData.assetsId ? "art_prop_derivative" : "art_prop",
+54:       },
+55:     };
+56: 
+57:     const config = typeConfig[type];
+58:     if (!config) return res.status(500).send(error("不支持的类型"));
+59:     if (!config.visualManual) return res.status(500).send(error("视觉手册未定义"));
+60:     //获取到视觉手册
+61:     const visualManual = await u.getArtPrompt(project.artStyle as string, "art_skills", config.visualManual);
+62:     if (!visualManual) return res.status(500).send(error("视觉手册未定义"));
+63:     const systemPrompt = visualManual;
+64:     try {
+65:       const { _output } = (await u.Ai.Text("universalAi").invoke({
+66:         system: systemPrompt,
+67:         messages: [
+68:           {
+69:             role: "user",
+70:             content: `**基础参数：**
+71:       **${config.nameLabel}设定：**
+72:       - ${config.nameLabel}名称:${name},
+73:       - ${config.nameLabel}描述:${describe},`,
+74:           },
+75:         ],
+76:       })) as any;
+77: 
+78:       if (!_output) return res.status(500).send("失败");
+79:       await u.db("o_assets").where("id", assetsId).update({ prompt: _output, promptState: "已完成" });
+80: 
+81:       res.status(200).send(success({ prompt: _output, assetsId }));
+82:     } catch (e: any) {
+83:       await u
+84:         .db("o_assets")
+85:         .where("id", assetsId)
+86:         .update({ promptState: "失败", promptErrorReason: u.error(e).message });
+87:       return res.status(500).send(error(e?.data?.error?.message ?? e?.message ?? "生成失败"));
+88:     }
+89:   },
+90: );
+</file>
+
+<file path="src/routes/cornerScape/batchBindAudio.ts">
+  1: import express from "express";
+  2: import u from "@/utils";
+  3: import { z } from "zod";
+  4: import { error, success } from "@/lib/responseFormat";
+  5: import { validateFields } from "@/middleware/middleware";
+  6: import { tool, jsonSchema } from "ai";
+  7: const router = express.Router();
+  8: 
+  9: // 获取资产
+ 10: export default router.post(
+ 11:   "/",
+ 12:   validateFields({
+ 13:     projectId: z.number(),
+ 14:     assetsIds: z.array(z.number()),
+ 15:     concurrentCount: z.number().min(1).optional(),
+ 16:   }),
+ 17:   async (req, res) => {
+ 18:     const { projectId, assetsIds, concurrentCount } = req.body;
+ 19:     const assetsData = await u.db("o_assets").whereIn("id", assetsIds).andWhere("projectId", projectId).select("id", "name", "describe", "type");
+ 20: 
+ 21:     const audioData = await u
+ 22:       .db("o_assets")
+ 23:       .where("type", "audio")
+ 24:       .whereNull("assetsId")
+ 25:       .andWhere("projectId", projectId)
+ 26:       .select("id", "name", "describe");
+ 27: 
+ 28:     if (!audioData.length) return res.status(400).send(error("暂无设置音频，请先前往资产中心上传音频"));
+ 29: 
+ 30:     const batchSize = concurrentCount ?? 1;
+ 31: 
+ 32:     async function processAsset(asset: (typeof assetsData)[number]) {
+ 33:       try {
+ 34:         const resultTool = tool({
+ 35:           description: "匹配完成后必须调用此工具提交结果",
+ 36:           inputSchema: jsonSchema<{ id: number; audioId: number }>(
+ 37:             z
+ 38:               .object({
+ 39:                 audioId: z.number().nullable().optional().describe("与该资产匹配的音频ID列表，若无合适匹配则返回空数组"),
+ 40:               })
+ 41:               .toJSONSchema(),
+ 42:           ),
+ 43:           execute: async (result) => {
+ 44:             await u.db("o_assetsRole2Audio").where("assetsRoleId", asset.id).delete();
+ 45:             if (result?.audioId) await u.db("o_assetsRole2Audio").insert({ assetsRoleId: asset.id, assetsAudioId: result.audioId });
+ 46:             await u.db("o_assets").where("id", asset.id).update("audioBindState", "已完成");
+ 47:             return "无需回复用户任何内容";
+ 48:           },
+ 49:         });
+ 50: 
+ 51:         const audioList = audioData.map((i) => `- ID:${i.id} | 名称:${i.name} | 描述:${i.describe ?? "无"}`).join("\n");
+ 52:         const promptData = await u.db("o_prompt").where("type", "audioBindPrompt").first();
+ 53:         let audioBindPrompt = "" as string | undefined;
+ 54:         if (promptData && promptData.useData) {
+ 55:           audioBindPrompt = promptData.useData;
+ 56:         } else {
+ 57:           audioBindPrompt = promptData?.data ?? undefined;
+ 58:         }
+ 59:         const { text } = await u.Ai.Text("universalAi").invoke({
+ 60:           messages: [
+ 61:             {
+ 62:               role: "system",
+ 63:               content: `
+ 64:               ${audioBindPrompt}
+ 65:               `,
+ 66:             },
+ 67:             {
+ 68:               role: "user",
+ 69:               content: `
+ 70:                 ## 候选音频列表
+ 71:                 ${audioList}
+ 72:                 ## 待匹配资产
+ 73:                 - ID:${asset.id} | 名称:${asset.name} | 描述:${asset.describe ?? "无"} | 类型：${asset.type}
+ 74:                 请从候选音频列表中为该资产选出来一个最符合该角色设定的音色，并调用 resultTool 提交结果。
+ 75:            `,
+ 76:             },
+ 77:           ],
+ 78:           tools: { resultTool },
+ 79:         });
+ 80:       } catch (e) {
+ 81:         await u.db("o_assets").where("id", asset.id).update("audioBindState", "生成失败");
+ 82:         console.error(`[bindAudio] 资产 ${asset.id} 处理失败:`, e);
+ 83:       }
+ 84:     }
+ 85: 
+ 86:     async function runWithConcurrency() {
+ 87:       for (let i = 0; i < assetsData.length; i += batchSize) {
+ 88:         const batch = assetsData.slice(i, i + batchSize);
+ 89: 
+ 90:         await Promise.all(batch.map((asset) => processAsset(asset)));
+ 91:       }
+ 92:     }
+ 93:     await u
+ 94:       .db("o_assets")
+ 95:       .whereIn(
+ 96:         "id",
+ 97:         assetsData.map((i) => i.id),
+ 98:       )
+ 99:       .update("audioBindState", "生成中");
+100:     runWithConcurrency();
+101:     res.status(200).send(success());
+102:   },
+103: );
+</file>
+
+<file path="src/routes/cornerScape/getAllAssets.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     projectId: z.number(),
+12:     type: z.array(z.string()).optional(),
+13:   }),
+14:   async (req, res) => {
+15:     const { projectId, type } = req.body;
+16:     const data = await u
+17:       .db("o_assets")
+18:       .leftJoin("o_image", "o_assets.imageId", "o_image.id")
+19:       .select(
+20:         "o_assets.*",
+21:         "o_image.filePath",
+22:         "o_image.state",
+23:         "o_image.model",
+24:         "o_image.resolution",
+25:         "o_image.errorReason",
+26:         "o_image.id as imageId",
+27:       )
+28:       .where("o_assets.projectId", projectId)
+29:       .andWhere("o_assets.type", "<>", "clip")
+30:       .andWhere("o_assets.type", "<>", "audio")
+31:       .andWhere("o_assets.assetsId", null)
+32:       .modify((qb) => {
+33:         if (type && type.length > 0) qb.whereIn("o_assets.type", type);
+34:       })
+35:       .orderByRaw(`CASE o_assets.type WHEN 'role' THEN 1 WHEN 'scene' THEN 2 WHEN 'tool' THEN 3 ELSE 4 END`);
+36:     const assets2AudioData = await u
+37:       .db("o_assetsRole2Audio")
+38:       .leftJoin("o_assets", "o_assets.id", "o_assetsRole2Audio.assetsAudioId")
+39:       .whereIn(
+40:         "o_assetsRole2Audio.assetsRoleId",
+41:         data.map((i: any) => i.id!),
+42:       )
+43:       .select("o_assets.id", "o_assets.name", "o_assetsRole2Audio.assetsRoleId");
+44:     const repleAssets: Record<number, { id: number; name: string }[]> = {};
+45:     assets2AudioData.forEach((item) => {
+46:       if (!repleAssets[item.assetsRoleId]) repleAssets[item.assetsRoleId] = [item];
+47:       else repleAssets[item.assetsRoleId].push(item);
+48:     });
+49:     const result = await Promise.all(
+50:       data.map(async (parent: any) => {
+51:         const historyImages = await u.db("o_image").where("assetsId", parent.id).andWhere("state", "已完成").select("id", "filePath");
+52:         const historyImagesWithUrl = await Promise.all(
+53:           historyImages.map(async (img: any) => ({
+54:             id: img.id,
+55:             filePath: img.filePath && (await u.oss.getSmallImageUrl(img.filePath)),
+56:           })),
+57:         );
+58:         return {
+59:           ...parent,
+60:           filePath: parent.filePath && (await u.oss.getSmallImageUrl(parent.filePath!)),
+61:           historyImages: historyImagesWithUrl,
+62:           relepedAudio: repleAssets[parent.id] ?? [],
+63:         };
+64:       }),
+65:     );
+66:     res.status(200).send(success(result));
+67:   },
+68: );
+</file>
+
+<file path="src/routes/cornerScape/pollingAudio.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     ids: z.array(z.number()),
+12:   }),
+13:   async (req, res) => {
+14:     const { ids } = req.body;
+15:     const data = await u.db("o_assets").whereIn("id", ids).whereNot("audioBindState", "生成中").select("*");
+16:     res.status(200).send(success(data));
+17:   },
+18: );
+</file>
+
+<file path="src/routes/cornerScape/updateAssetsAudio.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { error, success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: // 新增资产
+ 9: export default router.post(
+10:   "/",
+11:   validateFields({
+12:     assetsId: z.number(),
+13:     audioIds: z.array(z.number()).optional(),
+14:   }),
+15:   async (req, res) => {
+16:     const { assetsId, audioIds } = req.body;
+17:     if (audioIds && audioIds.length > 1) return res.status(400).send(error("仅可绑定一个音色"));
+18:     await u.db("o_assetsRole2Audio").where("assetsRoleId", assetsId).delete();
+19:     if (audioIds && audioIds.length) {
+20:       await u.db("o_assetsRole2Audio").insert({ assetsRoleId: assetsId, assetsAudioId: audioIds[0] });
+21:     }
+22:     res.status(200).send(success({ message: "更新音频成功" }));
+23:   },
+24: );
+</file>
+
+<file path="src/utils/image.ts">
+ 1: import fs from "node:fs/promises";
+ 2: import fss from "fs";
+ 3: import path from "node:path";
+ 4: import sharp from "sharp";
+ 5: 
+ 6: /**
+ 7:  * 图片缩放选项
+ 8:  */
+ 9: export interface ResizeOptions {
+10:   /** 最大宽度（默认 256 */
+11:   width?: number;
+12:   /** 最大高度（默认 256 */
+13:   height?: number;
+14:   /** 缩放策略，默认等比缩放不超出边界 */
+15:   fit?: keyof sharp.FitEnum;
+16:   /** 是否禁止放大（默认 true） */
+17:   withoutEnlargement?: boolean;
+18: }
+19: 
+20: const defaultResizeOptions: Required<ResizeOptions> = {
+21:   width: 256,
+22:   height: 256,
+23:   fit: "inside",
+24:   withoutEnlargement: true,
+25: };
+26: 
+27: /**
+28:  * 将图片缩放后写入目标路径（自动创建父目录）。
+29:  * @param srcPath 源图片绝对路径
+30:  * @param dstPath 目标图片绝对路径
+31:  * @param opts 缩放选项
+32:  */
+33: export async function resizeImage(srcPath: string, dstPath: string, opts?: ResizeOptions): Promise<void> {
+34:   const { width, height, fit, withoutEnlargement } = { ...defaultResizeOptions, ...opts };
+35:   await fs.mkdir(path.dirname(dstPath), { recursive: true });
+36:   await sharp(srcPath).resize(width, height, { fit, withoutEnlargement }).toFile(dstPath);
+37: }
+38: 
+39: /**
+40:  * 缩略图自定义尺寸选项
+41:  */
+42: export type ThumbnailSize =
+43:   | { type: "dimensions"; width: number; height: number }
+44:   | { type: "percentage"; value: number };
+45: 
+46: /**
+47:  * 生成缩略图。
+48:  * - 若缩略图已存在，直接返回其路径。
+49:  * - 若不存在，生成后返回目标路径；生成失败返回 null。
+50:  *
+51:  * @param originalPath 原图绝对路径
+52:  * @param thumbnailPath 缩略图绝对路径
+53:  * @param size 可选的自定义尺寸：固定宽高 或 百分比（默认 256x256 inside）
+54:  * @returns 缩略图路径，失败返回 null
+55:  */
+56: export async function ensureThumbnail(
+57:   originalPath: string,
+58:   thumbnailPath: string,
+59:   size?: ThumbnailSize,
+60: ): Promise<string | null> {
+61:   // 小图已存在，直接返回
+62:   if (fss.existsSync(thumbnailPath)) {
+63:     return thumbnailPath;
+64:   }
+65:   // 原图不存在，无法生成
+66:   if (!fss.existsSync(originalPath)) {
+67:     return null;
+68:   }
+69:   try {
+70:     if (size?.type === "percentage") {
+71:       // 百分比缩放：先获取原图尺寸，再等比计算目标尺寸
+72:       const meta = await sharp(originalPath).metadata();
+73:       if (!meta.width || !meta.height) {
+74:         console.warn("[image] 无法获取原图尺寸:", originalPath);
+75:         return null;
+76:       }
+77:       const pct = size.value / 100;
+78:       const w = Math.round(meta.width * pct);
+79:       const h = Math.round(meta.height * pct);
+80:       await resizeImage(originalPath, thumbnailPath, { width: w, height: h });
+81:     } else if (size?.type === "dimensions") {
+82:       // 固定宽高：等比缩放适配到指定边界
+83:       await resizeImage(originalPath, thumbnailPath, {
+84:         width: size.width,
+85:         height: size.height,
+86:       });
+87:     } else {
+88:       // 默认 256x256 inside
+89:       await resizeImage(originalPath, thumbnailPath);
+90:     }
+91:     console.info(`[${thumbnailPath}] 小图生成成功`);
+92:     return thumbnailPath;
+93:   } catch (e) {
+94:     console.warn("[image] 生成缩略图失败:", e);
+95:     return null;
+96:   }
+97: }
+</file>
+
+<file path="src/utils/taskRecord.ts">
+ 1: import db from "@/utils/db";
+ 2: 
+ 3: const taskStateMap = {
+ 4:   "0": "进行中",
+ 5:   "1": "已完成",
+ 6:   "-1": "生成失败",
+ 7: };
+ 8: /**
+ 9:  * 记录任务并返回结束函数
+10:  * @param projectId  项目 ID
+11:  * @param taskClass  任务分类
+12:  * @param modelName   模型名称
+13:  * @param opts       可选项：关联对象、任务描
+14:  */
+15: export default async function taskRecord(
+16:   projectId: number,
+17:   taskClass: string,
+18:   modelName: string,
+19:   opts: {
+20:     describe?: string;
+21:     content?: any;
+22:   } = {},
+23: ) {
+24:   const { content, describe = "" } = opts;
+25: 
+26:   let opteorContent: string | undefined;
+27:   if (content === undefined || content === null) {
+28:     opteorContent = undefined;
+29:   } else if (typeof content === "string") {
+30:     opteorContent = content;
+31:   } else if (typeof content === "function") {
+32:     throw new Error("不支持的类型");
+33:   } else {
+34:     try {
+35:       opteorContent = JSON.stringify(content);
+36:     } catch (e) {
+37:       opteorContent = content.toString();
+38:     }
+39:   }
+40: 
+41:   const [id] = await db("o_tasks").insert({
+42:     projectId,
+43:     taskClass,
+44:     relatedObjects: opteorContent,
+45:     model: modelName,
+46:     describe,
+47:     state: taskStateMap[0],
+48:     startTime: Date.now(),
+49:   });
+50: 
+51:   /** 任务成功时调用 done(1)，失败时调用 done(-1, '原因') */
+52:   return async function done(state: 1 | -1, reason?: string) {
+53:     await db("o_tasks")
+54:       .where("id", id)
+55:       .update({
+56:         state: taskStateMap[state],
+57:         reason: state === -1 ? (reason ?? "") : null,
+58:       });
+59:   };
+60: }
+</file>
+
+</files>

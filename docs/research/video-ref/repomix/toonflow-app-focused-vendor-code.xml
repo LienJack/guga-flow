@@ -1,0 +1,2668 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+The content has been processed where line numbers have been added.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: src/routes/modelSelect/**/*.ts, src/routes/setting/**/*.ts, src/utils/vendor.ts, src/utils/vm.ts, src/utils/ai.ts
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Line numbers have been added to the beginning of each line
+- Long base64 data strings (e.g., data:image/png;base64,...) have been truncated to reduce token count
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+src/
+  routes/
+    modelSelect/
+      getModelDetail.ts
+      getModelList.ts
+    setting/
+      about/
+        checkUpdate.ts
+        downloadApp.ts
+      agentDeploy/
+        agentSetKey.ts
+        deployAgentModel.ts
+        getAgentDeploy.ts
+        getAgentUseMode.ts
+        updateAgentModel.ts
+        updateUseMode.ts
+      dbConfig/
+        clearData.ts
+        clearTable.ts
+        dbInfo.ts
+        exportData.ts
+        importData.ts
+      dev/
+        getSwitchAiDevTool.ts
+        updateSwitchAiDevTool.ts
+      fileManagement/
+        openFolder.ts
+      loginConfig/
+        getUser.ts
+        updateUserPwd.ts
+      memoryConfig/
+        delAllMemory.ts
+        getMemory.ts
+        sureMemory.ts
+      modelMap/
+        bindingPrompt.ts
+        deletePrompt.ts
+        getImageAndVideoModel.ts
+        getPromptList.ts
+        savePrompt.ts
+        updatePrompt.ts
+      promptManage/
+        getPrompt.ts
+        updatePrompt.ts
+      skillManagement/
+        getSkillContent.ts
+        getSkillList.ts
+        saveSkillContent.ts
+      vendorConfig/
+        modelTest/
+          imageTest.ts
+          textTest.ts
+          videoTest.ts
+        addVendor.ts
+        addVendorModel.ts
+        deleteVendor.ts
+        delVendorModel.ts
+        enableVendor.ts
+        getCodeByLink.ts
+        getVendorList.ts
+        modelTest.ts
+        updateCode.ts
+        updateVendorInputs.ts
+        upVendorModel.ts
+      getTextModel.ts
+  utils/
+    ai.ts
+    vendor.ts
+    vm.ts
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/routes/modelSelect/getModelDetail.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     modelId: z.string(),
+12:   }),
+13:   async (req, res) => {
+14:     const { modelId } = req.body;
+15:     const [id, name] = modelId.split(/:(.+)/);
+16:     const models = await u.vendor.getModelList(id);
+17:     const findData = models.find((i: any) => i.modelName == name);
+18:     res.status(200).send(success(findData));
+19:   },
+20: );
+</file>
+
+<file path="src/routes/modelSelect/getModelList.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     type: z.enum(["text", "image", "video", "all"]),
+12:   }),
+13:   async (req, res) => {
+14:     const { type } = req.body;
+15:     const dataList = await u.db("o_vendorConfig").select("id").where("enable", 1);
+16:     if (!dataList || dataList.length === 0) {
+17:       return res.status(404).send({ error: "模型未找到" });
+18:     }
+19:     const modelList = await Promise.all(dataList.map((i) => u.vendor.getModelList(i.id!)));
+20:     const result = await Promise.all(
+21:       dataList.map(async (data, index) => {
+22:         const vendorData = await u.vendor.getVendor(data.id!);
+23:         const models = modelList[index];
+24:         const filtered =
+25:           type === "all"
+26:             ? models.filter((item: { type: string }) => item.type !== "video")
+27:             : models.filter((item: { type: string }) => item.type === type);
+28:         return filtered.map((item: { name: string; modelName: string; type: string }) => ({
+29:           id: data.id,
+30:           label: item.name,
+31:           value: item.modelName,
+32:           type: item.type,
+33:           name: vendorData.name,
+34:         }));
+35:       }),
+36:     );
+37:     res.status(200).send(success(result.flat()));
+38:   },
+39: );
+</file>
+
+<file path="src/routes/setting/about/checkUpdate.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import { z } from "zod";
+ 5: const router = express.Router();
+ 6: 
+ 7: import fs from "fs";
+ 8: import path from "path";
+ 9: 
+10: declare const __APP_VERSION__: string | undefined;
+11: 
+12: const APP_VERSION: string = (() => {
+13:   if (typeof __APP_VERSION__ !== "undefined") {
+14:     return __APP_VERSION__;
+15:   }
+16:   // 开发环境回退：从 package.json 读取
+17:   const pkgPath = path.resolve(process.cwd(), "package.json");
+18:   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+19:   return pkg.version;
+20: })();
+21: 
+22: export default router.post(
+23:   "/",
+24:   validateFields({
+25:     source: z.enum(["toonflow", "github", "gitee", "atomgit"]),
+26:     url: z.url().nullable().optional(),
+27:   }),
+28:   async (req, res) => {
+29:     const { source, url } = req.body;
+30: 
+31:     const getUrl = url ?? "https://toonflow.oss-cn-beijing.aliyuncs.com/update.json";
+32: 
+33:     const versionInfo = await fetch(getUrl).then((res) => res.json());
+34:     if (!versionInfo) return res.status(400).send(error("无法获取版本信息"));
+35:     const { version: tagger, time, data } = versionInfo;
+36: 
+37:     const sourceData = data[source];
+38:     if (!sourceData) return res.status(400).send(error("无法获取该源的下载信息"));
+39: 
+40:     const platformType: Record<string, string> = {
+41:       win32: "windows",
+42:       darwin: "macos",
+43:       linux: "linux",
+44:     };
+45: 
+46:     const zipItem = sourceData.find((d: any) => d.type === "zip");
+47:     const installerItem = sourceData.find((d: any) => d.type === platformType[process.platform]);
+48: 
+49:     const taggerList = tagger.split(".").map(Number);
+50:     const currentVersionList = APP_VERSION.split(".").map(Number);
+51:     //对比Major
+52:     if (taggerList[0] > currentVersionList[0]) {
+53:       if (!installerItem) return res.status(400).send(error("该源暂无适用于当前系统的安装包"));
+54:       return res
+55:         .status(200)
+56:         .send(success({ needUpdate: true, latestVersion: tagger, reinstall: true, time, url: installerItem.url, version: tagger }));
+57:     }
+58:     //对比Minor
+59:     if (taggerList[1] > currentVersionList[1]) {
+60:       if (!installerItem) return res.status(400).send(error("该源暂无适用于当前系统的安装包"));
+61:       return res
+62:         .status(200)
+63:         .send(success({ needUpdate: true, latestVersion: tagger, reinstall: true, time, url: installerItem.url, version: tagger }));
+64:     }
+65:     //Patch
+66:     if (taggerList[2] > currentVersionList[2]) {
+67:       if (!zipItem) return res.status(400).send(error("该源暂无增量更新包"));
+68:       return res.status(200).send(success({ needUpdate: true, latestVersion: tagger, reinstall: false, time, url: zipItem.url, version: tagger }));
+69:     }
+70:     return res.status(200).send(success({ needUpdate: false, latestVersion: tagger, reinstall: false, time, version: tagger }));
+71:   },
+72: );
+</file>
+
+<file path="src/routes/setting/about/downloadApp.ts">
+ 1: import express from "express";
+ 2: import z from "zod";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import u from "@/utils";
+ 5: import fs from "fs";
+ 6: import axios from "axios";
+ 7: import compressing from "compressing";
+ 8: import { success } from "@/lib/responseFormat";
+ 9: const router = express.Router();
+10: 
+11: export default router.post(
+12:   "/",
+13:   validateFields({
+14:     url: z.url(),
+15:     reinstall: z.boolean(),
+16:     version: z.string(),
+17:   }),
+18:   async (req, res) => {
+19:     const { reinstall, url, version } = req.body;
+20:     if (reinstall) {
+21:       res.status(200).send(success("请在浏览器中手动下载并安装最新版本"));
+22:     } else {
+23:       const rootDir = u.getPath(["temp"]);
+24:       fs.mkdirSync(rootDir, { recursive: true });
+25:       const zip = await axios.get(url, { responseType: "arraybuffer" }).then((res) => res.data);
+26:       fs.writeFileSync(`${rootDir}/latest.zip`, zip);
+27:       await compressing.zip.uncompress(`${rootDir}/latest.zip`, rootDir);
+28:       const dataDir = u.getPath();
+29:       fs.cpSync(rootDir, dataDir, { recursive: true, force: true });
+30:       fs.rmSync(rootDir, { recursive: true, force: true });
+31:       res.status(200).send(success(`更新${version}成功，5秒后重启`));
+32:     }
+33:   },
+34: );
+</file>
+
+<file path="src/routes/setting/agentDeploy/agentSetKey.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import u from "@/utils";
+ 4: import { z } from "zod";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     key: z.string().optional(),
+12:   }),
+13:   async (req, res) => {
+14:     const { key } = req.body;
+15:     const vendorConfigData = await u.db("o_vendorConfig").where("id", "toonflow").first();
+16:     if (!vendorConfigData) return res.status(500).send(error("未找到该供应商配置"));
+17:     if (!vendorConfigData.inputValues) return res.status(500).send(error("未找到模型配置数据"));
+18:     const inputValue = JSON.parse(vendorConfigData.inputValues!);
+19:     inputValue.apiKey = key;
+20:     await u
+21:       .db("o_vendorConfig")
+22:       .where("id", "toonflow")
+23:       .update({
+24:         inputValues: JSON.stringify(inputValue),
+25:       });
+26:     try {
+27:       const resText = await u.Ai.Text(`toonflow:claude-haiku-4-5-20251001`).invoke({
+28:         prompt: "1+1等于几？,请直接回答2，不要解释",
+29:       });
+30:       if (resText.text) {
+31:         await u.db("o_agentDeploy").where("key", "scriptAgent").update({
+32:           model: "claude-sonnet-4-6",
+33:           modelName: "toonflow:claude-sonnet-4-6",
+34:           vendorId: "toonflow",
+35:         });
+36:         await u.db("o_agentDeploy").where("key", "productionAgent").update({
+37:           model: "claude-sonnet-4-6",
+38:           modelName: "toonflow:claude-sonnet-4-6",
+39:           vendorId: "toonflow",
+40:         });
+41:         await u.db("o_agentDeploy").where("key", "universalAi").update({
+42:           model: "claude-haiku-4-5",
+43:           modelName: "toonflow:claude-haiku-4-5-20251001",
+44:           vendorId: "toonflow",
+45:         });
+46:         res.status(200).send(success("一键填入成功"));
+47:       }
+48:     } catch (err) {
+49:       console.error(err);
+50:       inputValue.apiKey = "";
+51:       await u
+52:         .db("o_vendorConfig")
+53:         .where("id", "toonflow")
+54:         .update({ inputValues: JSON.stringify(inputValue) });
+55:       res.status(400).send(error("KEY无效，请重新输入"));
+56:     }
+57:   },
+58: );
+</file>
+
+<file path="src/routes/setting/agentDeploy/deployAgentModel.ts">
+ 1: import express from "express";
+ 2: import { success } from "@/lib/responseFormat";
+ 3: import u from "@/utils";
+ 4: import { z } from "zod";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     items: z.array(
+12:       z.object({
+13:         id: z.number(),
+14:         name: z.string(),
+15:         model: z.string(),
+16:         modelName: z.string(),
+17:         vendorId: z.string().nullable(),
+18:         desc: z.string(),
+19:         temperature: z.number().optional(),
+20:         maxOutputTokens: z.number().optional(),
+21:       }),
+22:     ),
+23:   }),
+24:   async (req, res) => {
+25:     const { items } = req.body;
+26:     for (const item of items) {
+27:       const { id, name, model, modelName, vendorId, desc, temperature, maxOutputTokens } = item;
+28:       await u.db("o_agentDeploy").where({ id }).update({ id, name, model, modelName, vendorId, desc, temperature, maxOutputTokens });
+29:     }
+30:     res.status(200).send(success("批量配置成功"));
+31:   },
+32: );
+</file>
+
+<file path="src/routes/setting/agentDeploy/getAgentDeploy.ts">
+ 1: import express from "express";
+ 2: import { success } from "@/lib/responseFormat";
+ 3: import u from "@/utils";
+ 4: const router = express.Router();
+ 5: 
+ 6: export default router.post("/", async (req, res) => {
+ 7:   const allData = await u.db("o_agentDeploy").leftJoin("o_vendorConfig", "o_vendorConfig.id", "o_agentDeploy.vendorId").select("o_agentDeploy.*");
+ 8:   const qrdinaryData = allData.filter((item: any) => !item.key?.includes(":"));
+ 9:   const advancedData = allData.filter((item: any) => item.key?.includes(":") || item.key == "universalAi");
+10:   res.status(200).send(success({ qrdinaryData, advancedData }));
+11: });
+</file>
+
+<file path="src/routes/setting/agentDeploy/getAgentUseMode.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import u from "@/utils";
+ 4: 
+ 5: const router = express.Router();
+ 6: 
+ 7: export default router.get("/", async (req, res) => {
+ 8:   const useMode = await u.db("o_setting").where("key", "agentUseMode").first();
+ 9:   console.log("%c Line:9 🍓 useMode", "background:#33a5ff", useMode);
+10:   res.status(200).send(success(useMode?.value || "0"));
+11: });
+</file>
+
+<file path="src/routes/setting/agentDeploy/updateAgentModel.ts">
+ 1: import express from "express";
+ 2: import { success } from "@/lib/responseFormat";
+ 3: import u from "@/utils";
+ 4: import { z } from "zod";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     id: z.number(),
+12:     name: z.string(),
+13:     model: z.string(),
+14:     modelName: z.string(),
+15:     vendorId: z.string().nullable(),
+16:     desc: z.string(),
+17:     temperature: z.number().optional(),
+18:     maxOutputTokens: z.number().optional(),
+19:   }),
+20:   async (req, res) => {
+21:     const { id, name, model, modelName, vendorId, desc, temperature, maxOutputTokens } = req.body;
+22:     await u.db("o_agentDeploy").where({ id }).update({ id, name, model, modelName, vendorId, desc, temperature, maxOutputTokens });
+23:     res.status(200).send(success("配置成功"));
+24:   },
+25: );
+</file>
+
+<file path="src/routes/setting/agentDeploy/updateUseMode.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     agentUseMode: z.string(),
+12:   }),
+13:   async (req, res) => {
+14:     const { agentUseMode } = req.body;
+15:     await u.db("o_setting").where("key", "agentUseMode").update({
+16:       value: agentUseMode,
+17:     });
+18:     res.status(200).send(success("保存设置成功"));
+19:   },
+20: );
+</file>
+
+<file path="src/routes/setting/dbConfig/clearData.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { db } from "@/utils/db";
+ 4: import initDB from "@/lib/initDB";
+ 5: 
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.get("/", async (req, res) => {
+ 9:   try {
+10:     // 获取所有表名
+11:     const tables: { name: string }[] = await db.raw(
+12:       `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'knex_%'`,
+13:     );
+14: 
+15:     // 禁用外键约束，逐一删除所有表
+16:     await db.raw("PRAGMA foreign_keys = OFF");
+17:     for (const table of tables) {
+18:       await db.schema.dropTableIfExists(table.name);
+19:     }
+20:     await db.raw("PRAGMA foreign_keys = ON");
+21: 
+22:     // 重新初始化数据库
+23:     await initDB(db as any);
+24: 
+25:     res.status(200).send(success("数据库已清空并重新初始化"));
+26:   } catch (err: any) {
+27:     res.status(500).send(error(err?.message || "清除失败"));
+28:   }
+29: });
+</file>
+
+<file path="src/routes/setting/dbConfig/clearTable.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { db } from "@/utils/db";
+ 4: 
+ 5: const router = express.Router();
+ 6: 
+ 7: export default router.post("/", async (req, res) => {
+ 8:   try {
+ 9:     const { tableName } = req.body;
+10:     if (!tableName || typeof tableName !== "string") {
+11:       return res.status(400).send(error("请提供有效的表名"));
+12:     }
+13: 
+14:     // 验证表名存在（防止SQL注入）
+15:     const tableExists: { name: string }[] = await db.raw(
+16:       `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
+17:       [tableName],
+18:     );
+19:     if (tableExists.length === 0) {
+20:       return res.status(400).send(error("表不存在"));
+21:     }
+22: 
+23:     await db.raw(`DELETE FROM "${tableName}"`);
+24: 
+25:     res.status(200).send(success(`表 ${tableName} 已清空`));
+26:   } catch (err: any) {
+27:     res.status(500).send(error(err?.message || "清空表失败"));
+28:   }
+29: });
+</file>
+
+<file path="src/routes/setting/dbConfig/dbInfo.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { db } from "@/utils/db";
+ 4: 
+ 5: const router = express.Router();
+ 6: 
+ 7: export default router.get("/", async (req, res) => {
+ 8:   try {
+ 9:     const tables: { name: string }[] = await db.raw(
+10:       `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'knex_%'`,
+11:     );
+12: 
+13:     const tableInfo = [];
+14:     for (const table of tables) {
+15:       const countResult = await db.raw(`SELECT COUNT(*) as count FROM "${table.name}"`);
+16:       tableInfo.push({
+17:         name: table.name,
+18:         rowCount: countResult[0]?.count ?? 0,
+19:       });
+20:     }
+21: 
+22:     res.status(200).send(success(tableInfo));
+23:   } catch (err: any) {
+24:     res.status(500).send(error(err?.message || "获取数据库信息失败"));
+25:   }
+26: });
+</file>
+
+<file path="src/routes/setting/dbConfig/exportData.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { db } from "@/utils/db";
+ 4: 
+ 5: const router = express.Router();
+ 6: 
+ 7: export default router.get("/", async (req, res) => {
+ 8:   try {
+ 9:     const tables: { name: string }[] = await db.raw(
+10:       `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'knex_%'`,
+11:     );
+12: 
+13:     const data: Record<string, any[]> = {};
+14:     for (const table of tables) {
+15:       data[table.name] = await db.raw(`SELECT * FROM "${table.name}"`);
+16:     }
+17: 
+18:     const exportData = {
+19:       exportTime: Date.now(),
+20:       tables: data,
+21:     };
+22: 
+23:     res.setHeader("Content-Type", "application/json");
+24:     res.setHeader("Content-Disposition", `attachment; filename=toonflow-backup-${Date.now()}.json`);
+25:     res.status(200).send(JSON.stringify(exportData, null, 2));
+26:   } catch (err: any) {
+27:     res.status(500).send(error(err?.message || "导出失败"));
+28:   }
+29: });
+</file>
+
+<file path="src/routes/setting/dbConfig/importData.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { db } from "@/utils/db";
+ 4: import initDB from "@/lib/initDB";
+ 5: 
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post("/", async (req, res) => {
+ 9:   try {
+10:     const { tables: importTables } = req.body;
+11:     if (!importTables || typeof importTables !== "object") {
+12:       return res.status(400).send(error("无效的导入数据格式"));
+13:     }
+14: 
+15:     // 删除所有现有表
+16:     const existingTables: { name: string }[] = await db.raw(
+17:       `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'knex_%'`,
+18:     );
+19: 
+20:     await db.raw("PRAGMA foreign_keys = OFF");
+21:     for (const table of existingTables) {
+22:       await db.schema.dropTableIfExists(table.name);
+23:     }
+24:     await db.raw("PRAGMA foreign_keys = ON");
+25: 
+26:     // 重新初始化表结构
+27:     await initDB(db as any);
+28: 
+29:     // 导入数据
+30:     await db.raw("PRAGMA foreign_keys = OFF");
+31:     for (const [tableName, rows] of Object.entries(importTables)) {
+32:       if (!Array.isArray(rows) || rows.length === 0) continue;
+33: 
+34:       // 验证表名合法性（防止SQL注入）
+35:       const tableExists = await db.raw(
+36:         `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
+37:         [tableName],
+38:       );
+39:       if (tableExists.length === 0) continue;
+40: 
+41:       // 清空表数据后插入导入数据
+42:       await db.raw(`DELETE FROM "${tableName}"`);
+43:       // 分批插入，每批100条
+44:       for (let i = 0; i < rows.length; i += 100) {
+45:         const batch = rows.slice(i, i + 100);
+46:         await db(tableName).insert(batch);
+47:       }
+48:     }
+49:     await db.raw("PRAGMA foreign_keys = ON");
+50: 
+51:     res.status(200).send(success("数据库导入成功"));
+52:   } catch (err: any) {
+53:     res.status(500).send(error(err?.message || "导入失败"));
+54:   }
+55: });
+</file>
+
+<file path="src/routes/setting/dev/getSwitchAiDevTool.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import u from "@/utils";
+ 4: import initDB from "@/lib/initDB";
+ 5: 
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.get("/", async (req, res) => {
+ 9:     const switchAiDevTool = await u.db("o_setting").where("key", "switchAiDevTool").first();
+10:     res.status(200).send(success(switchAiDevTool?.value || "0"));
+11: });
+</file>
+
+<file path="src/routes/setting/dev/updateSwitchAiDevTool.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     switchAiDevTool: z.string(),
+12:   }),
+13:   async (req, res) => {
+14:     const { switchAiDevTool } = req.body;
+15:     await u.db("o_setting").where("key", "switchAiDevTool").update({
+16:       value: switchAiDevTool,
+17:     });
+18:     res.status(200).send(success("保存设置成功"));
+19:   },
+20: );
+</file>
+
+<file path="src/routes/setting/fileManagement/openFolder.ts">
+ 1: import express from "express";
+ 2: import { z } from "zod";
+ 3: import { exec } from "child_process";
+ 4: import { success, error } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: import { isEletron } from "@/utils/getPath";
+ 7: import u from "@/utils";
+ 8: import path from "path";
+ 9: const router = express.Router();
+10: 
+11: export default router.post(
+12:   "/",
+13:   validateFields({
+14:     path: z.string(),
+15:   }),
+16:   async (req, res) => {
+17:     if (!isEletron()) {
+18:       return res.status(400).send(error("仅支持客户端打开文件夹"));
+19:     }
+20:     const { path: folderPath } = req.body;
+21:     const platform = process.platform;
+22:     const target = u.getPath(folderPath);
+23:     const cmd = platform === "win32" ? `explorer "${target}"` : platform === "darwin" ? `open "${target}"` : `xdg-open "${target}"`;
+24:     exec(cmd, (err) => {
+25:       if (err) {
+26:         return res.status(200).send(error(err.message));
+27:       }
+28:       res.status(200).send(success("打开文件夹成功"));
+29:     });
+30:   },
+31: );
+</file>
+
+<file path="src/routes/setting/loginConfig/getUser.ts">
+1: import express from "express";
+2: import u from "@/utils";
+3: import { success } from "@/lib/responseFormat";
+4: const router = express.Router();
+5: 
+6: export default router.get("/", async (req, res) => {
+7:   const data = await u.db("o_user").select("*").first();
+8:   res.status(200).send(success(data));
+9: });
+</file>
+
+<file path="src/routes/setting/loginConfig/updateUserPwd.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     name: z.string(),
+12:     password: z.string(),
+13:     id: z.number(),
+14:   }),
+15:   async (req, res) => {
+16:     const { name, password, id } = req.body;
+17:     await u.db("o_user").where("id", id).update({
+18:       name,
+19:       password,
+20:     });
+21:     res.status(200).send(success("保存设置成功"));
+22:   },
+23: );
+</file>
+
+<file path="src/routes/setting/memoryConfig/delAllMemory.ts">
+1: import express from "express";
+2: import { error, success } from "@/lib/responseFormat";
+3: import u from "@/utils";
+4: const router = express.Router();
+5: 
+6: export default router.post("/", async (req, res) => {
+7:   await u.db("memories").del();
+8:   res.status(200).send(success(true));
+9: });
+</file>
+
+<file path="src/routes/setting/memoryConfig/getMemory.ts">
+ 1: import express from "express";
+ 2: import { error, success } from "@/lib/responseFormat";
+ 3: import u from "@/utils";
+ 4: const router = express.Router();
+ 5: 
+ 6: export default router.get("/", async (req, res) => {
+ 7:   const settingData = await u
+ 8:     .db("o_setting")
+ 9:     .whereIn("key", [
+10:       "messagesPerSummary",
+11:       "shortTermLimit",
+12:       "summaryMaxLength",
+13:       "summaryLimit",
+14:       "ragLimit",
+15:       "deepRetrieveSummaryLimit",
+16:       "modelOnnxFile",
+17:       "modelDtype",
+18:     ]);
+19: 
+20:   if (!settingData) return res.status(400).send(error(`获取记忆配置失败`));
+21:   const memoryObj: Record<string, number | string | string[]> = {};
+22: 
+23:   settingData.forEach((i) => {
+24:     if (i.key && i.value) {
+25:       let value: number | string | string[] = i.value;
+26:       if (i.key == "modelOnnxFile") {
+27:         value = JSON.parse(i.value);
+28:       } else if (i.key != "modelDtype") {
+29:         value = Number(value);
+30:       }
+31:       memoryObj[i.key] = value;
+32:     }
+33:   });
+34: 
+35:   res.status(200).send(success({ ...memoryObj }));
+36: });
+</file>
+
+<file path="src/routes/setting/memoryConfig/sureMemory.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: // 获取用户
+ 9: export default router.post(
+10:   "/",
+11:   validateFields({
+12:     messagesPerSummary: z.number(),
+13:     shortTermLimit: z.number(),
+14:     summaryMaxLength: z.number(),
+15:     summaryLimit: z.number(),
+16:     ragLimit: z.number(),
+17:     deepRetrieveSummaryLimit: z.number(),
+18:     modelOnnxFile: z.array(z.string()),
+19:     modelDtype: z.string(),
+20:   }),
+21:   async (req, res) => {
+22:     const { messagesPerSummary, shortTermLimit, summaryMaxLength, summaryLimit, ragLimit, deepRetrieveSummaryLimit, modelOnnxFile, modelDtype } =
+23:       req.body;
+24: 
+25:     const upsert = async (key: string, value: string) => {
+26:       const exists = await u.db("o_setting").where("key", key).first();
+27:       if (exists) {
+28:         await u.db("o_setting").where("key", key).update({ value });
+29:       } else {
+30:         await u.db("o_setting").insert({ key, value });
+31:       }
+32:     };
+33: 
+34:     await upsert("messagesPerSummary", messagesPerSummary);
+35:     await upsert("shortTermLimit", shortTermLimit);
+36:     await upsert("summaryMaxLength", summaryMaxLength);
+37:     await upsert("summaryLimit", summaryLimit);
+38:     await upsert("ragLimit", ragLimit);
+39:     await upsert("deepRetrieveSummaryLimit", deepRetrieveSummaryLimit);
+40:     await upsert("modelOnnxFile", JSON.stringify(modelOnnxFile));
+41:     await upsert("modelDtype", modelDtype);
+42: 
+43:     res.status(200).send(success("保存设置成功"));
+44:   },
+45: );
+</file>
+
+<file path="src/routes/setting/modelMap/bindingPrompt.ts">
+ 1: import express from "express";
+ 2: import { error, success } from "@/lib/responseFormat";
+ 3: import u from "@/utils";
+ 4: import { z } from "zod";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     vendorId: z.string(),
+12:     model: z.string(),
+13:     path: z.string(),
+14:     fileName: z.string(),
+15:   }),
+16:   async (req, res) => {
+17:     const { vendorId, model, path, fileName } = req.body;
+18:     const data = await u.db("o_modelPrompt").where("model", model).andWhere("vendorId", vendorId).select("*").first();
+19:     if (data) {
+20:       await u.db("o_modelPrompt").where("model", model).andWhere("vendorId", vendorId).update({ fileName, path });
+21:       res.status(200).send(success("绑定成功"));
+22:     } else {
+23:       await u.db("o_modelPrompt").insert({ vendorId, model, path, fileName });
+24:       res.status(200).send(success("绑定成功"));
+25:     }
+26:   },
+27: );
+</file>
+
+<file path="src/routes/setting/modelMap/deletePrompt.ts">
+ 1: import express from "express";
+ 2: import { error, success } from "@/lib/responseFormat";
+ 3: import u from "@/utils";
+ 4: import { z } from "zod";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: import fs from "fs/promises";
+ 7: import path from "path";
+ 8: 
+ 9: const router = express.Router();
+10: 
+11: export default router.post(
+12:   "/",
+13:   validateFields({
+14:     path: z.string(),
+15:   }),
+16:   async (req, res) => {
+17:     const { path: filePath } = req.body;
+18: 
+19:     const modelPromptRoot = u.getPath(["modelPrompt"]);
+20: 
+21:     // 路径隧穿检测
+22:     const resolvedRoot = path.resolve(modelPromptRoot);
+23:     const resolvedFile = path.resolve(modelPromptRoot, filePath);
+24:     if (!resolvedFile.startsWith(resolvedRoot + path.sep)) {
+25:       return res.status(400).send(error("非法路径"));
+26:     }
+27: 
+28:     // 文件不存在则报错
+29:     try {
+30:       await fs.access(resolvedFile);
+31:     } catch {
+32:       return res.status(404).send(error("文件不存在"));
+33:     }
+34: 
+35:     await fs.unlink(resolvedFile);
+36:     res.status(200).send(success("删除成功"));
+37:   },
+38: );
+</file>
+
+<file path="src/routes/setting/modelMap/getImageAndVideoModel.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { success } from "@/lib/responseFormat";
+ 4: const router = express.Router();
+ 5: 
+ 6: export default router.post("/", async (req, res) => {
+ 7:   const dataList = await u.db("o_vendorConfig").select("id").where("enable", 1);
+ 8:   if (!dataList || dataList.length === 0) {
+ 9:     return res.status(404).send({ error: "模型未找到" });
+10:   }
+11:   const data = await Promise.all(
+12:     dataList.map(async (item) => {
+13:       const vendor = u.vendor.getVendor(item.id!);
+14:       const promptList = await u.db("o_modelPrompt").andWhere("vendorId", vendor.id).select("*");
+15:       const promptMap = new Map(promptList.map((p) => [p.model, { fileName: p.fileName, path: p.path }]));
+16:       const models = await u.vendor.getModelList(item.id!);
+17:       const filteredModels = models
+18:         .filter((m: any) => m.type === "video")
+19:         .map((m: any) => ({
+20:           name: m.name,
+21:           type: m.type as "image" | "video",
+22:           model: m.modelName,
+23:           ...(promptMap.get(m.modelName) ? { ...promptMap.get(m.modelName) } : {}),
+24:         }));
+25:       return {
+26:         id: item.id,
+27:         name: vendor.name,
+28:         promptList: filteredModels,
+29:       };
+30:     }),
+31:   );
+32:   res.status(200).send(success(data));
+33: });
+</file>
+
+<file path="src/routes/setting/modelMap/getPromptList.ts">
+ 1: import express from "express";
+ 2: import { error, success } from "@/lib/responseFormat";
+ 3: import u from "@/utils";
+ 4: import fg from "fast-glob";
+ 5: import fs from "fs/promises";
+ 6: import path from "path";
+ 7: const router = express.Router();
+ 8: 
+ 9: export default router.get("/", async (req, res) => {
+10:   const modelPromptRoot = u.getPath(["modelPrompt"]);
+11: 
+12:   const entries = await fg("**/*.md", {
+13:     cwd: modelPromptRoot.replace(/\\/g, "/"),
+14:     onlyFiles: true,
+15:   });
+16: 
+17:   const result = await Promise.all(
+18:     entries.map(async (entry) => {
+19:       const fullPath = path.join(modelPromptRoot, entry);
+20:       const content = await fs.readFile(fullPath, "utf-8");
+21:       const name = path.basename(entry, ".md");
+22:       const type = entry.includes("/") ? entry.split("/")[0] : "";
+23:       return { path: entry, name, type, data: content };
+24:     }),
+25:   );
+26: 
+27:   res.status(200).send(success(result));
+28: });
+</file>
+
+<file path="src/routes/setting/modelMap/savePrompt.ts">
+ 1: import express from "express";
+ 2: import { error, success } from "@/lib/responseFormat";
+ 3: import u from "@/utils";
+ 4: import { z } from "zod";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: import fs from "fs/promises";
+ 7: import path from "path";
+ 8: 
+ 9: const router = express.Router();
+10: 
+11: export default router.post(
+12:   "/",
+13:   validateFields({
+14:     name: z.string().min(1),
+15:     data: z.string(),
+16:     type: z.enum(["image", "video"]),
+17:   }),
+18:   async (req, res) => {
+19:     const { name, data, type } = req.body;
+20: 
+21:     const modelPromptRoot = u.getPath(["modelPrompt"]);
+22:     const dir = path.join(modelPromptRoot, type);
+23: 
+24:     await fs.mkdir(dir, { recursive: true });
+25: 
+26:     const filePath = path.join(dir, `${name}.md`);
+27:     await fs.writeFile(filePath, data, "utf-8");
+28: 
+29:     res.status(200).send(success("保存成功"));
+30:   },
+31: );
+</file>
+
+<file path="src/routes/setting/modelMap/updatePrompt.ts">
+ 1: import express from "express";
+ 2: import { error, success } from "@/lib/responseFormat";
+ 3: import u from "@/utils";
+ 4: import { z } from "zod";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: import fs from "fs/promises";
+ 7: import path from "path";
+ 8: 
+ 9: const router = express.Router();
+10: 
+11: export default router.post(
+12:   "/",
+13:   validateFields({
+14:     name: z.string().min(1),
+15:     data: z.string(),
+16:     type: z.enum(["image", "video"]),
+17:   }),
+18:   async (req, res) => {
+19:     const { name, data, type } = req.body;
+20: 
+21:     const modelPromptRoot = u.getPath(["modelPrompt"]);
+22:     const filePath = path.join(modelPromptRoot, type, `${name}.md`);
+23: 
+24:     // 路径隧穿检测
+25:     const resolvedRoot = path.resolve(modelPromptRoot);
+26:     const resolvedFile = path.resolve(filePath);
+27:     if (!resolvedFile.startsWith(resolvedRoot + path.sep)) {
+28:       return res.status(400).send(error("非法路径"));
+29:     }
+30: 
+31:     // 文件不存在则报错
+32:     try {
+33:       await fs.access(resolvedFile);
+34:     } catch {
+35:       return res.status(404).send(error("文件不存在"));
+36:     }
+37: 
+38:     await fs.writeFile(resolvedFile, data, "utf-8");
+39:     res.status(200).send(success("更新成功"));
+40:   },
+41: );
+</file>
+
+<file path="src/routes/setting/promptManage/getPrompt.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { success, error } from "@/lib/responseFormat";
+ 4: 
+ 5: const router = express.Router();
+ 6: 
+ 7: export default router.post("/", async (req, res) => {
+ 8:   const list = await u.db("o_prompt").select("*");
+ 9:   const data = await Promise.all(
+10:     list.map(async (item) => {
+11:       return {
+12:         ...item,
+13:         data: item.useData ? item.useData : item.data,
+14:       };
+15:     }),
+16:   );
+17:   res.status(200).send(success(data));
+18: });
+</file>
+
+<file path="src/routes/setting/promptManage/updatePrompt.ts">
+ 1: import express from "express";
+ 2: import u from "@/utils";
+ 3: import { z } from "zod";
+ 4: import { success, error } from "@/lib/responseFormat";
+ 5: import { validateFields } from "@/middleware/middleware";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     id: z.number(),
+12:   }),
+13:   async (req, res) => {
+14:     const { id, data } = req.body;
+15:     await u.db("o_prompt").where("id", id).update({
+16:       useData: data,
+17:     });
+18:     res.status(200).send(success(123));
+19:   },
+20: );
+</file>
+
+<file path="src/routes/setting/skillManagement/getSkillContent.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import { z } from "zod";
+ 5: import isPathInside from "is-path-inside";
+ 6: import u from "@/utils";
+ 7: import p from "path";
+ 8: import * as fs from "fs";
+ 9: 
+10: const router = express.Router();
+11: 
+12: export default router.post(
+13:   "/",
+14:   validateFields({
+15:     path: z.string(),
+16:   }),
+17:   async (req, res) => {
+18:     const { path } = req.body;
+19:     const skillsRoot = u.getPath(["skills"]);
+20:     const filePath = p.join(skillsRoot, path);
+21:     if (!isPathInside(filePath, skillsRoot)) {
+22:       return res.status(400).send(error("无效的路径"));
+23:     }
+24: 
+25:     const raw = await fs.promises.readFile(filePath, "utf-8");
+26: 
+27:     res.status(200).send(success(raw));
+28:   },
+29: );
+</file>
+
+<file path="src/routes/setting/skillManagement/getSkillList.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import fg from "fast-glob";
+ 5: import u from "@/utils";
+ 6: 
+ 7: const router = express.Router();
+ 8: 
+ 9: export default router.post("/", async (req, res) => {
+10:   const skillsRoot = u.getPath(["skills"]);
+11: 
+12:   const entries = await fg("**/*.md", {
+13:     cwd: skillsRoot.replace(/\\/g, "/"),
+14:     onlyFiles: true,
+15:   });
+16: 
+17:   res.status(200).send(success(entries));
+18: });
+</file>
+
+<file path="src/routes/setting/skillManagement/saveSkillContent.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import { z } from "zod";
+ 5: import isPathInside from "is-path-inside";
+ 6: import u from "@/utils";
+ 7: import p from "path";
+ 8: import * as fs from "fs";
+ 9: 
+10: const router = express.Router();
+11: 
+12: export default router.post(
+13:   "/",
+14:   validateFields({
+15:     path: z.string(),
+16:     content: z.string(),
+17:   }),
+18:   async (req, res) => {
+19:     const { path, content } = req.body;
+20:     const skillsRoot = u.getPath(["skills"]);
+21:     const filePath = p.join(skillsRoot, path);
+22:     if (!isPathInside(filePath, skillsRoot)) {
+23:       return res.status(400).send(error("无效的路径"));
+24:     }
+25: 
+26:     if (!fs.existsSync(filePath)) {
+27:       return res.status(400).send(error("文件不存在"));
+28:     }
+29: 
+30:     const raw = await fs.promises.writeFile(filePath, content, "utf-8");
+31: 
+32:     res.status(200).send(success(raw));
+33:   },
+34: );
+</file>
+
+<file path="src/routes/setting/vendorConfig/modelTest/imageTest.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import u from "@/utils";
+ 5: import { z } from "zod";
+ 6: import { tool, jsonSchema } from "ai";
+ 7: const router = express.Router();
+ 8: 
+ 9: // 检查语言模型
+10: export default router.post(
+11:   "/",
+12:   validateFields({
+13:     modelName: z.string(),
+14:     id: z.string(),
+15:     imageBase64: z.string().optional(),
+16:     prompt: z.string(),
+17:   }),
+18:   async (req, res) => {
+19:     const { modelName, imageBase64, id, prompt } = req.body;
+20: 
+21:     try {
+22:       const vendorConfigData = await u.db("o_vendorConfig").where("id", id).first();
+23: 
+24:       if (!vendorConfigData) return res.status(500).send(error("未找到该供应商配置"));
+25:       if (!vendorConfigData.models) return res.status(500).send(error("未找到模型列表"));
+26: 
+27:       const reqFn = await u.Ai.Image(`${id}:${modelName}`).run({
+28:         prompt: prompt,
+29:         referenceList: imageBase64 ? [{ type: "image", base64: imageBase64 }] : [], //输入的图片提示词
+30:         size: "1K", // 图片尺寸
+31:         aspectRatio: "16:9",
+32:       });
+33:       await reqFn.save("testImage.jpg");
+34:       const resultUrl = await u.oss.getFileUrl("testImage.jpg");
+35:       res.status(200).send(success(resultUrl));
+36:     } catch (err) {
+37:       console.error(err);
+38:       const msg = u.error(err).message;
+39:       console.error(msg);
+40:       res.status(500).send(error(msg));
+41:     }
+42:   },
+43: );
+</file>
+
+<file path="src/routes/setting/vendorConfig/modelTest/textTest.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import u from "@/utils";
+ 5: import { z } from "zod";
+ 6: import { tool, jsonSchema } from "ai";
+ 7: const router = express.Router();
+ 8: 
+ 9: // 检查语言模型
+10: export default router.post(
+11:   "/",
+12:   validateFields({
+13:     modelName: z.string(),
+14:     id: z.string(),
+15:     messages: z.array(
+16:       z.object({
+17:         role: z.enum(["user", "assistant"]),
+18:         content: z.string(),
+19:       }),
+20:     ),
+21:   }),
+22:   async (req, res) => {
+23:     const { modelName, messages, id } = req.body;
+24: 
+25:     try {
+26:       const vendorConfigData = await u.db("o_vendorConfig").where("id", id).first();
+27: 
+28:       if (!vendorConfigData) return res.status(500).send(error("未找到该供应商配置"));
+29:       if (!vendorConfigData.models) return res.status(500).send(error("未找到模型列表"));
+30: 
+31:       const modelList = await u.vendor.getModelList(vendorConfigData.id!);
+32: 
+33:       const getWeatherTool = tool({
+34:         description: "Get the weather in a location",
+35:         inputSchema: jsonSchema<{ location: string }>(
+36:           z
+37:             .object({
+38:               location: z.string().describe("The location to get the weather for"),
+39:             })
+40:             .toJSONSchema(),
+41:         ),
+42:         execute: async ({ location }) => {
+43:           return {
+44:             location,
+45:             temperature: 72 + Math.floor(Math.random() * 21) - 10,
+46:           };
+47:         },
+48:       });
+49: 
+50:       const data = await u.Ai.Text(`${id}:${modelName}`).invoke({
+51:         messages,
+52:         tools: { getWeatherTool },
+53:       });
+54:       console.log("%c Line:46 🍐 data", "background:#6ec1c2", data);
+55:       if (!data) return res.status(500).send(error("模型未返回结果"));
+56:       res.status(200).send(success({ thinking: data.reasoningText, content: data.text }));
+57:     } catch (err) {
+58:       console.error(err);
+59:       const msg = u.error(err).message;
+60:       console.error(msg);
+61:       res.status(500).send(error(msg));
+62:     }
+63:   },
+64: );
+</file>
+
+<file path="src/routes/setting/vendorConfig/modelTest/videoTest.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import u from "@/utils";
+ 5: import { z } from "zod";
+ 6: import { tool, jsonSchema } from "ai";
+ 7: const router = express.Router();
+ 8: 
+ 9: // 检查语言模型
+10: export default router.post(
+11:   "/",
+12:   validateFields({
+13:     modelName: z.string(),
+14:     id: z.string(),
+15:     mode: z.string(),
+16:     prompt: z.string(),
+17:     videos: z.array(
+18:       z.object({
+19:         type: z.string(),
+20:         base64: z.string(),
+21:       }),
+22:     ),
+23:     audios: z.array(
+24:       z.object({
+25:         type: z.string(),
+26:         base64: z.string(),
+27:       }),
+28:     ),
+29:     images: z.array(
+30:       z.object({
+31:         type: z.string(),
+32:         base64: z.string(),
+33:       }),
+34:     ),
+35:   }),
+36:   async (req, res) => {
+37:     const { modelName, id, mode, prompt, images, videos, audios } = req.body;
+38: 
+39:     try {
+40:       const vendorConfigData = await u.db("o_vendorConfig").where("id", id).first();
+41: 
+42:       if (!vendorConfigData) return res.status(500).send(error("未找到该供应商配置"));
+43:       if (!vendorConfigData.models) return res.status(500).send(error("未找到模型列表"));
+44:       const modelList = await u.vendor.getModelList(vendorConfigData.id!);
+45: 
+46:       const selectedModel = modelList.find((i: any) => i.modelName == modelName);
+47: 
+48:       let modeData = [];
+49:       if (Array.isArray(mode)) {
+50:       } else if (typeof mode === "string" && mode.startsWith('["') && mode.endsWith('"]')) {
+51:         try {
+52:           modeData = JSON.parse(mode);
+53:         } catch (e) {}
+54:       }
+55:       const reqFn = await u.Ai.Video(`${id}:${modelName}`).run({
+56:         duration: selectedModel.durationResolutionMap[0].duration[0],
+57:         resolution: selectedModel.durationResolutionMap[0].resolution[0],
+58:         aspectRatio: "16:9",
+59:         prompt: prompt,
+60:         referenceList: [...images, ...videos, ...audios],
+61:         audio: typeof selectedModel.audio == "boolean" ? selectedModel.audio : true,
+62:         mode: modeData.length > 0 ? modeData : mode,
+63:       });
+64:       await reqFn.save("test.mp4");
+65:       const resultUrl = await u.oss.getFileUrl("test.mp4");
+66:       res.status(200).send(success(resultUrl));
+67:     } catch (err) {
+68:       console.error(err);
+69:       const msg = u.error(err).message;
+70:       console.error(msg);
+71:       res.status(500).send(error(msg));
+72:     }
+73:   },
+74: );
+</file>
+
+<file path="src/routes/setting/vendorConfig/addVendor.ts">
+  1: import express from "express";
+  2: import { success, error } from "@/lib/responseFormat";
+  3: import { validateFields } from "@/middleware/middleware";
+  4: import u from "@/utils";
+  5: import { z } from "zod";
+  6: import { transform } from "sucrase";
+  7: const router = express.Router();
+  8: 
+  9: const vendorConfigSchema = z.object({
+ 10:   id: z.string(),
+ 11:   author: z.string(),
+ 12:   description: z.string().optional(),
+ 13:   name: z.string(),
+ 14:   icon: z.string().optional(),
+ 15:   inputs: z.array(
+ 16:     z.object({
+ 17:       key: z.string(),
+ 18:       label: z.string(),
+ 19:       type: z.enum(["text", "password", "url"]),
+ 20:       required: z.boolean(),
+ 21:       placeholder: z.string().optional(),
+ 22:     }),
+ 23:   ),
+ 24:   inputValues: z.record(z.string(), z.string()),
+ 25:   models: z.array(
+ 26:     z.discriminatedUnion("type", [
+ 27:       z.object({
+ 28:         name: z.string(),
+ 29:         modelName: z.string(),
+ 30:         type: z.literal("text"),
+ 31:         think: z.boolean(),
+ 32:       }),
+ 33:       z.object({
+ 34:         name: z.string(),
+ 35:         modelName: z.string(),
+ 36:         type: z.literal("image"),
+ 37:         mode: z.array(z.enum(["text", "singleImage", "multiReference"])),
+ 38:       }),
+ 39:       z.object({
+ 40:         name: z.string(),
+ 41:         modelName: z.string(),
+ 42:         type: z.literal("video"),
+ 43:         mode: z.array(
+ 44:           z.union([
+ 45:             z.enum(["singleImage", "startEndRequired", "endFrameOptional", "startFrameOptional", "text", "audioReference", "videoReference"]),
+ 46:             z.array(z.string().regex(/^(videoReference|imageReference|audioReference):\d+$/)),
+ 47:           ]),
+ 48:         ),
+ 49:         audio: z.union([z.literal("optional"), z.boolean()]),
+ 50:         durationResolutionMap: z.array(
+ 51:           z.object({
+ 52:             duration: z.array(z.number()),
+ 53:             resolution: z.array(z.string()),
+ 54:           }),
+ 55:         ),
+ 56:       }),
+ 57:     ]),
+ 58:   ),
+ 59: });
+ 60: 
+ 61: export default router.post(
+ 62:   "/",
+ 63:   validateFields({
+ 64:     tsCode: z.string(),
+ 65:   }),
+ 66:   async (req, res) => {
+ 67:     const { tsCode } = req.body;
+ 68:     const jsCode = transform(tsCode, { transforms: ["typescript"] }).code;
+ 69:     const exports = u.vm(jsCode);
+ 70:     if (!exports) return res.status(400).send(success("脚本文件必须导出对象"));
+ 71:     if (!exports.textRequest) return res.status(400).send(success("脚本文件必须导出文本请求对象"));
+ 72:     if (!exports.imageRequest) return res.status(400).send(success("脚本文件必须导出图像请求对象"));
+ 73:     if (!exports.videoRequest) return res.status(400).send(success("脚本文件必须导出视频请求对象"));
+ 74:     if (!exports.vendor) return res.status(400).send(success("脚本文件必须导出vendor对象"));
+ 75:     const vendor = exports.vendor;
+ 76:     const result = vendorConfigSchema.safeParse(vendor);
+ 77:     if (!result.success) {
+ 78:       const issueLines = result.error.issues.map((issue, index) => {
+ 79:         const path = issue.path.length ? issue.path.join(".") : "root";
+ 80:         let detail = issue.message;
+ 81: 
+ 82:         if (issue.code === "invalid_union") {
+ 83:           const unionDetails = [
+ 84:             ...new Set(
+ 85:               issue.errors
+ 86:                 .flat()
+ 87:                 .map((e) => e.message)
+ 88:                 .filter(Boolean),
+ 89:             ),
+ 90:           ];
+ 91:           if (unionDetails.length > 0) {
+ 92:             detail = `${issue.message}（${unionDetails.join("；")}）`;
+ 93:           }
+ 94:         }
+ 95:         return `${index + 1}. ${path}: ${detail}`;
+ 96:       });
+ 97: 
+ 98:       return res.status(400).send(error(`vendor配置校验失败，共 ${issueLines.length} 处:\n${issueLines.join("\n")}`));
+ 99:     }
+100: 
+101:     if ((vendor.id as string).includes(":")) return res.status(400).send(error("id不能包含英文冒号"));
+102:     const data = await u.db("o_vendorConfig").where("id", vendor.id).first();
+103:     if (data) return res.status(500).send(error("供应商id已存在"));
+104:     const [id] = await u.db("o_vendorConfig").insert({
+105:       id: vendor.id,
+106:       inputValues: JSON.stringify(vendor.inputValues ?? {}),
+107:       models: JSON.stringify([]),
+108:       enable: vendor.id == "toonflow" ? 1 : 0,
+109:     });
+110:     u.vendor.writeCode(vendor.id, tsCode);
+111:     res.status(200).send(success(result.data));
+112:   },
+113: );
+</file>
+
+<file path="src/routes/setting/vendorConfig/addVendorModel.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import u from "@/utils";
+ 5: import { z } from "zod";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     id: z.string(),
+12:     model: z.discriminatedUnion("type", [
+13:       z.object({
+14:         name: z.string(),
+15:         modelName: z.string(),
+16:         type: z.literal("text"),
+17:         think: z.boolean(),
+18:       }),
+19:       z.object({
+20:         name: z.string(),
+21:         modelName: z.string(),
+22:         type: z.literal("image"),
+23:         mode: z.array(z.enum(["text", "singleImage", "multiReference"])),
+24:       }),
+25:       z.object({
+26:         name: z.string(),
+27:         modelName: z.string(),
+28:         type: z.literal("video"),
+29:         mode: z.array(
+30:           z.union([
+31:             z.enum(["singleImage", "startEndRequired", "endFrameOptional", "startFrameOptional", "text", "audioReference", "videoReference"]),
+32:             z.array(z.string().regex(/^(videoReference|imageReference|audioReference):\d+$/)),
+33:           ]),
+34:         ),
+35:         audio: z.union([z.literal("optional"), z.boolean()]),
+36:         durationResolutionMap: z.array(
+37:           z.object({
+38:             duration: z.array(z.number()),
+39:             resolution: z.array(z.string()),
+40:           }),
+41:         ),
+42:       }),
+43:     ]),
+44:   }),
+45:   async (req, res) => {
+46:     const { id, model } = req.body;
+47: 
+48:     const models = await u.db("o_vendorConfig").where("id", id).first("models");
+49:     if (models?.models) {
+50:       const existingModels = JSON.parse(models.models);
+51:       existingModels.push(model);
+52:       await u
+53:         .db("o_vendorConfig")
+54:         .where("id", id)
+55:         .update({
+56:           models: JSON.stringify(existingModels),
+57:         });
+58:     }
+59:     res.status(200).send(success("更新成功"));
+60:   },
+61: );
+</file>
+
+<file path="src/routes/setting/vendorConfig/deleteVendor.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import path from "path";
+ 5: import fs from "fs";
+ 6: import u from "@/utils";
+ 7: import { z } from "zod";
+ 8: const router = express.Router();
+ 9: export default router.post(
+10:   "/",
+11:   validateFields({
+12:     id: z.string(),
+13:   }),
+14:   async (req, res) => {
+15:     const { id } = req.body;
+16:     await u.db("o_vendorConfig").where("id", id).del();
+17:     await u.db("o_agentDeploy").where("vendorId", id).update({
+18:       model: null,
+19:       vendorId: null,
+20:     });
+21:     fs.rmSync(path.join(u.getPath("vendor"), `${id}.ts`), { recursive: true, force: true });
+22:     res.status(200).send(success("删除成功"));
+23:   },
+24: );
+</file>
+
+<file path="src/routes/setting/vendorConfig/delVendorModel.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import u from "@/utils";
+ 5: import { z } from "zod";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     id: z.string(),
+12:     modelName: z.string(),
+13:   }),
+14:   async (req, res) => {
+15:     const { id, modelName } = req.body;
+16: 
+17:     const models = await u.db("o_vendorConfig").where("id", id).first("models");
+18:     if (models?.models) {
+19:       const existingModels = JSON.parse(models.models);
+20:       if (!existingModels.some((model: any) => model.modelName === modelName)) {
+21:         return res.status(400).send(error("基本模型不允许删除"));
+22:       }
+23:       const updatedModels = existingModels.filter((model: any) => model.modelName !== modelName);
+24:       await u
+25:         .db("o_vendorConfig")
+26:         .where("id", id)
+27:         .update({
+28:           models: JSON.stringify(updatedModels),
+29:         });
+30:     }
+31:     res.status(200).send(success("更新成功"));
+32:   },
+33: );
+</file>
+
+<file path="src/routes/setting/vendorConfig/enableVendor.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import u from "@/utils";
+ 5: import { z } from "zod";
+ 6: const router = express.Router();
+ 7: export default router.post(
+ 8:   "/",
+ 9:   validateFields({
+10:     id: z.string(),
+11:     enable: z.number(),
+12:   }),
+13:   async (req, res) => {
+14:     const { id, enable } = req.body;
+15:     await u.db("o_vendorConfig").where("id", id).update({ enable });
+16:     res.status(200).send(success("更新成功"));
+17:   },
+18: );
+</file>
+
+<file path="src/routes/setting/vendorConfig/getCodeByLink.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import u from "@/utils";
+ 5: import { z } from "zod";
+ 6: const router = express.Router();
+ 7: export default router.post(
+ 8:   "/",
+ 9:   validateFields({
+10:     link: z.string(),
+11:   }),
+12:   async (req, res) => {
+13:     const { link } = req.body;
+14:     const text = await fetch(link).then((res) => res.text());
+15:     res.status(200).send(success(text));
+16:   },
+17: );
+</file>
+
+<file path="src/routes/setting/vendorConfig/getVendorList.ts">
+ 1: import express from "express";
+ 2: import { success } from "@/lib/responseFormat";
+ 3: import u from "@/utils";
+ 4: const router = express.Router();
+ 5: 
+ 6: export default router.post("/", async (req, res) => {
+ 7:   const data = await u.db("o_vendorConfig").select("*");
+ 8: 
+ 9:   const list = (
+10:     await Promise.all(
+11:       data.map(async (item) => {
+12:         const vendor = u.vendor.getVendor(item.id!);
+13:         if (!vendor) {
+14:           await u.db("o_vendorConfig").where("id", item.id).delete();
+15:           return null
+16:         };
+17:         return {
+18:           ...item,
+19:           inputValues: JSON.parse(item.inputValues ?? "{}"),
+20:           models: await u.vendor.getModelList(item.id!),
+21:           code: u.vendor.getCode(item.id!),
+22:           description: vendor.description ?? "",
+23:           inputs: vendor.inputs,
+24:           author: vendor.author,
+25:           name: vendor.name,
+26:           version: vendor.version ?? "1.0",
+27:         };
+28:       }),
+29:     )
+30:   ).filter((i) => Boolean(i));
+31: 
+32:   list.sort((a, b) => (a!.id === "toonflow" ? -1 : b!.id === "toonflow" ? 1 : 0));
+33:   res.status(200).send(success(list));
+34: });
+</file>
+
+<file path="src/routes/setting/vendorConfig/modelTest.ts">
+  1: import express from "express";
+  2: import { success, error } from "@/lib/responseFormat";
+  3: import { validateFields } from "@/middleware/middleware";
+  4: import u from "@/utils";
+  5: import { z } from "zod";
+  6: import { tool, jsonSchema } from "ai";
+  7: const router = express.Router();
+  8: 
+  9: // 检查语言模型
+ 10: export default router.post(
+ 11:   "/",
+ 12:   validateFields({
+ 13:     modelName: z.string(),
+ 14:     type: z.enum(["text", "video", "image"]),
+ 15:     id: z.string(),
+ 16:   }),
+ 17:   async (req, res) => {
+ 18:     const { modelName, type, id } = req.body;
+ 19: 
+ 20:     try {
+ 21:       const requestFn: Record<string, { fnName: string; modelData?: any }> = {
+ 22:         text: { fnName: "textRequest" },
+ 23:         image: {
+ 24:           fnName: "imageRequest",
+ 25:           modelData: {
+ 26:             prompt:
+ 27:               "一张16:9比例的图片，完美等分为2x2四宫格布局，各区域无缝衔接：\n左上宫格：一只可爱的猫，毛发蓬松，眼睛明亮，姿态俏皮\n右上宫格：一只友善的狗，金毛犬，表情愉悦，摇着尾巴\n左下宫格：一头健壮的牛，田园背景，目光温和，皮毛光泽\n右下宫格：一匹骏马，姿态优雅，鬃毛飘逸，肌肉健美\n风格要求：四个宫格风格统一，色彩鲜艳饱和，高清画质，细节清晰锐利，专业插画风格，线条干净，统一的左上方光源，柔和阴影，和谐配色，卡通/半写实风格，宫格间用白色或浅灰细线分隔", //图片提示词
+ 28:             referenceList: [], //输入的图片提示词
+ 29:             size: "1K", // 图片尺寸
+ 30:             aspectRatio: "16:9",
+ 31:           },
+ 32:         },
+ 33:         video: { fnName: "videoRequest", modelData: {} },
+ 34:       } as const;
+ 35:       const vendorConfigData = await u.db("o_vendorConfig").where("id", id).first();
+ 36: 
+ 37:       if (!vendorConfigData) return res.status(500).send(error("未找到该供应商配置"));
+ 38:       if (!vendorConfigData.models) return res.status(500).send(error("未找到模型列表"));
+ 39: 
+ 40:       const modelList = await u.vendor.getModelList(vendorConfigData.id!);
+ 41: 
+ 42:       const selectedModel = modelList.find((i: any) => i.modelName == modelName);
+ 43:       if (type == "video") {
+ 44:         requestFn["video"].modelData = {
+ 45:           model: modelName,
+ 46:           duration: selectedModel.durationResolutionMap[0].duration[0],
+ 47:           resolution: selectedModel.durationResolutionMap[0].resolution[0],
+ 48:           aspectRatio: "16:9",
+ 49:           prompt:
+ 50:             "A shirtless middle-aged man with a horse head is standing in a supermarket, carefully comparing two identical bottles of shampoo for 3 seconds, then suddenly bursts into tears, drops to his knees dramatically, a flock of pigeons explodes out of nowhere from behind him, the supermarket lights flicker, an old grandma nearby continues shopping completely unbothered, the horse head man instantly stops crying, puts both shampoo bottles back, and moonwalks away disappearing into the vegetable section. Security camera footage style, slightly grainy, 5 seconds.",
+ 51:           referenceList: [],
+ 52:           audio: false,
+ 53:           mode: "text",
+ 54:         };
+ 55:       }
+ 56:       const reqConfig = requestFn[type as "text" | "video" | "image"];
+ 57: 
+ 58:       const getWeatherTool = tool({
+ 59:         description: "Get the weather in a location",
+ 60:         inputSchema: jsonSchema<{ location: string }>(
+ 61:           z
+ 62:             .object({
+ 63:               location: z.string().describe("The location to get the weather for"),
+ 64:             })
+ 65:             .toJSONSchema(),
+ 66:         ),
+ 67:         execute: async ({ location }) => {
+ 68:           return {
+ 69:             location,
+ 70:             temperature: 72 + Math.floor(Math.random() * 21) - 10,
+ 71:           };
+ 72:         },
+ 73:       });
+ 74: 
+ 75:       if (type == "text") {
+ 76:         const { textStream } = await u.Ai.Text(`${id}:${modelName}`).stream({
+ 77:           prompt: "请调用工具获取火星的天气，并回答我多少气温",
+ 78:           tools: { getWeatherTool },
+ 79:         });
+ 80:         let fullResponse = "";
+ 81:         for await (const chunk of textStream) {
+ 82:           fullResponse += chunk;
+ 83:         }
+ 84:         if (!fullResponse) return res.status(500).send(error("模型未返回结果"));
+ 85:         res.status(200).send(success(fullResponse));
+ 86:       } else {
+ 87:         const aiTypeFn = {
+ 88:           image: "Image",
+ 89:           video: "Video",
+ 90:         } as const;
+ 91:         const reqFn = await u.Ai[aiTypeFn[type as "image" | "video"]](`${id}:${modelName}`).run({
+ 92:           ...reqConfig.modelData,
+ 93:         });
+ 94:         await reqFn.save(type == "video" ? "test.mp4" : "testImage.jpg");
+ 95:         const resultUrl = await u.oss.getFileUrl(type == "video" ? "test.mp4" : "testImage.jpg");
+ 96:         res.status(200).send(success(resultUrl));
+ 97:       }
+ 98:     } catch (err) {
+ 99:       console.error(err);
+100:       const msg = u.error(err).message;
+101:       console.error(msg);
+102:       res.status(500).send(error(msg));
+103:     }
+104:   },
+105: );
+</file>
+
+<file path="src/routes/setting/vendorConfig/updateCode.ts">
+ 1: import express from "express";
+ 2: import { serializeError } from "serialize-error";
+ 3: import { success, error } from "@/lib/responseFormat";
+ 4: import { validateFields } from "@/middleware/middleware";
+ 5: import u from "@/utils";
+ 6: import { z } from "zod";
+ 7: import { transform } from "sucrase";
+ 8: const router = express.Router();
+ 9: 
+10: const vendorConfigSchema = z.object({
+11:   id: z.string(),
+12:   author: z.string(),
+13:   description: z.string().optional(),
+14:   name: z.string(),
+15:   icon: z.string().optional(),
+16:   inputs: z.array(
+17:     z.object({
+18:       key: z.string(),
+19:       label: z.string(),
+20:       type: z.enum(["text", "password", "url"]),
+21:       required: z.boolean(),
+22:       placeholder: z.string().optional(),
+23:     }),
+24:   ),
+25:   inputValues: z.record(z.string(), z.string()),
+26:   models: z.array(
+27:     z.discriminatedUnion("type", [
+28:       z.object({
+29:         name: z.string(),
+30:         modelName: z.string(),
+31:         type: z.literal("text"),
+32:         think: z.boolean(),
+33:       }),
+34:       z.object({
+35:         name: z.string(),
+36:         modelName: z.string(),
+37:         type: z.literal("image"),
+38:         mode: z.array(z.enum(["text", "singleImage", "multiReference"])),
+39:       }),
+40:       z.object({
+41:         name: z.string(),
+42:         modelName: z.string(),
+43:         type: z.literal("video"),
+44:         mode: z.array(
+45:           z.union([
+46:             z.enum(["singleImage", "startEndRequired", "endFrameOptional", "startFrameOptional", "text", "audioReference", "videoReference"]),
+47:             z.array(z.string().regex(/^(videoReference|imageReference|audioReference):\d+$/)),
+48:           ]),
+49:         ),
+50:         audio: z.union([z.literal("optional"), z.boolean()]),
+51:         durationResolutionMap: z.array(
+52:           z.object({
+53:             duration: z.array(z.number()),
+54:             resolution: z.array(z.string()),
+55:           }),
+56:         ),
+57:       }),
+58:     ]),
+59:   ),
+60: });
+61: 
+62: export default router.post(
+63:   "/",
+64:   validateFields({
+65:     id: z.string(),
+66:     tsCode: z.string(),
+67:   }),
+68:   async (req, res) => {
+69:     try {
+70:       const { tsCode, id } = req.body;
+71:       const jsCode = transform(tsCode, { transforms: ["typescript"] }).code;
+72:       const exports = u.vm(jsCode);
+73:       if (!exports) return res.status(400).send(success("脚本文件必须导出对象"));
+74:       if (!exports.textRequest) return res.status(400).send(success("脚本文件必须导出文本请求对象"));
+75:       if (!exports.imageRequest) return res.status(400).send(success("脚本文件必须导出图像请求对象"));
+76:       if (!exports.videoRequest) return res.status(400).send(success("脚本文件必须导出视频请求对象"));
+77:       if (!exports.vendor) return res.status(400).send(success("脚本文件必须导出vendor对象"));
+78:       const vendor = exports.vendor;
+79:       const result = vendorConfigSchema.safeParse(vendor);
+80:       if (!result.success) {
+81:         const errorMsg = result.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
+82:         return res.status(400).send(error(`vendor配置校验失败: ${errorMsg}`));
+83:       }
+84:       await u
+85:         .db("o_vendorConfig")
+86:         .where("id", id)
+87:         .update({
+88:           models: JSON.stringify(vendor.models ?? []),
+89:         });
+90:       u.vendor.writeCode(id, tsCode);
+91: 
+92:       res.status(200).send(success(result.data));
+93:     } catch (err) {
+94:       console.log(err);
+95:       res.status(400).send(error(serializeError(err).message || "未知错误"));
+96:     }
+97:   },
+98: );
+</file>
+
+<file path="src/routes/setting/vendorConfig/updateVendorInputs.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import u from "@/utils";
+ 5: import { z } from "zod";
+ 6: import { transform } from "sucrase";
+ 7: const router = express.Router();
+ 8: 
+ 9: export default router.post(
+10:   "/",
+11:   validateFields({
+12:     id: z.string(),
+13:     inputValues: z.record(z.string(), z.string()),
+14:   }),
+15:   async (req, res) => {
+16:     const { id, inputValues } = req.body;
+17: 
+18:     await u
+19:       .db("o_vendorConfig")
+20:       .where("id", id)
+21:       .update({
+22:         inputValues: JSON.stringify(inputValues),
+23:       });
+24:     res.status(200).send(success("更新成功"));
+25:   },
+26: );
+</file>
+
+<file path="src/routes/setting/vendorConfig/upVendorModel.ts">
+ 1: import express from "express";
+ 2: import { success, error } from "@/lib/responseFormat";
+ 3: import { validateFields } from "@/middleware/middleware";
+ 4: import u from "@/utils";
+ 5: import { z } from "zod";
+ 6: const router = express.Router();
+ 7: 
+ 8: export default router.post(
+ 9:   "/",
+10:   validateFields({
+11:     id: z.string(),
+12:     modelName: z.string(),
+13:     model: z.discriminatedUnion("type", [
+14:       z.object({
+15:         name: z.string(),
+16:         modelName: z.string(),
+17:         type: z.literal("text"),
+18:         think: z.boolean(),
+19:       }),
+20:       z.object({
+21:         name: z.string(),
+22:         modelName: z.string(),
+23:         type: z.literal("image"),
+24:         mode: z.array(z.enum(["text", "singleImage", "multiReference"])),
+25:       }),
+26:       z.object({
+27:         name: z.string(),
+28:         modelName: z.string(),
+29:         type: z.literal("video"),
+30:         mode: z.array(
+31:           z.union([
+32:             z.enum(["singleImage", "startEndRequired", "endFrameOptional", "startFrameOptional", "text", "audioReference", "videoReference"]),
+33:             z.array(z.string().regex(/^(videoReference|imageReference|audioReference):\d+$/)),
+34:           ]),
+35:         ),
+36:         audio: z.union([z.literal("optional"), z.boolean()]),
+37:         durationResolutionMap: z.array(
+38:           z.object({
+39:             duration: z.array(z.number()),
+40:             resolution: z.array(z.string()),
+41:           }),
+42:         ),
+43:       }),
+44:     ]),
+45:   }),
+46:   async (req, res) => {
+47:     const { id, modelName, model } = req.body;
+48: 
+49:     const models = await u.db("o_vendorConfig").where("id", id).first("models");
+50:     if (models?.models) {
+51:       const existingModels = JSON.parse(models.models);
+52:       const modelIndex = existingModels.findIndex((m: any) => m.modelName !== modelName);
+53:       if (modelIndex === -1) {
+54:         existingModels.push(model);
+55:       }
+56:       existingModels[modelIndex] = model;
+57:       await u
+58:         .db("o_vendorConfig")
+59:         .where("id", id)
+60:         .update({
+61:           models: JSON.stringify(existingModels),
+62:         });
+63:     }
+64:     res.status(200).send(success("更新成功"));
+65:   },
+66: );
+</file>
+
+<file path="src/routes/setting/getTextModel.ts">
+ 1: import express from "express";
+ 2: import { success } from "@/lib/responseFormat";
+ 3: const router = express.Router();
+ 4: 
+ 5: export default router.post(
+ 6:     "/",
+ 7:     async (req, res) => {
+ 8:         res.status(200).send(success("123"));
+ 9:     },
+10: );
+</file>
+
+<file path="src/utils/ai.ts">
+  1: import { generateText, streamText, wrapLanguageModel, stepCountIs, extractReasoningMiddleware } from "ai";
+  2: import { devToolsMiddleware } from "@ai-sdk/devtools";
+  3: import axios from "axios";
+  4: import { transform } from "sucrase";
+  5: import u from "@/utils";
+  6: 
+  7: type AiType =
+  8:   | "scriptAgent"
+  9:   | "productionAgent"
+ 10:   | "universalAi"
+ 11:   | "scriptAgent:decisionAgent"
+ 12:   | "scriptAgent:supervisionAgent"
+ 13:   | "scriptAgent:storySkeletonAgent"
+ 14:   | "scriptAgent:adaptationStrategyAgent"
+ 15:   | "scriptAgent:scriptAgent"
+ 16:   | "productionAgent:decisionAgent"
+ 17:   | "productionAgent:supervisionAgent"
+ 18:   | "productionAgent:deriveAssetsAgent"
+ 19:   | "productionAgent:generateAssetsAgent"
+ 20:   | "productionAgent:directorPlanAgent"
+ 21:   | "productionAgent:storyboardGenAgent"
+ 22:   | "productionAgent:storyboardPanelAgent"
+ 23:   | "productionAgent:storyboardTableAgent";
+ 24: 
+ 25: type FnName = "textRequest" | "imageRequest" | "videoRequest" | "ttsRequest";
+ 26: 
+ 27: const AiTypeValues: AiType[] = [
+ 28:   "scriptAgent",
+ 29:   "productionAgent",
+ 30:   "universalAi",
+ 31:   "scriptAgent:decisionAgent",
+ 32:   "scriptAgent:supervisionAgent",
+ 33:   "scriptAgent:storySkeletonAgent",
+ 34:   "scriptAgent:adaptationStrategyAgent",
+ 35:   "scriptAgent:scriptAgent",
+ 36:   "productionAgent:decisionAgent",
+ 37:   "productionAgent:supervisionAgent",
+ 38:   "productionAgent:deriveAssetsAgent",
+ 39:   "productionAgent:generateAssetsAgent",
+ 40:   "productionAgent:directorPlanAgent",
+ 41:   "productionAgent:storyboardGenAgent",
+ 42:   "productionAgent:storyboardPanelAgent",
+ 43:   "productionAgent:storyboardTableAgent",
+ 44:   "universalAi",
+ 45: ];
+ 46: async function resolveModelName(value: AiType | `${string}:${string}`): Promise<`${string}:${string}`> {
+ 47:   if (AiTypeValues.includes(value as AiType)) {
+ 48:     const agentUseModeVal = await u.db("o_setting").where("key", "agentUseMode").first();
+ 49: 
+ 50:     //正常流程
+ 51:     //高级配置
+ 52:     if (agentUseModeVal?.value == "1") {
+ 53:       const agentDeployData = await u.db("o_agentDeploy").where("key", value).first();
+ 54:       if (!agentDeployData?.modelName) throw new Error(`高级配置模式下，未找到对应的模型配置 ${value}`);
+ 55:       return agentDeployData?.modelName as `${number}:${string}`;
+ 56:     }
+ 57:     //简易配置
+ 58:     if (agentUseModeVal?.value == "0") {
+ 59:       const [mainly] = value!.split(/:(.+)/);
+ 60:       const mainlyData = await u.db("o_agentDeploy").where("key", mainly).first();
+ 61:       if (!mainlyData?.modelName) throw new Error(`简易配置模式下，未找到部署配置 ${value}`);
+ 62:       return mainlyData?.modelName as `${number}:${string}`;
+ 63:     }
+ 64: 
+ 65:     //未查到agentUseModeVal 维持原判断
+ 66:     const agentDeployData = await u.db("o_agentDeploy").where("key", value).first();
+ 67:     let modelName = null;
+ 68: 
+ 69:     if (!agentDeployData?.modelName) {
+ 70:       const [mainly] = agentDeployData!.key!.split(/:(.+)/);
+ 71:       const mainlyData = await u.db("o_agentDeploy").where("key", mainly).first();
+ 72:       if (!mainlyData?.modelName) throw new Error(`未找到部署配置 ${value}`);
+ 73:       modelName = mainlyData.modelName;
+ 74:     }
+ 75:     modelName = agentDeployData?.modelName || modelName;
+ 76:     return modelName as `${number}:${string}`;
+ 77:   }
+ 78:   return value as `${number}:${string}`;
+ 79: }
+ 80: 
+ 81: async function getModelConfig(value: AiType | `${string}:${string}`) {
+ 82:   if (AiTypeValues.includes(value as AiType)) {
+ 83:     const agentUseModeVal = await u.db("o_setting").where("key", "agentUseMode").first();
+ 84:     //正常流程
+ 85:     //高级配置
+ 86:     if (agentUseModeVal?.value == "1") {
+ 87:       const agentDeployData = await u.db("o_agentDeploy").where("key", value).first();
+ 88:       if (!agentDeployData?.modelName) throw new Error(`高级配置模式下，未找到对应的模型配置 ${value}`);
+ 89:       return agentDeployData;
+ 90:     }
+ 91:     //简易配置
+ 92:     if (agentUseModeVal?.value == "0") {
+ 93:       const [mainly] = value!.split(/:(.+)/);
+ 94:       const mainlyData = await u.db("o_agentDeploy").where("key", mainly).first();
+ 95:       if (!mainlyData?.modelName) throw new Error(`简易配置模式下，未找到部署配置 ${value}`);
+ 96:       return mainlyData;
+ 97:     }
+ 98: 
+ 99:     //未查到 agentUseModelVal 维持原流程
+100:     const agentDeployData = await u.db("o_agentDeploy").where("key", value).first();
+101: 
+102:     if (!agentDeployData?.modelName) {
+103:       const [mainly] = agentDeployData!.key!.split(/:(.+)/);
+104:       const mainlyData = await u.db("o_agentDeploy").where("key", mainly).first();
+105:       if (!mainlyData?.modelName) throw new Error(`未找到部署配置 ${value}`);
+106:       return mainlyData;
+107:     }
+108:     return agentDeployData;
+109:   }
+110:   return null;
+111: }
+112: 
+113: async function getVendorTemplateFn(
+114:   fnName: "textRequest",
+115:   modelName: `${string}:${string}`,
+116: ): Promise<(think?: boolean, thinkLevel?: 0 | 1 | 2 | 3) => any>;
+117: async function getVendorTemplateFn(fnName: Exclude<FnName, "textRequest">, modelName: `${string}:${string}`): Promise<(input: any) => any>;
+118: async function getVendorTemplateFn(fnName: FnName, modelName: `${string}:${string}`): Promise<any> {
+119:   const [id, name] = modelName.split(/:(.+)/);
+120:   const vendorConfigData = await u.db("o_vendorConfig").where("id", id).first();
+121:   if (!vendorConfigData) throw new Error(`未找到供应商配置 id=${id}`);
+122:   const modelList = await u.vendor.getModelList(id);
+123:   const selectedModel = modelList.find((i: any) => i.modelName == name);
+124:   if (!selectedModel) throw new Error(`未找到模型 ${name} id=${id}`);
+125:   const code = u.vendor.getCode(id);
+126:   const jsCode = transform(code, { transforms: ["typescript"] }).code;
+127:   const running = u.vm(jsCode);
+128:   if (running.vendor) {
+129:     Object.assign(running.vendor.inputValues, JSON.parse(vendorConfigData.inputValues ?? "{}"));
+130:     running.vendor.models = modelList;
+131:   }
+132:   const fn = running[fnName];
+133:   if (!fn) throw new Error(`未找到供应商配置中的函数 ${fnName} id=${id}`);
+134:   if (fnName == "textRequest")
+135:     return (think?: boolean, thinkLevel: 0 | 1 | 2 | 3 = 0) => {
+136:       const effectiveThink = think ?? !!selectedModel.think;
+137:       return fn(selectedModel, effectiveThink, thinkLevel);
+138:     };
+139:   else return <T>(input: T) => fn(input, selectedModel);
+140: }
+141: 
+142: async function withTaskRecord<T>(
+143:   modelKey: AiType | `${string}:${string}`,
+144:   taskClass: string,
+145:   describe: string,
+146:   relatedObjects: string,
+147:   projectId: number,
+148:   fn: (modelName: `${string}:${string}`, think: Boolean, thinkLevel: 0 | 1 | 2 | 3) => Promise<T>,
+149: ): Promise<T> {
+150:   const modelName = await resolveModelName(modelKey);
+151:   const [_, model] = modelName.split(/:(.+)/);
+152:   const taskRecord = await u.task(projectId, taskClass, model, { describe: describe, content: relatedObjects });
+153:   try {
+154:     const result = await fn(modelName, false, 0);
+155: 
+156:     taskRecord(1);
+157:     return result;
+158:   } catch (e) {
+159:     taskRecord(-1, u.error(e).message);
+160:     throw new Error(u.error(e).message);
+161:   }
+162: }
+163: 
+164: async function urlToBase64(url: string, retries = 3, delay = 1000): Promise<string> {
+165:   for (let attempt = 1; attempt <= retries; attempt++) {
+166:     try {
+167:       const res = await axios.get(url, { responseType: "arraybuffer" });
+168:       const base64 = Buffer.from(res.data).toString("base64");
+169:       return `${base64}`;
+170:     } catch (e) {
+171:       if (attempt === retries) throw e;
+172:       await new Promise((resolve) => setTimeout(resolve, delay * attempt));
+173:     }
+174:   }
+175:   throw new Error("urlToBase64 failed");
+176: }
+177: class AiText {
+178:   private AiType: AiType | `${string}:${string}`;
+179:   private think?: boolean;
+180:   private thinkLevel: 0 | 1 | 2 | 3;
+181:   constructor(AiType: AiType | `${string}:${string}`, think?: boolean, thinkLevel: 0 | 1 | 2 | 3 = 0) {
+182:     this.AiType = AiType;
+183:     this.think = think;
+184:     this.thinkLevel = thinkLevel;
+185:   }
+186:   private async resolveModel(middleware?: any | any[]) {
+187:     const switchAiDevTool = await u.db("o_setting").where("key", "switchAiDevTool").first();
+188:     const modelName = await resolveModelName(this.AiType);
+189:     const sdkFn = await getVendorTemplateFn("textRequest", modelName);
+190:     const baseModel = await sdkFn(this.think, this.thinkLevel);
+191:     const mws = [
+192:       ...(switchAiDevTool?.value === "1" ? [devToolsMiddleware()] : []),
+193:       ...(middleware ? (Array.isArray(middleware) ? middleware : [middleware]) : []),
+194:     ];
+195:     return mws.length > 0 ? wrapLanguageModel({ model: baseModel, middleware: mws.length === 1 ? mws[0] : mws }) : baseModel;
+196:   }
+197:   async invoke(input: Omit<Parameters<typeof generateText>[0], "model">) {
+198:     const config = await getModelConfig(this.AiType);
+199: 
+200:     return generateText({
+201:       ...(input.tools && { stopWhen: stepCountIs(Object.keys(input.tools).length * 50) }),
+202:       ...input,
+203:       model: await this.resolveModel(),
+204:       ...(config?.temperature && { temperature: config.temperature }),
+205:       ...(config?.maxOutputTokens && { maxOutputTokens: config.maxOutputTokens }),
+206:     } as Parameters<typeof generateText>[0]);
+207:   }
+208:   async stream(input: Omit<Parameters<typeof streamText>[0], "model">) {
+209:     const config = await getModelConfig(this.AiType);
+210: 
+211:     return streamText({
+212:       ...(input.tools && { stopWhen: stepCountIs(Object.keys(input.tools).length * 50) }),
+213:       ...input,
+214:       model: await this.resolveModel(extractReasoningMiddleware({ tagName: "reasoning_content", separator: "\n" })),
+215:       ...(config?.temperature && { temperature: config.temperature }),
+216:       ...(config?.maxOutputTokens && { maxOutputTokens: config.maxOutputTokens }),
+217:     } as Parameters<typeof streamText>[0]);
+218:   }
+219: }
+220: 
+221: function referenceList2imageBase642(id: string, input: any) {
+222:   const version = u.vendor.getVendor(id).version;
+223:   if (!version || isNaN(parseFloat(version)) || parseFloat(version) < 2.0) {
+224:     input.imageBase64 = input.referenceList.map((item: any) => item.base64);
+225:     return input;
+226:   }
+227:   return input;
+228: }
+229: 
+230: export type ReferenceList = { type: "image"; base64: string } | { type: "audio"; base64: string } | { type: "video"; base64: string };
+231: 
+232: interface ImageConfig {
+233:   prompt: string;
+234:   referenceList?: Extract<ReferenceList, { type: "image" }>[];
+235:   size: "1K" | "2K" | "4K";
+236:   aspectRatio: `${number}:${number}`;
+237: }
+238: 
+239: interface TaskRecord {
+240:   taskClass: string; // 任务分类
+241:   describe: string; // 任务描述
+242:   relatedObjects: string; // 相关对象信息，便于后续分析和追踪
+243:   projectId: number; // 项目ID
+244: }
+245: 
+246: class AiImage {
+247:   private key: `${string}:${string}`;
+248:   private result: string = "";
+249:   constructor(key: `${string}:${string}`) {
+250:     this.key = key;
+251:   }
+252:   async run(input: ImageConfig, taskRecord?: TaskRecord) {
+253:     const modelName = await resolveModelName(this.key);
+254:     const exec = async (mn: `${string}:${string}`) => {
+255:       const fn = await getVendorTemplateFn("imageRequest", mn);
+256:       await referenceList2imageBase642(mn.split(/:(.+)/)[0], input);
+257:       this.result = await fn(input);
+258:       if (this.result.startsWith("http")) this.result = await urlToBase64(this.result);
+259:       return this;
+260:     };
+261:     if (taskRecord) {
+262:       await withTaskRecord(this.key, taskRecord.taskClass, taskRecord.describe, taskRecord.relatedObjects, taskRecord.projectId, exec);
+263:       return this;
+264:     }
+265:     await exec(modelName);
+266:     return this;
+267:   }
+268:   async save(path: string) {
+269:     await u.oss.writeFile(path, this.result);
+270:     return this;
+271:   }
+272: }
+273: 
+274: type VideoMode =
+275:   | "singleImage" //单图参考
+276:   | "startEndRequired" //首尾帧（两张都得有）
+277:   | "endFrameOptional" //首尾帧（尾帧可选）
+278:   | "startFrameOptional" //首尾帧（首帧可选）
+279:   | "text" //文本
+280:   | (`videoReference:${number}` | `imageReference:${number}` | `audioReference:${number}`)[]; //多参考（数字代表限制数量）
+281: 
+282: interface VideoConfig {
+283:   duration: number;
+284:   resolution: string;
+285:   aspectRatio: "16:9" | "9:16";
+286:   prompt: string;
+287:   referenceList?: ReferenceList[];
+288:   audio?: boolean;
+289:   mode: VideoMode[];
+290: }
+291: 
+292: class AiVideo {
+293:   private key: `${string}:${string}`;
+294:   private result: string = "";
+295:   constructor(key: `${string}:${string}`) {
+296:     this.key = key;
+297:   }
+298:   async run(input: VideoConfig, taskRecord?: TaskRecord) {
+299:     const modelName = await resolveModelName(this.key);
+300:     try {
+301:       const exec = async (mn: `${string}:${string}`) => {
+302:         const fn = await getVendorTemplateFn("videoRequest", mn);
+303:         await referenceList2imageBase642(mn.split(/:(.+)/)[0], input);
+304: 
+305:         this.result = await fn(input);
+306: 
+307:         if (this.result.startsWith("http")) this.result = await urlToBase64(this.result);
+308:       };
+309:       if (taskRecord) {
+310:         await withTaskRecord(this.key, taskRecord.taskClass, taskRecord.describe, taskRecord.relatedObjects, taskRecord.projectId, exec);
+311:         return this;
+312:       }
+313:       await exec(modelName);
+314:       return this;
+315:     } catch (e) {
+316:       throw e;
+317:     }
+318:   }
+319:   async save(path: string) {
+320:     await u.oss.writeFile(path, this.result);
+321:     return this;
+322:   }
+323: }
+324: class AiAudio {
+325:   private key: `${string}:${string}`;
+326:   private result: string = "";
+327:   constructor(key: `${string}:${string}`) {
+328:     this.key = key;
+329:   }
+330:   async run(input: VideoConfig, taskRecord?: TaskRecord) {
+331:     const modelName = await resolveModelName(this.key);
+332:     const exec = async (mn: `${string}:${string}`) => {
+333:       try {
+334:         const fn = await getVendorTemplateFn("ttsRequest", mn);
+335:         await referenceList2imageBase642(mn.split(/:(.+)/)[0], input);
+336:         this.result = await fn(input);
+337: 
+338:         if (this.result.startsWith("http")) this.result = await urlToBase64(this.result);
+339:         return this;
+340:       } catch (e) {}
+341:     };
+342:     if (taskRecord) {
+343:       return withTaskRecord(this.key, taskRecord.taskClass, taskRecord.describe, taskRecord.relatedObjects, taskRecord.projectId, exec);
+344:     }
+345:     return await exec(modelName);
+346:   }
+347:   async save(path: string) {
+348:     await u.oss.writeFile(path, this.result);
+349:     return this;
+350:   }
+351: }
+352: 
+353: export default {
+354:   Text: (AiType: AiType | `${string}:${string}`, think?: boolean, thinkLevel?: 0 | 1 | 2 | 3) => new AiText(AiType, think, thinkLevel),
+355:   Image: (key: `${string}:${string}`) => new AiImage(key),
+356:   Video: (key: `${string}:${string}`) => new AiVideo(key),
+357:   Audio: (key: `${string}:${string}`) => new AiAudio(key),
+358: };
+</file>
+
+<file path="src/utils/vendor.ts">
+ 1: import { transform } from "sucrase";
+ 2: import fs from "fs";
+ 3: import path from "path";
+ 4: import u from "@/utils";
+ 5: 
+ 6: export function writeCode(id: string | number, tsCode: string) {
+ 7:   const rootDir = u.getPath("vendor")
+ 8:   fs.mkdirSync(rootDir, { recursive: true })
+ 9:   if (fs.existsSync(path.join(rootDir,  `${id}.ts`))) {
+10:     fs.writeFileSync(path.join(rootDir,  `${id}.ts`), tsCode);
+11:   }
+12:   fs.writeFileSync(path.join(rootDir,  `${id}.ts`), tsCode);
+13: }
+14: 
+15: export function getCode(id: string): string {
+16:   const rootDir = u.getPath("vendor");
+17:   const targetFile = path.join(rootDir, `${id}.ts`);
+18:   if (!fs.existsSync(targetFile)) return "";
+19:   return fs.readFileSync(targetFile, "utf-8");
+20: }
+21: 
+22: export async function getModelList(id: string): Promise<Array<any>> {
+23:   const models = await u.db("o_vendorConfig").where("id", id).select("models").first();
+24:   if (!models || !models.models) return [];
+25:   const code = getCode(id);
+26:   const jsCode = transform(code, { transforms: ["typescript"] }).code;
+27:   const vendorData = u.vm(jsCode);
+28:   if(!vendorData || !vendorData.vendor || !vendorData.vendor.models) return [];
+29:   const combined = [...JSON.parse(JSON.stringify(vendorData.vendor.models)), ...JSON.parse(models?.models ?? "[]")];
+30:   const map = new Map<string, any>();
+31:   for (const m of combined) {
+32:     map.set(m.modelName, m);
+33:   }
+34:   return [...map.values()];
+35: }
+36: 
+37: export function getVendor(id: string) {
+38:   const code = getCode(id);
+39:   const jsCode = transform(code, { transforms: ["typescript"] }).code;
+40:   const vendorData = u.vm(jsCode);
+41:   return vendorData.vendor;
+42: }
+</file>
+
+<file path="src/utils/vm.ts">
+  1: import { VM } from "vm2";
+  2: import sharp from "sharp";
+  3: import axios from "axios";
+  4: import { createOpenAI } from "@ai-sdk/openai";
+  5: import { createDeepSeek } from "@ai-sdk/deepseek";
+  6: import { createZhipu } from "zhipu-ai-provider";
+  7: import { createQwen } from "qwen-ai-provider-v5";
+  8: import { createGoogleGenerativeAI } from "@ai-sdk/google";
+  9: import { createAnthropic } from "@ai-sdk/anthropic";
+ 10: import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+ 11: import { createXai } from "@ai-sdk/xai";
+ 12: import { createMinimax } from "vercel-minimax-ai-provider";
+ 13: import FormData from "form-data";
+ 14: import jsonwebtoken from "jsonwebtoken";
+ 15: import u from "@/utils";
+ 16: import crypto from "node:crypto";
+ 17: export default function runCode(code: string, vendor?: Record<string, any>) {
+ 18:   code = code.replace(/export\s*\{\s*\};?/g, ""); // 去掉 export {} 以免沙盒环境报错
+ 19:   // 创建一个沙盒
+ 20:   const exports = {};
+ 21:   const sandbox: Record<string, any> = {
+ 22:     createOpenAI,
+ 23:     createDeepSeek,
+ 24:     createZhipu,
+ 25:     createQwen,
+ 26:     createAnthropic,
+ 27:     createOpenAICompatible,
+ 28:     createXai,
+ 29:     createMinimax,
+ 30:     createGoogleGenerativeAI,
+ 31:     zipImage,
+ 32:     zipImageResolution,
+ 33:     urlToBase64,
+ 34:     mergeImages,
+ 35:     pollTask,
+ 36:     fetch: fetch,
+ 37:     exports,
+ 38:     axios,
+ 39:     FormData,
+ 40:     logger,
+ 41:     jsonwebtoken,
+ 42:     crypto,
+ 43:   };
+ 44:   if (vendor !== undefined) {
+ 45:     sandbox.vendor = vendor;
+ 46:   }
+ 47:   const vm = new VM({
+ 48:     timeout: 0,
+ 49:     sandbox,
+ 50:     compiler: "javascript",
+ 51:     eval: false,
+ 52:     wasm: false,
+ 53:   });
+ 54: 
+ 55:   vm.run(code);
+ 56: 
+ 57:   return exports as Record<string, any>;
+ 58: }
+ 59: export function logger(logstring: any) {
+ 60:   console.log("【VM】" + JSON.stringify(logstring));
+ 61: }
+ 62: /**
+ 63:  * 压缩图片，目标字节数不高于 size
+ 64:  */
+ 65: export async function zipImage(completeBase64: string, size: number): Promise<string> {
+ 66:   let quality = 80;
+ 67:   let buffer = Buffer.from(completeBase64.split(",")[1], "base64");
+ 68:   let output = await sharp(buffer).jpeg({ quality }).toBuffer();
+ 69:   while (output.length > size && quality > 10) {
+ 70:     quality -= 10;
+ 71:     output = await sharp(buffer).jpeg({ quality }).toBuffer();
+ 72:   }
+ 73:   return "data:image/jpeg;base64," + output.toString("base64");
+ 74: }
+ 75: 
+ 76: export async function zipImageResolution(completeBase64: string, width: number, height: number): Promise<string> {
+ 77:   const buffer = Buffer.from(completeBase64.split(",")[1], "base64");
+ 78:   const out = await sharp(buffer).resize(width, height).toBuffer();
+ 79:   return `data:image/jpeg;base64,${out.toString("base64")}`;
+ 80: }
+ 81: 
+ 82: //url转Base64
+ 83: export async function urlToBase64(url: string): Promise<string> {
+ 84:   const res = await axios.get(url, { responseType: "arraybuffer" });
+ 85:   const mime = res.headers["content-type"] || "image/jpeg";
+ 86:   const b64 = Buffer.from(res.data).toString("base64");
+ 87:   return `data:${mime};base64,${b64}`;
+ 88: }
+ 89: 
+ 90: export async function pollTask(
+ 91:   fn: () => Promise<{ completed: boolean; data?: string; error?: string }>,
+ 92:   interval = 3000,
+ 93:   timeout = 3000000,
+ 94: ): Promise<{ completed: boolean; data?: string; error?: string }> {
+ 95:   const start = Date.now();
+ 96:   while (Date.now() - start < timeout) {
+ 97:     try {
+ 98:       const result = await fn();
+ 99:       if (result.completed) return result;
+100:       if (result?.error) return result;
+101:     } catch (e: any) {
+102:       return { completed: false, error: u.error(e).message || "poll error" };
+103:     }
+104:     await new Promise((res) => setTimeout(res, interval));
+105:   }
+106:   return { completed: false, error: "timeout" };
+107: }
+108: 
+109: /**
+110:  * 将多张图片横向拼接为一张，并确保输出大小不超过指定限制
+111:  * @param imageBase64List - base64编码的图片数组
+112:  * @param maxSize - 最大输出大小，支持格式如 "10mb", "5MB", "1024kb" 等
+113:  * @returns 拼接后的图片base64字符串
+114:  */
+115: export async function mergeImages(imageBase64List: string[], maxSize = "10mb"): Promise<string> {
+116:   if (imageBase64List.length === 0) {
+117:     throw new Error("图片列表不能为空");
+118:   }
+119: 
+120:   const maxBytes = parseSize(maxSize);
+121:   const imageBuffers = imageBase64List.map(base64ToBuffer);
+122:   const imageMetadatas = await Promise.all(imageBuffers.map((buffer) => sharp(buffer).metadata()));
+123:   const maxHeight = Math.max(...imageMetadatas.map((m) => m.height || 0));
+124: 
+125:   // 计算各图片调整后的宽度
+126:   const imageWidths = imageMetadatas.map((metadata) => {
+127:     const aspectRatio = (metadata.width || 1) / (metadata.height || 1);
+128:     return Math.round(maxHeight * aspectRatio);
+129:   });
+130:   const totalWidth = imageWidths.reduce((sum, w) => sum + w, 0);
+131: 
+132:   // 拼接图片
+133:   const resizedImages = await Promise.all(
+134:     imageBuffers.map(async (buffer, index) => {
+135:       return sharp(buffer).resize(imageWidths[index], maxHeight, { fit: "cover" }).toBuffer();
+136:     }),
+137:   );
+138: 
+139:   let currentX = 0;
+140:   const compositeInputs = resizedImages.map((buffer, index) => {
+141:     const input = { input: buffer, left: currentX, top: 0 };
+142:     currentX += imageWidths[index];
+143:     return input;
+144:   });
+145: 
+146:   const mergedBuffer = await sharp({
+147:     create: {
+148:       width: totalWidth,
+149:       height: maxHeight,
+150:       channels: 4,
+151:       background: { r: 255, g: 255, b: 255, alpha: 1 },
+152:     },
+153:   })
+154:     .composite(compositeInputs)
+155:     .jpeg({ quality: 90 })
+156:     .toBuffer();
+157: 
+158:   // 复用压缩逻辑
+159:   const resultBuffer = await compressToSize(mergedBuffer, maxBytes, totalWidth, maxHeight);
+160:   return resultBuffer.toString("base64");
+161: }
+162: 
+163: /**
+164:  * 解析大小字符串为字节数
+165:  */
+166: function parseSize(size: string): number {
+167:   const match = size.toLowerCase().match(/^(\d+(?:\.\d+)?)\s*(kb|mb|gb|b)?$/);
+168:   if (!match) {
+169:     throw new Error(`无效的大小格式: ${size}`);
+170:   }
+171:   const value = parseFloat(match[1]);
+172:   const unit = match[2] || "b";
+173:   const multipliers: Record<string, number> = {
+174:     b: 1,
+175:     kb: 1024,
+176:     mb: 1024 * 1024,
+177:     gb: 1024 * 1024 * 1024,
+178:   };
+179:   return Math.floor(value * multipliers[unit]);
+180: }
+181: 
+182: /**
+183:  * 将base64字符串转换为Buffer
+184:  */
+185: function base64ToBuffer(base64: string): Buffer {
+186:   const base64Data = base64.replace(/^data:image\/\w+;base64,/, "");
+187:   return Buffer.from(base64Data, "base64");
+188: }
+189: 
+190: /**
+191:  * 压缩Buffer到指定大小以内
+192:  */
+193: async function compressToSize(imageBuffer: Buffer, maxBytes: number, originalWidth: number, originalHeight: number): Promise<Buffer> {
+194:   let quality = 90;
+195:   let scale = 1;
+196: 
+197:   while (true) {
+198:     const targetWidth = Math.round(originalWidth * scale);
+199:     const targetHeight = Math.round(originalHeight * scale);
+200: 
+201:     const resultBuffer = await sharp(imageBuffer).resize(targetWidth, targetHeight, { fit: "fill" }).jpeg({ quality }).toBuffer();
+202: 
+203:     if (resultBuffer.length <= maxBytes) {
+204:       return resultBuffer;
+205:     }
+206: 
+207:     if (quality > 10) {
+208:       quality -= 10;
+209:     } else {
+210:       quality = 90;
+211:       scale *= 0.8;
+212:     }
+213:   }
+214: }
+</file>
+
+</files>

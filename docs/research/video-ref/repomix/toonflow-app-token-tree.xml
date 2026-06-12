@@ -1,0 +1,301 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files and files not matching ignore patterns, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: README.md, package.json, src/**/*.ts, src/**/*.tsx
+- Files matching these patterns are excluded: data/**, docs/screenshot/**, docs/**/*.png, docs/**/*.jpg, yarn.lock
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+src/
+  agents/
+    productionAgent/
+      index.ts
+      tools.ts
+    scriptAgent/
+      index.ts
+      tools.ts
+  lib/
+    fixDB.ts
+    initDB.ts
+    responseFormat.ts
+  middleware/
+    middleware.ts
+  routes/
+    agents/
+      clearMemory.ts
+      getMemory.ts
+    artStyle/
+      addArtStyle.ts
+      editArtStyle.ts
+      extractStylePrompt.ts
+      getArtStyle.ts
+    assets/
+      addAssets.ts
+      addAudioAssets.ts
+      batchDelete.ts
+      batchGenerationData.ts
+      delAssets.ts
+      delImage.ts
+      getAssetsApi.ts
+      getImage.ts
+      getMaterialData.ts
+      pollingImageAssets.ts
+      pollingPromptAssets.ts
+      saveAssets.ts
+      updateAssets.ts
+      updateAudioAssets.ts
+      uploadClip.ts
+    assetsGenerate/
+      batchGenerateImageAssets.ts
+      batchPolishAssetsPrompt.ts
+      cancelGenerate.ts
+      generateAssets.ts
+      polishAssetsPrompt.ts
+    common/
+      getBigImage.ts
+    cornerScape/
+      batchBindAudio.ts
+      getAllAssets.ts
+      pollingAudio.ts
+      updateAssetsAudio.ts
+    general/
+      generalStatistics.ts
+      getSingleProject.ts
+      updateProject.ts
+    login/
+      login.ts
+    modelSelect/
+      getModelDetail.ts
+      getModelList.ts
+    novel/
+      event/
+        batchDeleteEvent.ts
+        deletEvent.ts
+        generateEvents.ts
+        getEvent.ts
+      addNovel.ts
+      batchDeleteNovel.ts
+      delNovel.ts
+      getNovel.ts
+      getNovelData.ts
+      getNovelEventState.ts
+      getNovelIndex.ts
+      updateNovel.ts
+    other/
+      deleteAllData.ts
+      getVersion.ts
+    production/
+      assets/
+        batchGenerateAssetsImage.ts
+        deleteAssetsDireve.ts
+        pollingImage.ts
+        updateAssetsUrl.ts
+      editImage/
+        generateFlowImage.ts
+        getImageDefaultModle.ts
+        getImageFlow.ts
+        saveImageFlow.ts
+        updateImageFlow.ts
+        uploadImage.ts
+      storyboard/
+        addStoryboard.ts
+        batchAddStoryboardInfo.ts
+        batchDelete.ts
+        batchGenerateImage.ts
+        downPreviewImage.ts
+        editStoryboardInfo.ts
+        getStoryboardData.ts
+        pollingImage.ts
+        previewImage.ts
+        removeFrame.ts
+        updateStoryboardUrl.ts
+      workbench/
+        addTrack.ts
+        batchGeneratePrompt.ts
+        batchGenerateVideo.ts
+        checkVideoPrompt.ts
+        checkVideoStateList.ts
+        deleteTrack.ts
+        delVideo.ts
+        generateVideo.ts
+        generateVideoPrompt.ts
+        getAudioBindAssetsList.ts
+        getFileUrl.ts
+        getGenerateData.ts
+        getVideoList.ts
+        selectVideo.ts
+        updateVideoDuration.ts
+        updateVideoPrompt.ts
+      getFlowData.ts
+      getStoryboardData.ts
+      saveFlowData.ts
+    project/
+      addDirectorManual.ts
+      addProject.ts
+      addVisualManual.ts
+      deleteDirectorManual.ts
+      deleteVisualManual.ts
+      delProject.ts
+      editDirectorlManual.ts
+      editProject.ts
+      editVisualManual.ts
+      getModelDetails.ts
+      getProject.ts
+      getVisualManual.ts
+      queryDirectorManual.ts
+      visualManual.ts
+    script/
+      addScript.ts
+      batchAddScript.ts
+      delScript.ts
+      exportScript.ts
+      extractAssets.ts
+      getAiRegex.ts
+      getScrptApi.ts
+      pollScriptAssets.ts
+      updateScript.ts
+    scriptAgent/
+      getPlanData.ts
+      setPlanData.ts
+      updateData.ts
+    setting/
+      about/
+        checkUpdate.ts
+        downloadApp.ts
+      agentDeploy/
+        agentSetKey.ts
+        deployAgentModel.ts
+        getAgentDeploy.ts
+        getAgentUseMode.ts
+        updateAgentModel.ts
+        updateUseMode.ts
+      dbConfig/
+        clearData.ts
+        clearTable.ts
+        dbInfo.ts
+        exportData.ts
+        importData.ts
+      dev/
+        getSwitchAiDevTool.ts
+        updateSwitchAiDevTool.ts
+      fileManagement/
+        openFolder.ts
+      loginConfig/
+        getUser.ts
+        updateUserPwd.ts
+      memoryConfig/
+        delAllMemory.ts
+        getMemory.ts
+        sureMemory.ts
+      modelMap/
+        bindingPrompt.ts
+        deletePrompt.ts
+        getImageAndVideoModel.ts
+        getPromptList.ts
+        savePrompt.ts
+        updatePrompt.ts
+      promptManage/
+        getPrompt.ts
+        updatePrompt.ts
+      skillManagement/
+        getSkillContent.ts
+        getSkillList.ts
+        saveSkillContent.ts
+      vendorConfig/
+        modelTest/
+          imageTest.ts
+          textTest.ts
+          videoTest.ts
+        addVendor.ts
+        addVendorModel.ts
+        deleteVendor.ts
+        delVendorModel.ts
+        enableVendor.ts
+        getCodeByLink.ts
+        getVendorList.ts
+        modelTest.ts
+        updateCode.ts
+        updateVendorInputs.ts
+        upVendorModel.ts
+      getTextModel.ts
+    task/
+      getProject.ts
+      getTaskApi.ts
+      getTaskCategories.ts
+      taskDetails.ts
+    test/
+      test.ts
+  socket/
+    routes/
+      productionAgent.ts
+      scriptAgent.ts
+    chatMessagesData.d.ts
+    index.ts
+    resTool copy.ts
+    resTool.ts
+  utils/
+    agent/
+      embedding.ts
+      memory.ts
+      skillsTools.ts
+    ai.ts
+    cleanNovel.ts
+    db.ts
+    error.ts
+    getArtPrompt.ts
+    getConfig.ts
+    getPath.ts
+    getPrompts.ts
+    image.ts
+    oss.ts
+    replaceUrl.ts
+    stripThink.ts
+    taskRecord.ts
+    vendor.ts
+    vm.ts
+    writeVersion.ts
+  app.ts
+  core.ts
+  env.ts
+  err.ts
+  logger.ts
+  utils.ts
+package.json
+README.md
+</directory_structure>

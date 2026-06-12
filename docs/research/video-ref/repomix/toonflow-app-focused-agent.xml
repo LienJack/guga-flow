@@ -1,0 +1,2473 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+The content has been processed where line numbers have been added.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: src/agents/**/*.ts, src/socket/routes/*Agent.ts, src/utils/agent/**/*.ts, src/utils/ai.ts, src/utils/getPrompts.ts
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Line numbers have been added to the beginning of each line
+- Long base64 data strings (e.g., data:image/png;base64,...) have been truncated to reduce token count
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+src/
+  agents/
+    productionAgent/
+      index.ts
+      tools.ts
+    scriptAgent/
+      index.ts
+      tools.ts
+  socket/
+    routes/
+      productionAgent.ts
+      scriptAgent.ts
+  utils/
+    agent/
+      embedding.ts
+      memory.ts
+      skillsTools.ts
+    ai.ts
+    getPrompts.ts
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/agents/productionAgent/index.ts">
+  1: import { Socket } from "socket.io";
+  2: import { z } from "zod";
+  3: import { tool, jsonSchema } from "ai";
+  4: import u from "@/utils";
+  5: import Memory from "@/utils/agent/memory";
+  6: import { createSkillTools, parseFrontmatter, scanSkills, useSkill } from "@/utils/agent/skillsTools";
+  7: import useTools from "@/agents/productionAgent/tools";
+  8: import ResTool from "@/socket/resTool";
+  9: import * as fs from "fs";
+ 10: import path from "path";
+ 11: 
+ 12: export interface AgentContext {
+ 13:   socket: Socket;
+ 14:   isolationKey: string;
+ 15:   text: string;
+ 16:   userMessageTime?: number;
+ 17:   abortSignal?: AbortSignal;
+ 18:   resTool: ResTool;
+ 19:   msg: ReturnType<ResTool["newMessage"]>;
+ 20:   messages?: { role: "user" | "assistant" | "system"; content: string }[];
+ 21:   thinkConfig: {
+ 22:     think: boolean;
+ 23:     thinlLevel: 0 | 1 | 2 | 3;
+ 24:   };
+ 25: }
+ 26: 
+ 27: function buildMemPrompt(mem: Awaited<ReturnType<Memory["get"]>>): string {
+ 28:   let memoryContext = "";
+ 29:   if (mem.rag.length) {
+ 30:     memoryContext += `[相关记忆]\n${mem.rag.map((r) => r.content).join("\n")}`;
+ 31:   }
+ 32:   if (mem.summaries.length) {
+ 33:     if (memoryContext) memoryContext += "\n\n";
+ 34:     memoryContext += `[历史摘要]\n${mem.summaries.map((s, i) => `${i + 1}. ${s.content}`).join("\n")}`;
+ 35:   }
+ 36:   if (mem.shortTerm.length) {
+ 37:     if (memoryContext) memoryContext += "\n\n";
+ 38:     memoryContext += `[近期对话]\n${mem.shortTerm.map((m) => `${m.role}: ${m.content}`).join("\n")}`;
+ 39:   }
+ 40:   return `## Memory\n以下是你对用户的记忆，可作为参考但不要主动提及：\n${memoryContext}`;
+ 41: }
+ 42: 
+ 43: export async function runDecisionAI(ctx: AgentContext) {
+ 44:   const { isolationKey, text, abortSignal } = ctx;
+ 45:   const memory = new Memory("productionAgent", isolationKey);
+ 46:   await memory.add("user", text);
+ 47: 
+ 48:   const skill = path.join(u.getPath("skills"), "production_agent_decision.md");
+ 49:   const prompt = await fs.promises.readFile(skill, "utf-8");
+ 50: 
+ 51:   const projectInfo = await u.db("o_project").where("id", ctx.resTool.data.projectId).first();
+ 52:   if (!projectInfo) throw new Error(`项目不存在，ID: ${ctx.resTool.data.projectId}`);
+ 53:   const [_, imageModelName] = projectInfo.imageModel!.split(/:(.+)/);
+ 54:   const [id, videoModelName] = projectInfo.videoModel!.split(/:(.+)/);
+ 55:   const models = await u.vendor.getModelList(id);
+ 56:   if (!models.length) throw new Error(`项目使用的模型不存在，ID: ${projectInfo.videoModel}`);
+ 57:   let videoMode = "";
+ 58:   try {
+ 59:     videoMode = JSON.parse(projectInfo.mode ?? "");
+ 60:   } catch (e) {
+ 61:     videoMode = projectInfo.mode ?? "";
+ 62:   }
+ 63:   const isRef = Array.isArray(videoMode) ? true : false;
+ 64:   // const findData = models.find((i: any) => i.modelName == videoModelName);
+ 65:   // const isRef = findData.mode.every((i: any) => Array.isArray(i));
+ 66: 
+ 67:   const modelInfo = `项目使用的模型如下：\n图像模型：${imageModelName}\n视频模型：${videoModelName}\n多参：${isRef ? "是" : "否"}`;
+ 68: 
+ 69:   const mem = buildMemPrompt(await memory.get(text));
+ 70: 
+ 71:   const { fullStream } = await u.Ai.Text("productionAgent:decisionAgent", ctx.thinkConfig.think, ctx.thinkConfig.thinlLevel).stream({
+ 72:     messages: [
+ 73:       { role: "system", content: prompt },
+ 74:       { role: "assistant", content: mem + "\n" + modelInfo },
+ 75:       { role: "user", content: text },
+ 76:     ],
+ 77:     abortSignal,
+ 78:     tools: {
+ 79:       ...memory.getTools(),
+ 80:       ...useTools({ resTool: ctx.resTool, msg: ctx.msg }),
+ 81:       ...(await createSubAgent(ctx)),
+ 82:     },
+ 83:     onFinish: async (completion) => {
+ 84:       await memory.add("assistant:decision", removeAllXmlTags(completion.text));
+ 85:     },
+ 86:   });
+ 87: 
+ 88:   let currentMsg = ctx.msg;
+ 89:   await consumeFullStream(fullStream, currentMsg, () => {
+ 90:     if (ctx.msg === currentMsg) return currentMsg;
+ 91:     currentMsg.complete();
+ 92:     currentMsg = ctx.msg;
+ 93:     return currentMsg;
+ 94:   });
+ 95: }
+ 96: 
+ 97: async function createSubAgent(parentCtx: AgentContext) {
+ 98:   const { resTool, abortSignal } = parentCtx;
+ 99:   const memory = new Memory("productionAgent", parentCtx.isolationKey);
+100:   async function runAgent({
+101:     key,
+102:     prompt,
+103:     system,
+104:     name,
+105:     memoryKey,
+106:     tools: extraTools,
+107:     messages,
+108:   }: {
+109:     key: `${string}:${string}`;
+110:     prompt: string;
+111:     system: string;
+112:     name: string;
+113:     memoryKey: string;
+114:     tools?: Record<string, any>;
+115:     messages?: { role: "user" | "assistant" | "system"; content: string }[];
+116:   }) {
+117:     parentCtx.msg.complete();
+118:     const subMsg = resTool.newMessage("assistant", name);
+119: 
+120:     const { fullStream } = await u.Ai.Text(key, parentCtx.thinkConfig.think, parentCtx.thinkConfig.thinlLevel).stream({
+121:       system,
+122:       messages: messages ?? [{ role: "user", content: prompt }],
+123:       abortSignal,
+124:       tools: { ...extraTools, ...useTools({ resTool, msg: subMsg }) },
+125:     });
+126: 
+127:     const fullResponse = await consumeFullStream(fullStream, subMsg);
+128: 
+129:     if (fullResponse.trim()) {
+130:       await memory.add(memoryKey, removeAllXmlTags(fullResponse), {
+131:         name,
+132:         createTime: new Date(subMsg.datetime).getTime(),
+133:       });
+134:     }
+135: 
+136:     parentCtx.msg = resTool.newMessage("assistant", "视频策划");
+137:     return fullResponse;
+138:   }
+139: 
+140:   const promptInput = z
+141:     .object({
+142:       prompt: z.string().describe("交给子Agent的任务简约描述，100字以内"),
+143:     })
+144:     .toJSONSchema();
+145: 
+146:   const projectInfo = await u.db("o_project").where("id", resTool.data.projectId).first();
+147:   if (!projectInfo) throw new Error(`项目不存在，ID: ${resTool.data.projectId}`);
+148:   const artSkills = await createArtSkills(projectInfo?.artStyle!, projectInfo?.directorManual!);
+149: 
+150:   const [_, imageModelName] = projectInfo.imageModel!.split(/:(.+)/);
+151:   const [id, videoModelName] = projectInfo.videoModel!.split(/:(.+)/);
+152:   const models = await u.vendor.getModelList(id);
+153:   if (!models.length) throw new Error(`项目使用的模型不存在，ID: ${projectInfo.videoModel}`);
+154:   // const findData = models.find((i: any) => i.modelName == videoModelName);
+155:   //
+156:   let videoMode = "";
+157:   try {
+158:     videoMode = JSON.parse(projectInfo.mode ?? "");
+159:   } catch (e) {
+160:     videoMode = projectInfo.mode ?? "";
+161:   }
+162:   const isRef = Array.isArray(videoMode) ? true : false;
+163: 
+164:   const modelInfo = `项目使用的模型如下：\n图像模型：${imageModelName}\n视频模型：${videoModelName}\n多参：${isRef ? "是" : "否"}`;
+165: 
+166:   // const run_sub_agent_execution = tool({
+167:   //   description: "执行层子Agent，负责衍生资产、",
+168:   //   inputSchema: promptInput,
+169:   //   execute: async ({ prompt }) => {
+170:   //     const skill = path.join(u.getPath("skills"), "production_agent_execution.md");
+171:   //     const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+172:   //     const addPrompt =
+173:   //       "\n" +
+174:   //       [
+175:   //         "你必须使用如下XML格式写入工作区：\n```",
+176:   //         "拍摄计划：<scriptPlan>内容</scriptPlan>",
+177:   //         "分镜表：<storyboardTable>内容</storyboardTable>",
+178:   //         "分镜面板：<storyboardItem videoDesc='视频描述' prompt=提示词内容 track='分组' duration='视频推荐时间' associateAssetsIds='[该分镜所需的资产ID列表]'></storyboardItem>",
+179:   //         "```",
+180:   //       ].join("\n");
+181: 
+182:   //     return runAgent({
+183:   //       prompt,
+184:   //       system: systemPrompt + addPrompt,
+185:   //       name: "执行导演",
+186:   //       memoryKey: "assistant:execution",
+187:   //       messages: [
+188:   //         { role: "assistant", content: artSkills.prompt + `\n${modelInfo}` },
+189:   //         { role: "user", content: prompt + addPrompt },
+190:   //       ],
+191:   //       tools: { ...artSkills.tools },
+192:   //     });
+193:   //   },
+194:   // });
+195: 
+196:   //衍生资产分析与信息写入
+197:   const run_sub_agent_derive_assets = tool({
+198:     description: "运行执行subAgent来完成衍生资产分析与信息写入相关任务",
+199:     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
+200:     execute: async ({ prompt }) => {
+201:       const skill = path.join(u.getPath("skills"), "production_execution_derive_assets.md");
+202:       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+203:       return runAgent({
+204:         key: "productionAgent:deriveAssetsAgent",
+205:         prompt,
+206:         system: systemPrompt,
+207:         name: "执行导演",
+208:         memoryKey: "assistant:execution",
+209:         messages: [
+210:           { role: "assistant", content: artSkills.prompt + `\n${modelInfo}` },
+211:           { role: "user", content: prompt },
+212:         ],
+213:         tools: { activate_skill: artSkills.tools.activate_skill },
+214:       });
+215:     },
+216:   });
+217: 
+218:   //衍生资产图片生成
+219:   const run_sub_agent_generate_assets = tool({
+220:     description: "运行执行subAgent来完成衍生资产图片生成相关任务",
+221:     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
+222:     execute: async ({ prompt }) => {
+223:       const skill = path.join(u.getPath("skills"), "production_execution_generate_assets.md");
+224:       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+225:       return runAgent({
+226:         key: "productionAgent:generateAssetsAgent",
+227:         prompt,
+228:         system: systemPrompt,
+229:         name: "执行导演",
+230:         memoryKey: "assistant:execution",
+231:         messages: [
+232:           { role: "assistant", content: artSkills.prompt + `\n${modelInfo}` },
+233:           { role: "user", content: prompt },
+234:         ],
+235:         tools: { activate_skill: artSkills.tools.activate_skill },
+236:       });
+237:     },
+238:   });
+239: 
+240:   //拍摄计划
+241:   const run_sub_agent_director_plan = tool({
+242:     description: "运行执行subAgent来完成导演规划相关任务",
+243:     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
+244:     execute: async ({ prompt }) => {
+245:       const skill = path.join(u.getPath("skills"), "production_execution_director_plan.md");
+246:       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+247: 
+248:       const addPrompt = "\n你必须使用如下XML格式写入工作区：\n```\n<scriptPlan>内容</scriptPlan>\n```";
+249: 
+250:       return runAgent({
+251:         key: "productionAgent:directorPlanAgent",
+252:         prompt,
+253:         system: systemPrompt + addPrompt,
+254:         name: "执行导演",
+255:         memoryKey: "assistant:execution",
+256:         messages: [
+257:           { role: "assistant", content: artSkills.prompt + `\n${modelInfo}` },
+258:           { role: "user", content: prompt + addPrompt },
+259:         ],
+260:         tools: { activate_skill: artSkills.tools.activate_skill },
+261:       });
+262:     },
+263:   });
+264: 
+265:   //分镜图生成
+266:   const run_sub_agent_storyboard_gen = tool({
+267:     description: "运行执行subAgent来完成分镜图生成相关任务",
+268:     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
+269:     execute: async ({ prompt }) => {
+270:       const skill = path.join(u.getPath("skills"), "production_execution_storyboard_gen.md");
+271:       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+272:       return runAgent({
+273:         key: "productionAgent:storyboardGenAgent",
+274:         prompt,
+275:         system: systemPrompt,
+276:         name: "执行导演",
+277:         memoryKey: "assistant:execution",
+278:         messages: [
+279:           { role: "assistant", content: artSkills.prompt + `\n${modelInfo}` },
+280:           { role: "user", content: prompt },
+281:         ],
+282:         tools: { activate_skill: artSkills.tools.activate_skill },
+283:       });
+284:     },
+285:   });
+286: 
+287:   // const mainSkills: { path: string; name: string; description: string }[] = [];
+288:   // for (const skill of mainSkill) {
+289:   //   const skillPath = path.join(rootDir, skill + ".md");
+290:   //   if (!fs.existsSync(skillPath)) throw new Error(`主技能文件不存在: ${skillPath}`);
+291:   //   if (!isPathInside(skillPath, normalizedRootDir)) throw new Error(`技能名称无效：检测到路径穿越。${skillPath}`);
+292:   //   const content = await fs.promises.readFile(skillPath, "utf-8");
+293:   //   const parsed = parseFrontmatter(content);
+294:   //   mainSkills.push({ path: skillPath, ...parsed });
+295:   // }
+296: 
+297:   const productionSkills = await useProductionSkills(projectInfo?.artStyle!, projectInfo?.directorManual!);
+298: 
+299:   //分镜面板写入
+300:   const run_sub_agent_storyboard_panel = tool({
+301:     description: "运行执行subAgent来完成分镜面板写入相关任务",
+302:     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
+303:     execute: async ({ prompt }) => {
+304:       const skill = path.join(u.getPath("skills"), "production_execution_storyboard_panel.md");
+305:       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+306: 
+307:       const addPrompt =
+308:         "\n你必须使用如下XML格式写入工作区：\n```\n<storyboardItem videoDesc='视频描述' prompt=提示词内容 track='分组' shouldGenerateImage='true/false' duration='视频推荐时间' associateAssetsIds='[该分镜所需的资产ID列表]'></storyboardItem>\n```";
+309: 
+310:       return runAgent({
+311:         key: "productionAgent:storyboardPanelAgent",
+312:         prompt,
+313:         system: systemPrompt + addPrompt,
+314:         name: "执行导演",
+315:         memoryKey: "assistant:execution",
+316:         messages: [
+317:           { role: "assistant", content: productionSkills.prompt + `\n${modelInfo}` },
+318:           { role: "user", content: prompt + addPrompt },
+319:         ],
+320:         tools: { activate_skill: productionSkills.tools.activate_skill },
+321:       });
+322:     },
+323:   });
+324: 
+325:   //分镜表写入
+326:   const run_sub_agent_storyboard_table = tool({
+327:     description: "运行执行subAgent来完成分镜表构建相关任务",
+328:     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
+329:     execute: async ({ prompt }) => {
+330:       const skill = path.join(u.getPath("skills"), "production_execution_storyboard_table.md");
+331:       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+332: 
+333:       const addPrompt = "\n你必须使用如下XML格式写入工作区：\n```\n<storyboardTable>内容</storyboardTable>\n```";
+334: 
+335:       return runAgent({
+336:         key: "productionAgent:storyboardTableAgent",
+337:         prompt,
+338:         system: systemPrompt + addPrompt,
+339:         name: "执行导演",
+340:         memoryKey: "assistant:execution",
+341:         messages: [
+342:           { role: "assistant", content: productionSkills.prompt + `\n${modelInfo}` },
+343:           { role: "user", content: prompt + addPrompt },
+344:         ],
+345:         tools: { activate_skill: productionSkills.tools.activate_skill },
+346:       });
+347:     },
+348:   });
+349: 
+350:   const run_sub_agent_supervision = tool({
+351:     description: "运行监督层subAgent执行独立任务，完成后返回结果",
+352:     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
+353:     execute: async ({ prompt }) => {
+354:       const skill = path.join(u.getPath("skills"), "production_agent_supervision.md");
+355:       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+356:       return runAgent({
+357:         key: "productionAgent:supervisionAgent",
+358:         prompt,
+359:         system: systemPrompt,
+360:         name: "监制",
+361:         memoryKey: "assistant:supervision",
+362:       });
+363:     },
+364:   });
+365: 
+366:   return {
+367:     run_sub_agent_derive_assets,
+368:     run_sub_agent_generate_assets,
+369:     run_sub_agent_director_plan,
+370:     run_sub_agent_storyboard_gen,
+371:     run_sub_agent_storyboard_panel,
+372:     run_sub_agent_storyboard_table,
+373:     run_sub_agent_supervision,
+374:   };
+375: }
+376: 
+377: async function createArtSkills(artName: string, storyName: string) {
+378:   const artWorkerPath = u.getPath(["skills", "art_skills", artName, "driector_skills"]);
+379:   const storyWorkerPath = u.getPath(["skills", "story_skills", storyName, "driector_skills"]);
+380:   const skillList = [...(await scanSkills(artWorkerPath + "/*.md")), ...(await scanSkills(storyWorkerPath + "/*.md"))];
+381:   const mainSkills: { path: string; name: string; description: string }[] = [];
+382:   for (const skillPath of skillList) {
+383:     if (!fs.existsSync(skillPath)) throw new Error(`主技能文件不存在: ${skillPath}`);
+384:     const content = await fs.promises.readFile(skillPath, "utf-8");
+385:     const parsed = parseFrontmatter(content);
+386:     mainSkills.push({ path: skillPath, ...parsed });
+387:   }
+388:   const res = {
+389:     prompt: `## Skills
+390: 以下技能提供了专业任务的专用指令。
+391: 当任务与某个技能的描述匹配时，调用 activate_skill 工具并传入技能名称来加载完整指令。
+392: ${buildSkillPrompt(mainSkills)}`,
+393:     tools: createSkillTools(mainSkills, { mainSkill: mainSkills, secondarySkills: [], tertiarySkills: [] }),
+394:   };
+395:   return res;
+396: }
+397: async function consumeFullStream(
+398:   fullStream: AsyncIterable<any>,
+399:   initialMsg: ReturnType<ResTool["newMessage"]>,
+400:   syncMsg?: () => ReturnType<ResTool["newMessage"]>,
+401: ): Promise<string> {
+402:   let msg = initialMsg;
+403:   let text = msg.text();
+404:   let thinking: ReturnType<typeof msg.thinking> | null = null;
+405:   let thinkTime = 0;
+406:   let fullResponse = "";
+407: 
+408:   try {
+409:     for await (const chunk of fullStream) {
+410:       if (syncMsg) {
+411:         const newMsg = syncMsg();
+412:         if (newMsg !== msg) {
+413:           msg = newMsg;
+414:           text = msg.text();
+415:         }
+416:       }
+417:       if (chunk.type === "reasoning-start") {
+418:         thinkTime = Date.now();
+419:         thinking = msg.thinking("思考中...");
+420:       } else if (chunk.type === "reasoning-delta") {
+421:         thinking?.append(chunk.text);
+422:       } else if (chunk.type === "reasoning-end") {
+423:         thinkTime = Date.now() - thinkTime;
+424:         thinking?.updateTitle(`思考完毕（${(thinkTime / 1000).toFixed(1)} 秒）`);
+425:         thinking?.complete();
+426:         thinking = null;
+427:       } else if (chunk.type === "text-delta") {
+428:         text.append(chunk.text);
+429:         fullResponse += chunk.text;
+430:       } else if (chunk.type === "error") {
+431:         throw chunk.error;
+432:       } else if (chunk.type == "finish") {
+433:         break;
+434:       }
+435:     }
+436:     text.complete();
+437:     msg.complete();
+438:   } catch (err: any) {
+439:     thinking?.complete();
+440:     const errMsg = err?.message ?? String(err);
+441:     text.append(errMsg);
+442:     text.error();
+443:     msg.error();
+444:     throw err;
+445:   }
+446: 
+447:   return fullResponse;
+448: }
+449: function removeAllXmlTags(text: string): string {
+450:   text = text.replace(/<([a-zA-Z][\w-]*)(\s+[^>]*)?>([\s\S]*?)<\/\1>/g, "");
+451:   text = text.replace(/<([a-zA-Z][\w-]*)(\s+[^>]*)?\/>/g, "");
+452:   text = text.replace(/<\/?[a-zA-Z][\w-]*(\s+[^>]*)?>/g, "");
+453:   return text.trim();
+454: }
+455: 
+456: export function buildSkillPrompt(skills: { name: string; description: string }[]): string {
+457:   const skillEntries = skills
+458:     .map((s) => `  <skill>\n    <name>${s.name}</name>\n    <description>${s.description}</description>\n  </skill>`)
+459:     .join("\n");
+460:   return `
+461: <available_skills>
+462: ${skillEntries}
+463: </available_skills>`;
+464: }
+465: 
+466: async function useProductionSkills(artName: string, storyName: string) {
+467:   const artWorkerPath = u.getPath(["skills", "art_skills", artName, "driector_skills"]);
+468:   const storyWorkerPath = u.getPath(["skills", "story_skills", storyName, "driector_skills"]);
+469:   const productionPath = u.getPath(["skills", "production_skills"]);
+470:   const skillList = [
+471:     ...(await scanSkills(artWorkerPath + "/*.md")),
+472:     ...(await scanSkills(storyWorkerPath + "/*.md")),
+473:     ...(await scanSkills(productionPath + "/*.md")),
+474:   ];
+475:   const mainSkills: { path: string; name: string; description: string }[] = [];
+476:   for (const skillPath of skillList) {
+477:     if (!fs.existsSync(skillPath)) throw new Error(`主技能文件不存在: ${skillPath}`);
+478:     const content = await fs.promises.readFile(skillPath, "utf-8");
+479:     const parsed = parseFrontmatter(content);
+480:     mainSkills.push({ path: skillPath, ...parsed });
+481:   }
+482:   const res = {
+483:     prompt: `## Skills
+484: 以下技能提供了专业任务的专用指令。
+485: 当任务与某个技能的描述匹配时，调用 activate_skill 工具并传入技能名称来加载完整指令。
+486: ${buildSkillPrompt(mainSkills)}`,
+487:     tools: createSkillTools(mainSkills, { mainSkill: mainSkills, secondarySkills: [], tertiarySkills: [] }),
+488:   };
+489:   return res;
+490: }
+</file>
+
+<file path="src/agents/productionAgent/tools.ts">
+  1: import { tool, jsonSchema, Tool } from "ai";
+  2: import { z } from "zod";
+  3: import _ from "lodash";
+  4: import ResTool from "@/socket/resTool";
+  5: import u from "@/utils";
+  6: 
+  7: const deriveAssetSchema = z.object({
+  8:   id: z.number().describe("衍生资产ID,如果新增则为空"),
+  9:   assetsId: z.number().describe("关联的资产ID"),
+ 10:   prompt: z.string().describe("生成提示词"),
+ 11:   name: z.string().describe("衍生资产名称"),
+ 12:   desc: z.string().describe("衍生资产描述"),
+ 13:   src: z.string().nullable().describe("衍生资产资源路径"),
+ 14:   state: z.enum(["未生成", "生成中", "已完成", "生成失败"]).describe("衍生资产生成状态"),
+ 15:   type: z.enum(["role", "tool", "scene", "clip"]).describe("衍生资产类型"),
+ 16: });
+ 17: export const assetItemSchema = z.object({
+ 18:   id: z.number().describe("资产唯一标识"),
+ 19:   name: z.string().describe("资产名称"),
+ 20:   type: z.enum(["role", "tool", "scene", "clip"]).describe("资产类型"),
+ 21:   prompt: z.string().describe("生成提示词"),
+ 22:   desc: z.string().describe("资产描述"),
+ 23:   derive: z.array(deriveAssetSchema).describe("衍生资产列表"),
+ 24: });
+ 25: const storyboardSchema = z.object({
+ 26:   id: z.number().describe("分镜ID，必须为真实id"),
+ 27:   duration: z.number().describe("持续时长(秒)"),
+ 28:   prompt: z.string().describe("生成提示词"),
+ 29:   associateAssetsIds: z.array(z.number()).describe("关联资产ID列表"),
+ 30:   src: z.string().nullable().describe("分镜资源路径"),
+ 31:   index: z.number().nullable().optional().describe("分镜排序字段"),
+ 32: });
+ 33: const workbenchDataSchema = z.object({
+ 34:   name: z.string().describe("项目名称"),
+ 35:   duration: z.string().describe("视频时长"),
+ 36:   resolution: z.string().describe("分辨率"),
+ 37:   fps: z.string().describe("帧率"),
+ 38:   cover: z.string().optional().describe("封面图片路径"),
+ 39:   gradient: z.string().optional().describe("渐变色配置"),
+ 40: });
+ 41: const posterItemSchema = z.object({
+ 42:   id: z.number().describe("海报ID"),
+ 43:   image: z.string().describe("海报图片路径"),
+ 44: });
+ 45: export const flowDataSchema = z.object({
+ 46:   script: z.string().describe("剧本内容"),
+ 47:   scriptPlan: z.string().describe("拍摄计划"),
+ 48:   assets: z.array(assetItemSchema).describe("衍生资产"),
+ 49:   storyboardTable: z.string().describe("分镜表"),
+ 50:   storyboard: z.array(storyboardSchema).describe("分镜面板"),
+ 51: });
+ 52: 
+ 53: export type FlowData = z.infer<typeof flowDataSchema>;
+ 54: 
+ 55: const keySchema = z.enum(Object.keys(flowDataSchema.shape) as [keyof FlowData, ...Array<keyof FlowData>]);
+ 56: const flowDataKeyLabels = Object.fromEntries(
+ 57:   Object.entries(flowDataSchema.shape).map(([key, schema]) => [key, (schema as z.ZodTypeAny).description ?? key]),
+ 58: ) as Record<keyof FlowData, string>;
+ 59: 
+ 60: interface ToolConfig {
+ 61:   resTool: ResTool;
+ 62:   toolsNames?: string[];
+ 63:   msg: ReturnType<ResTool["newMessage"]>;
+ 64: }
+ 65: 
+ 66: /**
+ 67:  * 串行队列：确保 socket 操作排队执行，避免并发过高导致假死
+ 68:  * @param delayMs 每个操作之间的最小间隔(ms)
+ 69:  */
+ 70: function createSocketQueue(delayMs = 800) {
+ 71:   let lastPromise: Promise<any> = Promise.resolve();
+ 72:   return <T>(fn: () => Promise<T>): Promise<T> => {
+ 73:     lastPromise = lastPromise.then(
+ 74:       () =>
+ 75:         new Promise<T>((resolve, reject) => {
+ 76:           setTimeout(() => fn().then(resolve, reject), delayMs);
+ 77:         }),
+ 78:     );
+ 79:     return lastPromise;
+ 80:   };
+ 81: }
+ 82: 
+ 83: export default (toolCpnfig: ToolConfig) => {
+ 84:   const { resTool, toolsNames, msg } = toolCpnfig;
+ 85:   const { socket } = resTool;
+ 86:   const socketQueue = createSocketQueue(800);
+ 87:   const workMap: Record<any, any> = {};
+ 88:   const tools: Record<string, Tool> = {
+ 89:     get_flowData: tool({
+ 90:       description: "获取工作区数据",
+ 91:       inputSchema: jsonSchema<{ key: keyof FlowData }>(
+ 92:         z
+ 93:           .object({
+ 94:             key: keySchema.describe("数据key"),
+ 95:           })
+ 96:           .toJSONSchema(),
+ 97:       ),
+ 98:       execute: async ({ key }) => {
+ 99:         const thinking = msg.thinking(`正在获取${flowDataKeyLabels[key]}工作区数据...`);
+100: 
+101:         const flowData: FlowData = await new Promise((resolve) => socket.emit("getFlowData", { key }, (res: any) => resolve(res)));
+102:         thinking.appendText(`获取到${flowDataKeyLabels[key]}:\n` + JSON.stringify(flowData[key], null, 2));
+103:         thinking.updateTitle(`获取${flowDataKeyLabels[key]}完成`);
+104:         thinking.complete();
+105:         if (workMap[key] && JSON.stringify(workMap[key]) === JSON.stringify(flowData[key])) {
+106:           console.info(`[tools] get_flowData: ${flowDataKeyLabels[key]}数据未变化，无需更新`);
+107:           return `${flowDataKeyLabels[key]}数据未变化，无需更新`;
+108:         }
+109:         workMap[key] = flowData[key];
+110:         return flowData[key];
+111:       },
+112:     }),
+113:     add_deriveAsset: tool({
+114:       description: "新增或更新衍生资产",
+115:       inputSchema: jsonSchema<{ assetsId: number; id: number | null; name: string; desc: string }>(
+116:         z
+117:           .object({
+118:             assetsId: z.number().describe("关联的资产ID"),
+119:             id: z.number().nullable().describe("衍生资产ID,如果新增则为空"),
+120:             name: z.string().describe("衍生资产名称"),
+121:             desc: z.string().describe("衍生资产描述"),
+122:           })
+123:           .toJSONSchema(),
+124:       ),
+125:       execute: async (raw) => {
+126:         // 容错：LLM 偶尔传 "null" 字符串或空串，统一规范为 null
+127:         const idRaw = raw.id as unknown;
+128:         const normalizedId = idRaw === "null" || idRaw === "" || idRaw === undefined ? null : (idRaw as number | null);
+129:         const deriveAsset = { ...raw, id: normalizedId };
+130: 
+131:         const thinking = msg.thinking("正在操作资产...");
+132:         const { projectId, scriptId } = resTool.data;
+133:         const startTime = Date.now();
+134:         const parentAssets = await u.db("o_assets").where("id", deriveAsset.assetsId).select("id", "type").first();
+135:         if (!parentAssets) return "关联的资产不存在";
+136: 
+137:         const data = {
+138:           id: deriveAsset.id ?? undefined,
+139:           assetsId: deriveAsset.assetsId,
+140:           projectId,
+141:           name: deriveAsset.name,
+142:           type: parentAssets.type,
+143:           describe: deriveAsset.desc,
+144:           startTime,
+145:         };
+146:         if (deriveAsset.id) {
+147:           await u.db("o_assets").where("id", deriveAsset.id).update(data);
+148:           thinking.appendText(`已更新衍生资产，ID: ${deriveAsset.id}\n`);
+149:         } else {
+150:           const [insertedId] = await u.db("o_assets").insert(data);
+151:           data.id = insertedId;
+152:           await u.db("o_scriptAssets").insert({ scriptId, assetId: insertedId });
+153:           thinking.appendText(`已新增衍生资产，ID: ${insertedId}\n`);
+154:         }
+155:         const res = await new Promise((resolve) => socket.emit("addDeriveAsset", data, (res: any) => resolve(res)));
+156:         thinking.updateTitle("资产操作完成");
+157:         thinking.complete();
+158:         return res ?? "操作成功";
+159:       },
+160:     }),
+161:     del_deriveAsset: tool({
+162:       description: "删除衍生资产",
+163:       inputSchema: jsonSchema<{ assetsId: number; id: number }>(
+164:         z
+165:           .object({
+166:             assetsId: z.number().describe("关联的资产ID"),
+167:             id: z.number().describe("衍生资产ID"),
+168:           })
+169:           .toJSONSchema(),
+170:       ),
+171:       execute: async ({ assetsId, id }) => {
+172:         const thinking = msg.thinking("正在操作资产...");
+173:         const { scriptId } = resTool.data;
+174:         await u.db("o_assets").where("id", id).del();
+175:         await u.db("o_scriptAssets").where({ scriptId, assetId: id }).del();
+176:         thinking.appendText(`已删除衍生资产，ID: ${id}\n`);
+177:         const res = await new Promise((resolve) => socket.emit("delDeriveAsset", { assetsId, id }, (res: any) => resolve(res)));
+178:         thinking.updateTitle("资产操作完成");
+179:         thinking.complete();
+180:         return res ?? "删除成功";
+181:       },
+182:     }),
+183:     generate_deriveAsset: tool({
+184:       description: "生成衍生资产图片",
+185:       inputSchema: jsonSchema<{ ids: number[] }>(
+186:         z
+187:           .object({
+188:             ids: z.array(z.number()).describe("需要生成的 衍生资产ID"),
+189:           })
+190:           .toJSONSchema(),
+191:       ),
+192:       execute: async ({ ids }) => {
+193:         const thinking = msg.thinking("正在生成衍生资产...");
+194:         new Promise((resolve) => socket.emit("generateDeriveAsset", { ids }, (res: any) => resolve(res)))
+195:           .then((res) => {
+196:             thinking.appendText(`已生成衍生资产，ID: ${JSON.stringify(res, null, 2)}\n`);
+197:             thinking.updateTitle("衍生资产开始完成");
+198:             thinking.complete();
+199:           })
+200:           .catch((e) => {
+201:             thinking.appendText("衍生资产生成失败:\n" + u.error(e).message);
+202:             thinking.updateTitle("衍生资产生成失败");
+203:             thinking.complete();
+204:           });
+205: 
+206:         return "开始生成衍生资产";
+207:       },
+208:     }),
+209:     generate_storyboard: tool({
+210:       description: "生成分镜图片",
+211:       inputSchema: jsonSchema<{ ids: number[] }>(
+212:         z
+213:           .object({
+214:             ids: z.array(z.number()).describe("必须获取真实的分镜ID，支持批量生成"),
+215:           })
+216:           .toJSONSchema(),
+217:       ),
+218:       execute: async ({ ids }) => {
+219:         const thinking = msg.thinking("正在生成分镜...");
+220:         socketQueue(
+221:           () =>
+222:             new Promise((resolve, reject) =>
+223:               socket.emit("generateStoryboard", { ids }, (res: any) => {
+224:                 if (res?.error) return reject(new Error(res.error));
+225:                 resolve(res);
+226:               }),
+227:             ),
+228:         )
+229:           .then((res) => {
+230:             thinking.appendText("生成的分镜数据:\n" + JSON.stringify(res, null, 2));
+231:             thinking.updateTitle("分镜生成完成");
+232:             thinking.complete();
+233:           })
+234:           .catch((e) => {
+235:             thinking.appendText("分镜生成失败:\n" + u.error(e).message);
+236:             thinking.updateTitle("分镜生成失败");
+237:             thinking.complete();
+238:           });
+239: 
+240:         return "开始生成分镜";
+241:       },
+242:     }),
+243:     add_flowData_storyboard: tool({
+244:       description: "新增分镜面板到工作区",
+245:       inputSchema: jsonSchema<{
+246:         videoDesc: string;
+247:         prompt: string | null;
+248:         track: string;
+249:         duration: number;
+250:         associateAssetsIds: number[] | null;
+251:         shouldGenerateImage: string;
+252:       }>(
+253:         z
+254:           .object({
+255:             videoDesc: z.string().describe("画面描述、场景、关联资产名称、时长、景别、运镜、角色动作、情绪、光影氛围、台词、音效、关联资产ID"),
+256:             prompt: z.string().nullable().describe("分镜图片提示词"),
+257:             track: z.string().describe("分组"),
+258:             duration: z.number().describe("视频推荐时间"),
+259:             associateAssetsIds: z.array(z.number()).nullable().describe("该分镜所需的资产ID列表"),
+260:             shouldGenerateImage: z.enum(["true", "false"]).describe("是否需要生成分镜图片"),
+261:           })
+262:           .toJSONSchema(),
+263:       ),
+264:       execute: async (raw) => {
+265:         const thinking = msg.thinking("正在新增 分镜面板 数据...");
+266:         const data = {
+267:           videoDesc: raw.videoDesc,
+268:           prompt: raw.prompt,
+269:           track: raw.track,
+270:           duration: raw.duration,
+271:           associateAssetsIds: raw.associateAssetsIds ?? [],
+272:           shouldGenerateImage: raw.shouldGenerateImage,
+273:         };
+274:         socketQueue(
+275:           () =>
+276:             new Promise((resolve, reject) =>
+277:               socket.emit("addStoryboard", { ...data }, (res: any) => {
+278:                 if (res?.error) return reject(new Error(res.error));
+279:                 resolve(res);
+280:               }),
+281:             ),
+282:         )
+283:           .then((res) => {
+284:             thinking.appendText("新增的分镜数据:\n" + JSON.stringify(data, null, 2));
+285:             thinking.updateTitle("新增分镜成功");
+286:             thinking.complete();
+287:           })
+288:           .catch((e) => {
+289:             thinking.appendText("新增的分镜数据:\n" + JSON.stringify(data, null, 2));
+290:             thinking.updateTitle("新增分镜失败");
+291:             thinking.complete();
+292:           });
+293:         return true;
+294:       },
+295:     }),
+296:   };
+297: 
+298:   return toolsNames ? Object.fromEntries(Object.entries(tools).filter(([n]) => toolsNames.includes(n))) : tools;
+299: };
+</file>
+
+<file path="src/agents/scriptAgent/index.ts">
+  1: import { Socket } from "socket.io";
+  2: import { tool, jsonSchema } from "ai";
+  3: import { z } from "zod";
+  4: import u from "@/utils";
+  5: import Memory from "@/utils/agent/memory";
+  6: import useTools from "@/agents/scriptAgent/tools";
+  7: import ResTool from "@/socket/resTool";
+  8: import * as fs from "fs";
+  9: import path from "path";
+ 10: 
+ 11: export interface AgentContext {
+ 12:   socket: Socket;
+ 13:   isolationKey: string;
+ 14:   text: string;
+ 15:   userMessageTime?: number;
+ 16:   abortSignal?: AbortSignal;
+ 17:   resTool: ResTool;
+ 18:   msg: ReturnType<ResTool["newMessage"]>;
+ 19:   thinkConfig: {
+ 20:     think: boolean;
+ 21:     thinlLevel: 0 | 1 | 2 | 3;
+ 22:   };
+ 23: }
+ 24: 
+ 25: function buildMemPrompt(mem: Awaited<ReturnType<Memory["get"]>>): string {
+ 26:   let memoryContext = "";
+ 27:   if (mem.rag.length) {
+ 28:     memoryContext += `[相关记忆]\n${mem.rag.map((r) => r.content).join("\n")}`;
+ 29:   }
+ 30:   if (mem.summaries.length) {
+ 31:     if (memoryContext) memoryContext += "\n\n";
+ 32:     memoryContext += `[历史摘要]\n${mem.summaries.map((s, i) => `${i + 1}. ${s.content}`).join("\n")}`;
+ 33:   }
+ 34:   if (mem.shortTerm.length) {
+ 35:     if (memoryContext) memoryContext += "\n\n";
+ 36:     memoryContext += `[近期对话]\n${mem.shortTerm.map((m) => `${m.role}: ${m.content}`).join("\n")}`;
+ 37:   }
+ 38:   return `## Memory\n以下是你对用户的记忆，可作为参考但不要主动提及：\n${memoryContext}`;
+ 39: }
+ 40: 
+ 41: export async function runDecisionAI(ctx: AgentContext) {
+ 42:   const { isolationKey, text, userMessageTime, abortSignal, resTool } = ctx;
+ 43:   const memory = new Memory("scriptAgent", isolationKey);
+ 44:   await memory.add("user", text, { createTime: userMessageTime });
+ 45: 
+ 46:   const skill = path.join(u.getPath("skills"), "script_agent_decision.md");
+ 47:   const prompt = await fs.promises.readFile(skill, "utf-8");
+ 48: 
+ 49:   const mem = buildMemPrompt(await memory.get(text));
+ 50: 
+ 51:   const projectData = await u.db("o_project").where("id", resTool.data.projectId).first();
+ 52: 
+ 53:   const novelData = await u.db("o_novel").where("projectId", resTool.data.projectId).select("chapterIndex");
+ 54: 
+ 55:   const projectInfo = [
+ 56:     "## 项目信息",
+ 57:     `小说名称：${projectData?.name ?? "未知"}`,
+ 58:     `小说类型：${projectData?.type ?? "未知"}`,
+ 59:     `小说简介：${projectData?.intro ?? "无"}`,
+ 60:     `目标改编影视视觉手册|画风：${projectData?.artStyle ?? "无"}`,
+ 61:     `目标改编视频画幅：${projectData?.videoRatio ?? "16:9"}`,
+ 62:     `章节数量：${novelData.length}章`,
+ 63:   ].join("\n");
+ 64: 
+ 65:   const { fullStream } = await u.Ai.Text("scriptAgent:decisionAgent", ctx.thinkConfig.think, ctx.thinkConfig.thinlLevel).stream({
+ 66:     messages: [
+ 67:       { role: "system", content: prompt },
+ 68:       { role: "assistant", content: projectInfo + "\n" + mem },
+ 69:       { role: "user", content: text },
+ 70:     ],
+ 71:     abortSignal,
+ 72:     tools: {
+ 73:       ...memory.getTools(),
+ 74:       ...useTools({ resTool: ctx.resTool, msg: ctx.msg }),
+ 75:       ...createSubAgent(ctx),
+ 76:     },
+ 77:     onFinish: async (completion) => {
+ 78:       await memory.add("assistant:decision", removeAllXmlTags(completion.text));
+ 79:     },
+ 80:   });
+ 81: 
+ 82:   let currentMsg = ctx.msg;
+ 83:   await consumeFullStream(fullStream, currentMsg, () => {
+ 84:     if (ctx.msg === currentMsg) return currentMsg;
+ 85:     currentMsg.complete();
+ 86:     currentMsg = ctx.msg;
+ 87:     return currentMsg;
+ 88:   });
+ 89: }
+ 90: 
+ 91: function createSubAgent(parentCtx: AgentContext) {
+ 92:   const { resTool, abortSignal } = parentCtx;
+ 93:   const memory = new Memory("scriptAgent", parentCtx.isolationKey);
+ 94: 
+ 95:   async function runAgent({
+ 96:     key,
+ 97:     prompt,
+ 98:     system,
+ 99:     name,
+100:     memoryKey,
+101:     tools: extraTools,
+102:     messages,
+103:   }: {
+104:     key: `${string}:${string}`;
+105:     prompt: string;
+106:     system: string;
+107:     name: string;
+108:     memoryKey: string;
+109:     tools?: Record<string, any>;
+110:     messages?: { role: "user" | "assistant" | "system"; content: string }[];
+111:   }) {
+112:     parentCtx.msg.complete();
+113:     const subMsg = resTool.newMessage("assistant", name);
+114: 
+115:     const { fullStream } = await u.Ai.Text(key, parentCtx.thinkConfig.think, parentCtx.thinkConfig.thinlLevel).stream({
+116:       system,
+117:       messages: messages ?? [{ role: "user", content: prompt }],
+118:       abortSignal,
+119:       tools: { ...extraTools, ...useTools({ resTool, msg: subMsg }) },
+120:     });
+121: 
+122:     const fullResponse = await consumeFullStream(fullStream, subMsg);
+123: 
+124:     if (fullResponse.trim()) {
+125:       await memory.add(memoryKey, removeAllXmlTags(fullResponse), {
+126:         name,
+127:         createTime: new Date(subMsg.datetime).getTime(),
+128:       });
+129:     }
+130: 
+131:     parentCtx.msg = resTool.newMessage("assistant", "视频策划");
+132:     return fullResponse;
+133:   }
+134: 
+135:   const promptInput = z
+136:     .object({
+137:       prompt: z.string().describe("交给子Agent的任务简约描述，100字以内"),
+138:     })
+139:     .toJSONSchema();
+140: 
+141:   const run_sub_agent_storySkeleton = tool({
+142:     description: "运行执行subAgent来完成故事骨架相关任务",
+143:     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
+144:     execute: async ({ prompt }) => {
+145:       const skill = path.join(u.getPath("skills"), "script_execution_skeleton.md");
+146:       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+147: 
+148:       const formatPrompt = "\n你必须使用如下XML格式写入工作区：\n<storySkeleton>故事骨架内容</storySkeleton>";
+149: 
+150:       return runAgent({
+151:         key: "scriptAgent:storySkeletonAgent",
+152:         prompt,
+153:         system: systemPrompt + formatPrompt,
+154:         name: "编剧",
+155:         memoryKey: "assistant:execution:storySkeleton",
+156:         messages: [{ role: "user", content: prompt + formatPrompt }],
+157:       });
+158:     },
+159:   });
+160: 
+161:   const run_sub_agent_adaptationStrategy = tool({
+162:     description: "运行执行subAgent来完成改编策略相关任务",
+163:     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
+164:     execute: async ({ prompt }) => {
+165:       const skill = path.join(u.getPath("skills"), "script_execution_adaptation.md");
+166:       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+167: 
+168:       const formatPrompt = "\n你必须使用如下XML格式写入工作区：\n<adaptationStrategy>改编策略内容</adaptationStrategy>";
+169: 
+170:       return runAgent({
+171:         key: "scriptAgent:adaptationStrategyAgent",
+172:         prompt,
+173:         system: systemPrompt + formatPrompt,
+174:         name: "编剧",
+175:         memoryKey: "assistant:execution:adaptationStrategy",
+176:         messages: [{ role: "user", content: prompt + formatPrompt }],
+177:       });
+178:     },
+179:   });
+180: 
+181:   const run_sub_agent_script = tool({
+182:     description: "运行执行subAgent来完成剧本相关任务",
+183:     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
+184:     execute: async ({ prompt }) => {
+185:       const skill = path.join(u.getPath("skills"), "script_execution_script.md");
+186:       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+187: 
+188:       const scriptList = await u.db("o_script").where("projectId", resTool.data.projectId).select("id", "name");
+189:       const scriptPrompt = ["## 可用剧本(ID:名称)", scriptList.map((s: any) => `${s.id}:${(s.name || "").replace(/[,:]/g, "")}`).join(","), ""].join(
+190:         "\n",
+191:       );
+192: 
+193:       const novelData = await u.db("o_novel").where("projectId", resTool.data.projectId).select("chapterIndex");
+194: 
+195:       const formatPrompt = `\n你必须使用如下XML格式写入工作区：\nXML不得添加任何额外标签<scriptItem name="剧本名称">剧本内容</scriptItem><scriptItem name="剧本名称">剧本内容</scriptItem><scriptItem name="剧本名称">剧本内容</scriptItem>`;
+196: 
+197:       return runAgent({
+198:         key: "scriptAgent:scriptAgent",
+199:         prompt,
+200:         system: systemPrompt + formatPrompt,
+201:         messages: [
+202:           { role: "assistant", content: scriptPrompt + `章节数量：${novelData.length}章` },
+203:           { role: "user", content: prompt + formatPrompt },
+204:         ],
+205:         name: "编剧",
+206:         memoryKey: "assistant:execution:script",
+207:       });
+208:     },
+209:   });
+210: 
+211:   const run_supervision_agent = tool({
+212:     description: "运行监督层subAgent执行独立任务，完成后返回结果",
+213:     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
+214:     execute: async ({ prompt }) => {
+215:       const skill = path.join(u.getPath("skills"), "script_agent_supervision.md");
+216:       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+217: 
+218:       return runAgent({
+219:         key: "scriptAgent:supervisionAgent",
+220:         prompt,
+221:         system: systemPrompt,
+222:         name: "编辑",
+223:         memoryKey: "assistant:supervision",
+224:       });
+225:     },
+226:   });
+227: 
+228:   return {
+229:     run_sub_agent_storySkeleton,
+230:     run_sub_agent_adaptationStrategy,
+231:     run_sub_agent_script,
+232:     run_supervision_agent,
+233:   };
+234: }
+235: 
+236: async function consumeFullStream(
+237:   fullStream: AsyncIterable<any>,
+238:   initialMsg: ReturnType<ResTool["newMessage"]>,
+239:   syncMsg?: () => ReturnType<ResTool["newMessage"]>,
+240: ): Promise<string> {
+241:   let msg = initialMsg;
+242:   let text = msg.text();
+243:   let thinking: ReturnType<typeof msg.thinking> | null = null;
+244:   let thinkTime = 0;
+245:   let fullResponse = "";
+246: 
+247:   try {
+248:     for await (const chunk of fullStream) {
+249:       if (syncMsg) {
+250:         const newMsg = syncMsg();
+251:         if (newMsg !== msg) {
+252:           msg = newMsg;
+253:           text = msg.text();
+254:         }
+255:       }
+256:       if (chunk.type === "reasoning-start") {
+257:         thinkTime = Date.now();
+258:         thinking = msg.thinking("思考中...");
+259:       } else if (chunk.type === "reasoning-delta") {
+260:         thinking?.append(chunk.text);
+261:       } else if (chunk.type === "reasoning-end") {
+262:         thinkTime = Date.now() - thinkTime;
+263:         thinking?.updateTitle(`思考完毕（${(thinkTime / 1000).toFixed(1)} 秒）`);
+264:         thinking?.complete();
+265:         thinking = null;
+266:       } else if (chunk.type === "text-delta") {
+267:         text.append(chunk.text);
+268:         fullResponse += chunk.text;
+269:       } else if (chunk.type === "error") {
+270:         throw chunk.error;
+271:       }
+272:     }
+273:     text.complete();
+274:     msg.complete();
+275:   } catch (err: any) {
+276:     thinking?.complete();
+277:     const errMsg = err?.message ?? String(err);
+278:     text.append(errMsg);
+279:     text.error();
+280:     msg.error();
+281:     throw err;
+282:   }
+283: 
+284:   return fullResponse;
+285: }
+286: 
+287: function removeAllXmlTags(text: string): string {
+288:   text = text.replace(/<([a-zA-Z][\w-]*)(\s+[^>]*)?>([\s\S]*?)<\/\1>/g, "");
+289:   text = text.replace(/<([a-zA-Z][\w-]*)(\s+[^>]*)?\/>/g, "");
+290:   text = text.replace(/<\/?[a-zA-Z][\w-]*(\s+[^>]*)?>/g, "");
+291:   return text.trim();
+292: }
+</file>
+
+<file path="src/agents/scriptAgent/tools.ts">
+  1: import { tool, jsonSchema, Tool } from "ai";
+  2: import u from "@/utils";
+  3: import { z } from "zod";
+  4: import _ from "lodash";
+  5: import ResTool from "@/socket/resTool";
+  6: 
+  7: export const ScriptSchema = z.object({
+  8:   name: z.string().describe("剧本名称"),
+  9:   content: z.string().describe("剧本内容"),
+ 10: });
+ 11: export const planData = z.object({
+ 12:   storySkeleton: z.string().describe("故事骨架"),
+ 13:   adaptationStrategy: z.string().describe("改编策略"),
+ 14:   script: z.string().describe("剧本内容"),
+ 15: });
+ 16: 
+ 17: export type planData = z.infer<typeof planData>;
+ 18: 
+ 19: const keySchema = z.enum(Object.keys(planData.shape) as [keyof planData, ...Array<keyof planData>]);
+ 20: const planDataKeyLabels = Object.fromEntries(
+ 21:   Object.entries(planData.shape).map(([key, schema]) => [key, (schema as z.ZodTypeAny).description ?? key]),
+ 22: ) as Record<keyof planData, string>;
+ 23: 
+ 24: interface ToolConfig {
+ 25:   resTool: ResTool;
+ 26:   toolsNames?: string[];
+ 27:   msg: ReturnType<ResTool["newMessage"]>;
+ 28: }
+ 29: 
+ 30: export default (toolCpnfig: ToolConfig) => {
+ 31:   const { resTool, toolsNames, msg } = toolCpnfig;
+ 32:   const { socket } = resTool;
+ 33:   const tools: Record<string, Tool> = {
+ 34:     get_novel_events: tool({
+ 35:       description: "获取章节事件",
+ 36:       inputSchema: jsonSchema<{ chapterIndexs: number[] }>(
+ 37:         z
+ 38:           .object({
+ 39:             chapterIndexs: z.array(z.number()).describe("章节的编号"),
+ 40:           })
+ 41:           .toJSONSchema(),
+ 42:       ),
+ 43:       execute: async ({ chapterIndexs }) => {
+ 44:         console.log("[tools] get_novel_events", chapterIndexs);
+ 45:         const thinking = msg.thinking("正在查询章节事件...");
+ 46:         const data = await u
+ 47:           .db("o_novel")
+ 48:           .where("projectId", resTool.data.projectId)
+ 49:           .select("id", "chapterIndex as index", "reel", "chapter", "chapterData", "event", "eventState")
+ 50:           .whereIn("chapterIndex", chapterIndexs);
+ 51:         thinking.appendText("正在查询章节编号: " + chapterIndexs.join(","));
+ 52:         const eventString = data.map((i: any) => [`第${i.index}章，标题:${i.chapter}，事件:${i.event}`].join("\n")).join("\n");
+ 53:         thinking.appendText("查询结果:\n" + eventString);
+ 54:         thinking.updateTitle("查询章节事件完成");
+ 55:         thinking.complete();
+ 56:         return eventString ?? "无数据";
+ 57:       },
+ 58:     }),
+ 59:     get_planData: tool({
+ 60:       description: "获取工作区数据",
+ 61:       inputSchema: jsonSchema<{ key: keyof planData }>(
+ 62:         z
+ 63:           .object({
+ 64:             key: keySchema.describe("数据key"),
+ 65:           })
+ 66:           .toJSONSchema(),
+ 67:       ),
+ 68:       execute: async ({ key }) => {
+ 69:         console.log("[tools] get_planData", key);
+ 70:         const thinking = msg.thinking(`正在获取${planDataKeyLabels[key]}工作区数据...`);
+ 71:         const planData: planData = await new Promise((resolve) => socket.emit("getPlanData", { key }, (res: any) => resolve(res)));
+ 72:         thinking.appendText(`获取到${planDataKeyLabels[key]}:\n` + planData[key]);
+ 73:         thinking.updateTitle(`获取${planDataKeyLabels[key]}完成`);
+ 74:         thinking.complete();
+ 75:         return planData[key] ?? "无数据";
+ 76:       },
+ 77:     }),
+ 78:     get_novel_text: tool({
+ 79:       description: "获取小说章节原始文本内容",
+ 80:       inputSchema: jsonSchema<{ chapterIndex: string }>(
+ 81:         z
+ 82:           .object({
+ 83:             chapterIndex: z.string().describe("章节编号"),
+ 84:           })
+ 85:           .toJSONSchema(),
+ 86:       ),
+ 87:       execute: async ({ chapterIndex }) => {
+ 88:         console.log("[tools] get_novel_text", "[tools] get_novel_text", chapterIndex);
+ 89:         const thinking = msg.thinking(`正在获取小说章节原文...`);
+ 90:         const data = await u.db("o_novel").where("projectId", resTool.data.projectId).where({ chapterIndex }).select("chapterData").first();
+ 91:         const text = data && data?.chapterData ? data.chapterData : "";
+ 92:         thinking.appendText(`获取到原文:\n` + text);
+ 93:         thinking.updateTitle(`获取小说章节原文完成`);
+ 94:         thinking.complete();
+ 95:         return text ?? "无数据";
+ 96:       },
+ 97:     }),
+ 98:     get_script_content: tool({
+ 99:       description: "获取剧本本内容",
+100:       inputSchema: jsonSchema<{ ids: string[] }>(
+101:         z
+102:           .object({
+103:             ids: z.array(z.string()).describe("脚本id"),
+104:           })
+105:           .toJSONSchema(),
+106:       ),
+107:       execute: async ({ ids }) => {
+108:         console.log("[tools] get_script_content", "[tools] get_script_content", ids);
+109:         const thinking = msg.thinking(`正在获取脚本内容...`);
+110:         const data = await u.db("o_script").whereIn("id", ids).select("content", "name");
+111:         const text = data && data.length ? data.map((d) => `<scriptItem name="${d.name}">${d.content}</scriptItem>`).join("\n") : "";
+112:         thinking.appendText(`获取到脚本内容:\n` + JSON.stringify(data, null, 2));
+113:         thinking.updateTitle(`获取脚本内容完成`);
+114:         thinking.complete();
+115:         return text ?? "无数据";
+116:       },
+117:     }),
+118:   };
+119:   return toolsNames ? Object.fromEntries(Object.entries(tools).filter(([n]) => toolsNames.includes(n))) : tools;
+120: };
+</file>
+
+<file path="src/socket/routes/productionAgent.ts">
+  1: import jwt from "jsonwebtoken";
+  2: import u from "@/utils";
+  3: import { Namespace, Socket } from "socket.io";
+  4: import * as agent from "@/agents/productionAgent/index";
+  5: import ResTool from "@/socket/resTool";
+  6: 
+  7: async function verifyToken(rawToken: string): Promise<Boolean> {
+  8:   const setting = await u.db("o_setting").where("key", "tokenKey").select("value").first();
+  9:   if (!setting) return false;
+ 10:   const { value: tokenKey } = setting;
+ 11:   if (!rawToken) return false;
+ 12:   const token = rawToken.replace("Bearer ", "");
+ 13:   try {
+ 14:     jwt.verify(token, tokenKey as string);
+ 15:     return true;
+ 16:   } catch (err) {
+ 17:     return false;
+ 18:   }
+ 19: }
+ 20: 
+ 21: export default (nsp: Namespace) => {
+ 22:   nsp.on("connection", async (socket: Socket) => {
+ 23:     const token = socket.handshake.auth.token;
+ 24:     if (!token || !(await verifyToken(token))) {
+ 25:       console.log("[productionAgent] 连接失败，token无效");
+ 26:       socket.disconnect();
+ 27:       return;
+ 28:     }
+ 29:     let isolationKey = socket.handshake.auth.isolationKey;
+ 30:     if (!isolationKey) {
+ 31:       console.log("[productionAgent] 连接失败，缺少 isolationKey");
+ 32:       socket.disconnect();
+ 33:       return;
+ 34:     }
+ 35: 
+ 36:     console.log("[productionAgent] 已连接:", socket.id);
+ 37: 
+ 38:     let resTool = new ResTool(socket, {
+ 39:       projectId: socket.handshake.auth.projectId,
+ 40:       scriptId: socket.handshake.auth.scriptId,
+ 41:     });
+ 42:     let abortController: AbortController | null = null;
+ 43: 
+ 44:     const thinkConfig: agent.AgentContext["thinkConfig"] = {
+ 45:       think: false,
+ 46:       thinlLevel: 0,
+ 47:     };
+ 48: 
+ 49:     socket.on("updateContext", (data: { isolationKey: string; projectId: number; scriptId: number }, callback) => {
+ 50:       isolationKey = data.isolationKey;
+ 51:       resTool = new ResTool(socket, {
+ 52:         projectId: data.projectId,
+ 53:         scriptId: data.scriptId,
+ 54:       });
+ 55:       console.log("[productionAgent] 上下文已更新:", isolationKey);
+ 56:       callback?.({ success: true });
+ 57:     });
+ 58: 
+ 59:     socket.on("chat", async (data: { content: string }) => {
+ 60:       const { content } = data;
+ 61:       abortController?.abort();
+ 62:       abortController = new AbortController();
+ 63:       const currentController = abortController;
+ 64: 
+ 65:       const msg = resTool.newMessage("assistant", "视频策划");
+ 66:       const ctx: agent.AgentContext = {
+ 67:         socket,
+ 68:         isolationKey,
+ 69:         text: content,
+ 70:         userMessageTime: new Date(msg.datetime).getTime() - 1,
+ 71:         abortSignal: currentController.signal,
+ 72:         resTool,
+ 73:         msg,
+ 74:         thinkConfig,
+ 75:       };
+ 76: 
+ 77:       try {
+ 78:         await agent.runDecisionAI(ctx);
+ 79:       } catch (err: any) {
+ 80:         if (err.name !== "AbortError" && !currentController.signal.aborted) {
+ 81:           console.error("[productionAgent] chat error:", u.error(err).message);
+ 82:         }
+ 83:       } finally {
+ 84:         if (abortController === currentController) {
+ 85:           abortController = null;
+ 86:         }
+ 87:       }
+ 88:     });
+ 89: 
+ 90:     socket.on("updateThinkConfig", (data: { think: boolean; thinlLevel: 0 | 1 | 2 | 3 }) => {
+ 91:       thinkConfig.think = data.think;
+ 92:       thinkConfig.thinlLevel = data.thinlLevel;
+ 93:       console.log("[productionAgent] 更新思考配置:", thinkConfig);
+ 94:     });
+ 95: 
+ 96:     socket.on("stop", () => {
+ 97:       abortController?.abort();
+ 98:       abortController = null;
+ 99:     });
+100:   });
+101:   nsp.on("disconnect", (socket: Socket) => {
+102:     console.log("[productionAgent] 已断开连接:", socket.id);
+103:   });
+104: };
+</file>
+
+<file path="src/socket/routes/scriptAgent.ts">
+ 1: import jwt from "jsonwebtoken";
+ 2: import u from "@/utils";
+ 3: import { Namespace, Socket } from "socket.io";
+ 4: import * as agent from "@/agents/scriptAgent/index";
+ 5: import ResTool from "@/socket/resTool";
+ 6: 
+ 7: async function verifyToken(rawToken: string): Promise<Boolean> {
+ 8:   const setting = await u.db("o_setting").where("key", "tokenKey").select("value").first();
+ 9:   if (!setting) return false;
+10:   const { value: tokenKey } = setting;
+11:   if (!rawToken) return false;
+12:   const token = rawToken.replace("Bearer ", "");
+13:   try {
+14:     jwt.verify(token, tokenKey as string);
+15:     return true;
+16:   } catch (err) {
+17:     return false;
+18:   }
+19: }
+20: 
+21: export default (nsp: Namespace) => {
+22:   nsp.on("connection", async (socket: Socket) => {
+23:     const token = socket.handshake.auth.token;
+24:     if (!token || !(await verifyToken(token))) {
+25:       console.log("[scriptAgent] 连接失败，token无效");
+26:       socket.disconnect();
+27:       return;
+28:     }
+29:     const isolationKey = socket.handshake.auth.isolationKey;
+30:     if (!isolationKey) {
+31:       console.log("[scriptAgent] 连接失败，缺少 isolationKey");
+32:       socket.disconnect();
+33:       return;
+34:     }
+35: 
+36:     console.log("[scriptAgent] 已连接:", socket.id);
+37: 
+38:     const resTool = new ResTool(socket, {
+39:       projectId: socket.handshake.auth.projectId,
+40:     });
+41:     let abortController: AbortController | null = null;
+42: 
+43:     const thinkConfig: agent.AgentContext["thinkConfig"] = {
+44:       think: false,
+45:       thinlLevel: 0,
+46:     };
+47: 
+48:     socket.on("chat", async (data: { content: string }) => {
+49:       const { content } = data;
+50:       abortController?.abort();
+51:       abortController = new AbortController();
+52:       const currentController = abortController;
+53: 
+54:       const msg = resTool.newMessage("assistant", "统筹");
+55:       const ctx: agent.AgentContext = {
+56:         socket,
+57:         isolationKey,
+58:         text: content,
+59:         userMessageTime: new Date(msg.datetime).getTime() - 1,
+60:         abortSignal: currentController.signal,
+61:         resTool,
+62:         msg,
+63:         thinkConfig,
+64:       };
+65: 
+66:       try {
+67:         await agent.runDecisionAI(ctx);
+68:       } catch (err: any) {
+69:         if (err.name !== "AbortError" && !currentController.signal.aborted) {
+70:           console.error("[scriptAgent] chat error:", u.error(err).message);
+71:           msg.error(u.error(err).message)
+72:         }
+73:       } finally {
+74:         if (abortController === currentController) {
+75:           abortController = null;
+76:         }
+77:       }
+78:     });
+79: 
+80:     socket.on("updateThinkConfig", (data: { think: boolean; thinlLevel: 0 | 1 | 2 | 3 }) => {
+81:       thinkConfig.think = data.think;
+82:       thinkConfig.thinlLevel = data.thinlLevel;
+83:       console.log("[scriptAgent] 更新思考配置:", thinkConfig);
+84:     });
+85: 
+86:     socket.on("stop", () => {
+87:       abortController?.abort();
+88:       abortController = null;
+89:     });
+90:   });
+91:   nsp.on("disconnect", (socket: Socket) => {
+92:     console.log("[scriptAgent] 已断开连接:", socket.id);
+93:   });
+94: };
+</file>
+
+<file path="src/utils/agent/embedding.ts">
+ 1: import * as ONNX_WEB from "onnxruntime-web";
+ 2: import { pipeline, env as transformersEnv, FeatureExtractionPipeline } from "@huggingface/transformers";
+ 3: import path from "path";
+ 4: import fs from "fs";
+ 5: import getPath from "@/utils/getPath";
+ 6: import db from "@/utils/db";
+ 7: 
+ 8: // ── 模型配置 ──
+ 9: // const modelOnnxFile = ["all-MiniLM-L6-v2", "onnx", "model_fp16.onnx"]; // 模型文件路径
+10: // const modelDtype = "fp16" as const; // 量化类型：fp32
+11: let extractor: FeatureExtractionPipeline | null = null;
+12: 
+13: export async function initEmbedding(): Promise<void> {
+14:   if (extractor) return;
+15: 
+16:   const modelConfigData = await db("o_setting").whereIn("key", ["modelOnnxFile", "modelDtype"]);
+17:   const modelObj: Record<string, string> = {};
+18:   Object.entries(modelConfigData).forEach(([key, value]) => {
+19:     modelObj[key] = value as string;
+20:   });
+21:   let modelOnnxFile = modelObj?.modelOnnxFile ? JSON.parse(modelObj.modelOnnxFile) : ["all-MiniLM-L6-v2", "onnx", "model_fp16.onnx"]; // 模型文件路径
+22:   let modelDtype = modelObj?.modelDtype ?? ("fp16" as const); // 量化类型：fp32
+23:   const onnxPath = path.join(getPath("models"), ...modelOnnxFile);
+24:   if (!fs.existsSync(onnxPath)) {
+25:     throw new Error(`Embedding 模型文件不存在: ${onnxPath}`);
+26:   }
+27: 
+28:   transformersEnv.allowRemoteModels = false;
+29:   transformersEnv.allowLocalModels = true;
+30:   transformersEnv.localModelPath = getPath("models").replace(/\\/g, "/") + "/";
+31: 
+32:   const modelFolder = modelOnnxFile[0];
+33:   // @ts-ignore - pipeline 重载联合类型过于复杂
+34:   extractor = await pipeline("feature-extraction", modelFolder, { dtype: modelDtype });
+35: }
+36: 
+37: export async function getEmbedding(text: string): Promise<number[]> {
+38:   if (!extractor) await initEmbedding();
+39:   const output = await extractor!(text, { pooling: "mean", normalize: true });
+40:   return Array.from(output.data as Float32Array);
+41: }
+42: 
+43: export function cosineSimilarity(a: number[], b: number[]): number {
+44:   return a.reduce((dot, v, i) => dot + v * b[i], 0);
+45: }
+46: 
+47: export async function disposeEmbedding(): Promise<void> {
+48:   await extractor?.dispose?.();
+49:   extractor = null;
+50: }
+</file>
+
+<file path="src/utils/agent/memory.ts">
+  1: import u from "@/utils";
+  2: import { v4 as uuidv4 } from "uuid";
+  3: import { getEmbedding, cosineSimilarity } from "./embedding";
+  4: import type { memories as MemoryRow } from "@/types/database";
+  5: import { tool, jsonSchema } from "ai";
+  6: import { z } from "zod";
+  7: 
+  8: // ── 可调配置默认值 ──
+  9: const DEFAULTS: {
+ 10:   messagesPerSummary: number;
+ 11:   summaryMaxLength: number;
+ 12:   shortTermLimit: number;
+ 13:   summaryLimit: number;
+ 14:   ragLimit: number;
+ 15:   deepRetrieveSummaryLimit: number;
+ 16: } = {
+ 17:   messagesPerSummary: 3, // 每累积多少条message触发一次summary生成
+ 18:   summaryMaxLength: 500, // summary最大字符长度
+ 19:   shortTermLimit: 5, // get()返回的近期未总结message条数
+ 20:   summaryLimit: 10, // get()返回的summary条数
+ 21:   ragLimit: 3, // get()向量相似搜索返回的message条数
+ 22:   deepRetrieveSummaryLimit: 5, // deepRetrieve()向量召回summary的条数
+ 23: };
+ 24: 
+ 25: // ── 向量搜索辅助 ──
+ 26: function vectorSearch(rows: MemoryRow[], queryEmbedding: number[], limit: number) {
+ 27:   return rows
+ 28:     .map((row) => {
+ 29:       const emb: number[] = JSON.parse(row.embedding ?? "[]");
+ 30:       return { ...row, similarity: cosineSimilarity(queryEmbedding, emb) };
+ 31:     })
+ 32:     .sort((a, b) => b.similarity - a.similarity)
+ 33:     .slice(0, limit);
+ 34: }
+ 35: 
+ 36: class Memory {
+ 37:   private agentType: string;
+ 38:   private isolationKey: string;
+ 39: 
+ 40:   constructor(agentType: string, isolationKey: string) {
+ 41:     this.agentType = agentType;
+ 42:     this.isolationKey = isolationKey;
+ 43:   }
+ 44: 
+ 45:   private async generateSummary(contents: string[]): Promise<string> {
+ 46:     const { summaryMaxLength } = await this.getConfigData({ summaryMaxLength: DEFAULTS.summaryMaxLength });
+ 47:     const { text } = await u.Ai.Text(this.agentType as any).invoke({
+ 48:       system: `你是一个记忆压缩助手。请将以下多条记忆内容压缩为一段简洁的摘要，不超过${summaryMaxLength}个字符。只输出摘要内容，不要加任何前缀或解释。`,
+ 49:       messages: [{ role: "user", content: contents.map((c, i) => `${i + 1}. ${c}`).join("\n") }],
+ 50:     });
+ 51:     return text.slice(0, Number(summaryMaxLength));
+ 52:   }
+ 53: 
+ 54:   private async judgeSummaryRelevance(keyword: string, summaries: { id: string; content: string }[]): Promise<string[]> {
+ 55:     const list = summaries.map((s) => `[${s.id}] ${s.content}`).join("\n");
+ 56:     const { text } = await u.Ai.Text(this.agentType as any).invoke({
+ 57:       system:
+ 58:         '你是一个信息检索助手。用户会给你一个关键词和一组摘要，请判断哪些摘要可能包含与关键词相关的详细信息。只返回相关摘要的id列表，用JSON数组格式，例如 ["id1","id2"]。不要解释。',
+ 59:       messages: [{ role: "user", content: `关键词: ${keyword}\n\n摘要列表:\n${list}` }],
+ 60:     });
+ 61:     try {
+ 62:       const ids = JSON.parse(text);
+ 63:       if (Array.isArray(ids)) return ids.map(String);
+ 64:     } catch {}
+ 65:     return [];
+ 66:   }
+ 67:   private async getConfigData<T extends Record<string, string | number>>(defaults: T): Promise<T> {
+ 68:     const keys = Object.keys(defaults) as (keyof T & string)[];
+ 69:     const rows = await u.db("o_setting").whereIn("key", keys);
+ 70: 
+ 71:     const dbMap: Record<string, string | null> = {};
+ 72:     for (const row of rows) {
+ 73:       if (row.key != null) dbMap[row.key] = row.value ?? null;
+ 74:     }
+ 75: 
+ 76:     const result = { ...defaults };
+ 77:     for (const key of keys) {
+ 78:       const raw = dbMap[key];
+ 79:       if (raw == null) continue; // null / undefined 使用默认值
+ 80:       const num = Number(raw);
+ 81:       (result as Record<string, string | number>)[key] = Number.isNaN(num) ? raw : num;
+ 82:     }
+ 83:     return result;
+ 84:   }
+ 85: 
+ 86:   async add(role: string = "user", content: string, options?: { name?: string; createTime?: number }) {
+ 87:     const { messagesPerSummary } = await this.getConfigData({ messagesPerSummary: DEFAULTS.messagesPerSummary });
+ 88:     const id = uuidv4();
+ 89:     const embedding = await getEmbedding(content);
+ 90:     const isolationKey = this.isolationKey;
+ 91: 
+ 92:     await u.db("memories").insert({
+ 93:       id,
+ 94:       isolationKey,
+ 95:       type: "message",
+ 96:       role,
+ 97:       name: options?.name,
+ 98:       content,
+ 99:       embedding: JSON.stringify(embedding),
+100:       relatedMessageIds: null,
+101:       summarized: 0,
+102:       createTime: options?.createTime ?? Date.now(),
+103:     } as any);
+104: 
+105:     // 检查未总结消息数量
+106:     const unsummarized = await u.db("memories").where({ isolationKey, type: "message", summarized: 0 }).orderBy("createTime", "asc");
+107: 
+108:     if (unsummarized.length >= Number(messagesPerSummary)) {
+109:       const batch = unsummarized.slice(0, Number(messagesPerSummary));
+110:       const batchIds = batch.map((m) => m.id);
+111:       const batchContents = batch.map((m) => m.content);
+112: 
+113:       const summaryContent = await this.generateSummary(batchContents);
+114:       const summaryEmbedding = await getEmbedding(summaryContent);
+115:       const summaryId = uuidv4();
+116: 
+117:       await u.db("memories").insert({
+118:         id: summaryId,
+119:         isolationKey,
+120:         type: "summary",
+121:         content: summaryContent,
+122:         embedding: JSON.stringify(summaryEmbedding),
+123:         relatedMessageIds: JSON.stringify(batchIds),
+124:         summarized: 0,
+125:         createTime: Date.now(),
+126:       } as any);
+127: 
+128:       // 标记已总结
+129:       await u.db("memories").whereIn("id", batchIds).update({ summarized: 1 });
+130:     }
+131:   }
+132: 
+133:   async get(text: string) {
+134:     const { shortTermLimit, summaryLimit, ragLimit } = await this.getConfigData({
+135:       shortTermLimit: DEFAULTS.shortTermLimit,
+136:       summaryLimit: DEFAULTS.summaryLimit,
+137:       ragLimit: DEFAULTS.ragLimit,
+138:     });
+139: 
+140:     const isolationKey = this.isolationKey;
+141:     // shortTerm: 最近未被总结的 messages
+142:     const shortTerm = await u
+143:       .db("memories")
+144:       .where({ isolationKey, type: "message", summarized: 0 })
+145:       .orderBy("createTime", "desc")
+146:       .limit(Number(shortTermLimit));
+147:     shortTerm.reverse(); // 最旧在前
+148: 
+149:     // summaries: 最近的 summary
+150:     const summaries = await u.db("memories").where({ isolationKey, type: "summary" }).orderBy("createTime", "desc").limit(Number(summaryLimit));
+151:     summaries.reverse();
+152: 
+153:     // rag: 向量搜索所有 messages
+154:     const queryEmbedding = await getEmbedding(text);
+155:     const allMessages = await u.db("memories").where({ isolationKey, type: "message" });
+156:     const ragResults = vectorSearch(allMessages, queryEmbedding, Number(ragLimit));
+157: 
+158:     return {
+159:       shortTerm: shortTerm.map((m: any) => ({ id: m.id, role: m.role, name: m.name, content: m.content, createTime: m.createTime })),
+160:       summaries: summaries.map((s) => ({
+161:         id: s.id,
+162:         content: s.content,
+163:         relatedMessageIds: JSON.parse(s.relatedMessageIds || "[]"),
+164:         createTime: (s as any).createTime,
+165:       })),
+166:       rag: ragResults.map((r) => ({ id: r.id, content: r.content, similarity: r.similarity })),
+167:     };
+168:   }
+169: 
+170:   async deepRetrieve(keyword: string) {
+171:     const { deepRetrieveSummaryLimit } = await this.getConfigData({ deepRetrieveSummaryLimit: DEFAULTS.deepRetrieveSummaryLimit });
+172: 
+173:     const isolationKey = this.isolationKey;
+174:     // 步骤1: 向量搜索 summary
+175:     const queryEmbedding = await getEmbedding(keyword);
+176:     const allSummaries = await u.db("memories").where({ isolationKey, type: "summary" });
+177:     const topSummaries = vectorSearch(allSummaries, queryEmbedding, Number(deepRetrieveSummaryLimit));
+178: 
+179:     if (topSummaries.length === 0) return [];
+180: 
+181:     // 步骤2: AI 判断相关性
+182:     const relevantIds = await this.judgeSummaryRelevance(
+183:       keyword,
+184:       topSummaries.map((s) => ({ id: s.id!, content: s.content })),
+185:     );
+186: 
+187:     if (relevantIds.length === 0) return [];
+188: 
+189:     // 步骤3: 展开查询原始 messages
+190:     const relevantSummaries = topSummaries.filter((s) => relevantIds.includes(s.id!));
+191:     const messageIds = relevantSummaries.flatMap((s) => JSON.parse(s.relatedMessageIds || "[]") as string[]);
+192: 
+193:     if (messageIds.length === 0) return [];
+194: 
+195:     const messages = await u.db("memories").whereIn("id", messageIds).orderBy("createTime", "asc");
+196: 
+197:     return messages.map((m) => ({ id: m.id, content: m.content, createTime: m.createTime }));
+198:   }
+199: 
+200:   getTools() {
+201:     return {
+202:       deepRetrieve: tool({
+203:         description: "深度检索记忆：当你需要回忆与某个关键词相关的详细历史信息时使用此工具",
+204:         inputSchema: jsonSchema<{ keyword: string }>(
+205:           z
+206:             .object({
+207:               keyword: z.string().describe("要检索的关键词"),
+208:             })
+209:             .toJSONSchema(),
+210:         ),
+211:         execute: async ({ keyword }) => {
+212:           const results = await this.deepRetrieve(keyword);
+213:           if (results.length === 0) return { found: false, message: "未找到相关记忆" };
+214:           return { found: true, memories: results.map((r) => r.content) };
+215:         },
+216:       }),
+217:     };
+218:   }
+219: }
+220: 
+221: export default Memory;
+</file>
+
+<file path="src/utils/agent/skillsTools.ts">
+  1: import { z } from "zod";
+  2: import { tool, jsonSchema } from "ai";
+  3: import path from "path";
+  4: import isPathInside from "is-path-inside";
+  5: import getPath from "@/utils/getPath";
+  6: import * as fs from "fs";
+  7: import fg from "fast-glob";
+  8: 
+  9: type SkillAttribution =
+ 10:   //剧本Agent
+ 11:   | "script_agent_decision" //决策
+ 12:   | "script_execution_skeleton" //故事骨架
+ 13:   | "script_execution_adaptation" //改变策略
+ 14:   | "script_execution_script" //剧本生成
+ 15:   | "script_agent_supervision" //审核
+ 16:   //生产Agent
+ 17:   | "production_agent_decision"
+ 18:   | "production_agent_execution"
+ 19:   | "production_agent_supervision";
+ 20: 
+ 21: interface SkillInput {
+ 22:   mainSkill: SkillAttribution[];
+ 23:   workspace?: string[];
+ 24:   attachedSkills?: string[];
+ 25: }
+ 26: 
+ 27: interface SkillPaths {
+ 28:   mainSkill: { path: string; name: string; description: string }[];
+ 29:   secondarySkills: string[];
+ 30:   tertiarySkills: string[];
+ 31: }
+ 32: 
+ 33: function toUnixPath(filePath: string): string {
+ 34:   return filePath.replace(/\\/g, "/");
+ 35: }
+ 36: 
+ 37: function ensureNonEmptyBody(body: string, fallback: string): string {
+ 38:   const trimmed = body.trim();
+ 39:   return trimmed.length > 0 ? trimmed : fallback;
+ 40: }
+ 41: 
+ 42: // ==================== 解析 SKILL.md ====================
+ 43: 
+ 44: export function parseFrontmatter(content: string): { name: string; description: string } {
+ 45:   const match = content.match(/^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+ 46:   if (!match?.[1]) {
+ 47:     throw new Error(`技能文件缺少有效的 frontmatter，确保以 --- 包裹并包含 name 和 description 字段。${content}`);
+ 48:   }
+ 49: 
+ 50:   const result: Record<string, string> = {};
+ 51:   const lines = match[1].split(/\r?\n/);
+ 52: 
+ 53:   for (let i = 0; i < lines.length; ) {
+ 54:     const line = lines[i];
+ 55:     const trimmed = line.trim();
+ 56: 
+ 57:     if (!trimmed || trimmed.startsWith("#")) {
+ 58:       i++;
+ 59:       continue;
+ 60:     }
+ 61: 
+ 62:     const keyMatch = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+ 63:     if (!keyMatch) {
+ 64:       i++;
+ 65:       continue;
+ 66:     }
+ 67: 
+ 68:     const key = keyMatch[1].trim();
+ 69:     const rawValue = (keyMatch[2] ?? "").trim();
+ 70:     i++;
+ 71: 
+ 72:     if (!key) continue;
+ 73: 
+ 74:     if (/^[>|][+-]?[0-9]*$/.test(rawValue)) {
+ 75:       const isFolded = rawValue.startsWith(">");
+ 76:       const blockLines: string[] = [];
+ 77:       let blockIndent: number | null = null;
+ 78: 
+ 79:       while (i < lines.length) {
+ 80:         const current = lines[i];
+ 81:         const currentTrimmed = current.trim();
+ 82: 
+ 83:         if (currentTrimmed === "") {
+ 84:           if (blockIndent !== null) blockLines.push("");
+ 85:           i++;
+ 86:           continue;
+ 87:         }
+ 88: 
+ 89:         const currentIndent = current.match(/^\s*/)?.[0].length ?? 0;
+ 90:         if (blockIndent === null) {
+ 91:           blockIndent = currentIndent;
+ 92:         }
+ 93: 
+ 94:         if (currentIndent < blockIndent) break;
+ 95: 
+ 96:         blockLines.push(current.slice(blockIndent));
+ 97:         i++;
+ 98:       }
+ 99: 
+100:       result[key] = isFolded
+101:         ? blockLines
+102:             .join("\n")
+103:             .replace(/\n{2,}/g, "\n\n")
+104:             .replace(/([^\n])\n([^\n])/g, "$1 $2")
+105:             .trim()
+106:         : blockLines.join("\n").trim();
+107:       continue;
+108:     }
+109: 
+110:     const unquoted = rawValue.replace(/^(['"])([\s\S]*)\1$/, "$2");
+111:     result[key] = unquoted;
+112:   }
+113: 
+114:   if (!result.name || !result.description) {
+115:     throw new Error(`技能文件缺少必要字段: name 或 description，确保 frontmatter 包含这两个字段。${content}`);
+116:   }
+117: 
+118:   return { name: result.name, description: result.description };
+119: }
+120: 
+121: export async function useSkill(input: SkillInput) {
+122:   const { mainSkill, workspace = [], attachedSkills = [] } = input;
+123:   const rootDir = getPath("skills");
+124:   const normalizedRootDir = path.resolve(rootDir);
+125: 
+126:   const mainSkills: { path: string; name: string; description: string }[] = [];
+127:   for (const skill of mainSkill) {
+128:     const skillPath = path.join(rootDir, skill + ".md");
+129:     if (!fs.existsSync(skillPath)) throw new Error(`主技能文件不存在: ${skillPath}`);
+130:     if (!isPathInside(skillPath, normalizedRootDir)) throw new Error(`技能名称无效：检测到路径穿越。${skillPath}`);
+131:     const content = await fs.promises.readFile(skillPath, "utf-8");
+132:     const parsed = parseFrontmatter(content);
+133:     mainSkills.push({ path: skillPath, ...parsed });
+134:   }
+135: 
+136:   const resolveSafeSkillDir = (dir: string): string | null => {
+137:     const resolvedDir = path.resolve(normalizedRootDir, dir);
+138:     const isSafeDir = resolvedDir === normalizedRootDir || isPathInside(resolvedDir, normalizedRootDir);
+139:     return isSafeDir ? resolvedDir : null;
+140:   };
+141: 
+142:   const getMdFiles = (dir: string, recursive = false): string[] => {
+143:     if (!fs.existsSync(dir)) return [];
+144:     return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+145:       const fullPath = path.join(dir, entry.name);
+146:       if (entry.isFile() && entry.name.endsWith(".md")) return [fullPath];
+147:       return entry.isDirectory() && recursive ? getMdFiles(fullPath, true) : [];
+148:     });
+149:   };
+150:   const collectMdFiles = (dirs: string[], recursive: boolean) =>
+151:     dirs.flatMap((dir) => {
+152:       const safeDir = resolveSafeSkillDir(dir);
+153:       if (!safeDir) return [];
+154:       return getMdFiles(safeDir, recursive).map((file) => toUnixPath(path.relative(normalizedRootDir, file)));
+155:     });
+156: 
+157:   const skillPaths: SkillPaths = {
+158:     mainSkill: mainSkills,
+159:     secondarySkills: collectMdFiles(workspace, false),
+160:     tertiarySkills: collectMdFiles(attachedSkills, true),
+161:   };
+162: 
+163:   return { prompt: buildSkillPrompt(mainSkills), tools: createSkillTools(mainSkills, skillPaths), skillPaths };
+164: }
+165: 
+166: export function buildSkillPrompt(skills: { name: string; description: string }[]): string {
+167:   const skillEntries = skills
+168:     .map((s) => `  <skill>\n    <name>${s.name}</name>\n    <description>${s.description}</description>\n  </skill>`)
+169:     .join("\n");
+170:   return `## Skills
+171: 以下技能提供了专业任务的专用指令。
+172: 当任务与某个技能的描述匹配时，调用 activate_skill 工具并传入技能名称来加载完整指令。
+173: 加载后遵循技能指令执行任务，需要时调用 read_skill_file 读取资源文件内容。
+174: 
+175: <available_skills>
+176: ${skillEntries}
+177: </available_skills>`;
+178: }
+179: 
+180: export function createSkillTools(skills: { name: string; description: string }[], skillPaths: SkillPaths, rootDir: string = getPath("skills")) {
+181:   const activated = new Set<string>(); // 已激活技能集合，防止重复加载
+182:   const skillsRootDir = path.resolve(rootDir);
+183:   const skillNames = skills.map((s) => s.name);
+184:   const skillMap = new Map(skillPaths.mainSkill.map((s) => [s.name, s]));
+185:   return {
+186:     activate_skill: tool({
+187:       description: `激活一个技能，加载其完整指令和捆绑资源列表到上下文。可用技能：${skillNames.join(", ")}`,
+188:       inputSchema: jsonSchema<{ name: string }>(
+189:         z
+190:           .object({
+191:             name: z.enum(skillNames as [string, ...string[]]).describe("要激活的技能名称"),
+192:           })
+193:           .toJSONSchema(),
+194:       ),
+195:       execute: async ({ name }) => {
+196:         if (activated.has(name)) {
+197:           console.log(`⚡[主技能] ℹ️ 技能 "${name}" 已激活，跳过重复注入`);
+198:           return { alreadyActive: true, message: `技能 "${name}" 已激活，无需重复加载` };
+199:         }
+200:         const matched = skillMap.get(name);
+201:         if (!matched) return { error: `未找到技能 "${name}"` };
+202:         let raw = "";
+203:         try {
+204:           raw = await fs.promises.readFile(matched.path, "utf-8");
+205:           console.log(`⚡[主技能] ✓ 已读取主技能文件： ${matched.path}（${raw.length} 字符）`);
+206:         } catch (error) {
+207:           console.log(`⚡[主技能] ✗ 读取失败：未找到文件 "${matched.path}"`);
+208:         }
+209:         activated.add(name);
+210:         console.log(`⚡[主技能] ✓ 技能 "${name}" 已激活`);
+211:         const body = ensureNonEmptyBody(raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, ""), "该技能文件无正文内容。");
+212:         let content = "";
+213:         content = `<skill_content name="${name}">\n`;
+214:         content += body + "\n\n";
+215:         content += "使用 read_skill_file 工具读取资源文件。\n";
+216:         if (skillPaths.secondarySkills.length > 0) {
+217:           content += "\n<skill_resources>\n";
+218:           for (const path of skillPaths.secondarySkills) {
+219:             content += `  <file>${path}</file>\n`;
+220:           }
+221:           content += "</skill_resources>\n";
+222:         }
+223:         content += "</skill_content>";
+224:         return { content };
+225:       },
+226:     }),
+227:     read_skill_file: tool({
+228:       description: "读取已激活技能目录下的资源文件。传入 activate_skill 返回的 skill_resources 中的文件路径。",
+229:       inputSchema: jsonSchema<{ filePath: string }>(
+230:         z
+231:           .object({
+232:             filePath: z.string().describe("资源文件的相对路径，来自 activate_skill 返回的 skill_resources"),
+233:           })
+234:           .toJSONSchema(),
+235:       ),
+236:       execute: async ({ filePath }) => {
+237:         const normalizedInputPath = toUnixPath(filePath).trim();
+238:         if (!normalizedInputPath) {
+239:           console.log(`📖[技法文件] ✗ filePath 不能为空`);
+240:           return { error: "filePath 不能为空" };
+241:         }
+242: 
+243:         const fullPath = path.resolve(path.join(skillsRootDir, normalizedInputPath));
+244:         if (!(fullPath === skillsRootDir || isPathInside(fullPath, skillsRootDir))) {
+245:           console.log(`📖[技法文件] ✗ 路径越界已拦截："${filePath}" 超出技能目录范围`);
+246:           return { error: "Access denied: path is outside skill directory" };
+247:         }
+248:         let body = "";
+249:         try {
+250:           body = await fs.promises.readFile(fullPath, "utf-8");
+251:           console.log(`📖[技法文件] ✓ 已读取文件： ${filePath}（${body.length} 字符）`);
+252:         } catch {
+253:           console.log(`📖[技法文件] ✗ 读取失败：未找到文件 "${filePath}"`);
+254:           return { error: `File not found: ${filePath}` };
+255:         }
+256:         const safeBody = ensureNonEmptyBody(body, "该资源文件为空。");
+257:         let content = "";
+258:         content = `<skill_content>\n`;
+259:         content += safeBody + "\n\n";
+260:         content += "可以使用 read_skill_file 工具读取资源文件。\n";
+261:         if (skillPaths.tertiarySkills.length > 0) {
+262:           content += "\n<skill_resources>\n";
+263:           for (const path of skillPaths.tertiarySkills) {
+264:             content += `  <file>${path}</file>\n`;
+265:           }
+266:           content += "</skill_resources>\n";
+267:         }
+268:         content += "</skill_content>";
+269:         return { content };
+270:       },
+271:     }),
+272:   };
+273: }
+274: 
+275: export async function scanSkills(folderPath: string) {
+276:   const unixPath = toUnixPath(folderPath);
+277:   const entries = await fg(unixPath, {
+278:     onlyFiles: true,
+279:     absolute: true,
+280:   });
+281:   return entries;
+282: }
+</file>
+
+<file path="src/utils/ai.ts">
+  1: import { generateText, streamText, wrapLanguageModel, stepCountIs, extractReasoningMiddleware } from "ai";
+  2: import { devToolsMiddleware } from "@ai-sdk/devtools";
+  3: import axios from "axios";
+  4: import { transform } from "sucrase";
+  5: import u from "@/utils";
+  6: 
+  7: type AiType =
+  8:   | "scriptAgent"
+  9:   | "productionAgent"
+ 10:   | "universalAi"
+ 11:   | "scriptAgent:decisionAgent"
+ 12:   | "scriptAgent:supervisionAgent"
+ 13:   | "scriptAgent:storySkeletonAgent"
+ 14:   | "scriptAgent:adaptationStrategyAgent"
+ 15:   | "scriptAgent:scriptAgent"
+ 16:   | "productionAgent:decisionAgent"
+ 17:   | "productionAgent:supervisionAgent"
+ 18:   | "productionAgent:deriveAssetsAgent"
+ 19:   | "productionAgent:generateAssetsAgent"
+ 20:   | "productionAgent:directorPlanAgent"
+ 21:   | "productionAgent:storyboardGenAgent"
+ 22:   | "productionAgent:storyboardPanelAgent"
+ 23:   | "productionAgent:storyboardTableAgent";
+ 24: 
+ 25: type FnName = "textRequest" | "imageRequest" | "videoRequest" | "ttsRequest";
+ 26: 
+ 27: const AiTypeValues: AiType[] = [
+ 28:   "scriptAgent",
+ 29:   "productionAgent",
+ 30:   "universalAi",
+ 31:   "scriptAgent:decisionAgent",
+ 32:   "scriptAgent:supervisionAgent",
+ 33:   "scriptAgent:storySkeletonAgent",
+ 34:   "scriptAgent:adaptationStrategyAgent",
+ 35:   "scriptAgent:scriptAgent",
+ 36:   "productionAgent:decisionAgent",
+ 37:   "productionAgent:supervisionAgent",
+ 38:   "productionAgent:deriveAssetsAgent",
+ 39:   "productionAgent:generateAssetsAgent",
+ 40:   "productionAgent:directorPlanAgent",
+ 41:   "productionAgent:storyboardGenAgent",
+ 42:   "productionAgent:storyboardPanelAgent",
+ 43:   "productionAgent:storyboardTableAgent",
+ 44:   "universalAi",
+ 45: ];
+ 46: async function resolveModelName(value: AiType | `${string}:${string}`): Promise<`${string}:${string}`> {
+ 47:   if (AiTypeValues.includes(value as AiType)) {
+ 48:     const agentUseModeVal = await u.db("o_setting").where("key", "agentUseMode").first();
+ 49: 
+ 50:     //正常流程
+ 51:     //高级配置
+ 52:     if (agentUseModeVal?.value == "1") {
+ 53:       const agentDeployData = await u.db("o_agentDeploy").where("key", value).first();
+ 54:       if (!agentDeployData?.modelName) throw new Error(`高级配置模式下，未找到对应的模型配置 ${value}`);
+ 55:       return agentDeployData?.modelName as `${number}:${string}`;
+ 56:     }
+ 57:     //简易配置
+ 58:     if (agentUseModeVal?.value == "0") {
+ 59:       const [mainly] = value!.split(/:(.+)/);
+ 60:       const mainlyData = await u.db("o_agentDeploy").where("key", mainly).first();
+ 61:       if (!mainlyData?.modelName) throw new Error(`简易配置模式下，未找到部署配置 ${value}`);
+ 62:       return mainlyData?.modelName as `${number}:${string}`;
+ 63:     }
+ 64: 
+ 65:     //未查到agentUseModeVal 维持原判断
+ 66:     const agentDeployData = await u.db("o_agentDeploy").where("key", value).first();
+ 67:     let modelName = null;
+ 68: 
+ 69:     if (!agentDeployData?.modelName) {
+ 70:       const [mainly] = agentDeployData!.key!.split(/:(.+)/);
+ 71:       const mainlyData = await u.db("o_agentDeploy").where("key", mainly).first();
+ 72:       if (!mainlyData?.modelName) throw new Error(`未找到部署配置 ${value}`);
+ 73:       modelName = mainlyData.modelName;
+ 74:     }
+ 75:     modelName = agentDeployData?.modelName || modelName;
+ 76:     return modelName as `${number}:${string}`;
+ 77:   }
+ 78:   return value as `${number}:${string}`;
+ 79: }
+ 80: 
+ 81: async function getModelConfig(value: AiType | `${string}:${string}`) {
+ 82:   if (AiTypeValues.includes(value as AiType)) {
+ 83:     const agentUseModeVal = await u.db("o_setting").where("key", "agentUseMode").first();
+ 84:     //正常流程
+ 85:     //高级配置
+ 86:     if (agentUseModeVal?.value == "1") {
+ 87:       const agentDeployData = await u.db("o_agentDeploy").where("key", value).first();
+ 88:       if (!agentDeployData?.modelName) throw new Error(`高级配置模式下，未找到对应的模型配置 ${value}`);
+ 89:       return agentDeployData;
+ 90:     }
+ 91:     //简易配置
+ 92:     if (agentUseModeVal?.value == "0") {
+ 93:       const [mainly] = value!.split(/:(.+)/);
+ 94:       const mainlyData = await u.db("o_agentDeploy").where("key", mainly).first();
+ 95:       if (!mainlyData?.modelName) throw new Error(`简易配置模式下，未找到部署配置 ${value}`);
+ 96:       return mainlyData;
+ 97:     }
+ 98: 
+ 99:     //未查到 agentUseModelVal 维持原流程
+100:     const agentDeployData = await u.db("o_agentDeploy").where("key", value).first();
+101: 
+102:     if (!agentDeployData?.modelName) {
+103:       const [mainly] = agentDeployData!.key!.split(/:(.+)/);
+104:       const mainlyData = await u.db("o_agentDeploy").where("key", mainly).first();
+105:       if (!mainlyData?.modelName) throw new Error(`未找到部署配置 ${value}`);
+106:       return mainlyData;
+107:     }
+108:     return agentDeployData;
+109:   }
+110:   return null;
+111: }
+112: 
+113: async function getVendorTemplateFn(
+114:   fnName: "textRequest",
+115:   modelName: `${string}:${string}`,
+116: ): Promise<(think?: boolean, thinkLevel?: 0 | 1 | 2 | 3) => any>;
+117: async function getVendorTemplateFn(fnName: Exclude<FnName, "textRequest">, modelName: `${string}:${string}`): Promise<(input: any) => any>;
+118: async function getVendorTemplateFn(fnName: FnName, modelName: `${string}:${string}`): Promise<any> {
+119:   const [id, name] = modelName.split(/:(.+)/);
+120:   const vendorConfigData = await u.db("o_vendorConfig").where("id", id).first();
+121:   if (!vendorConfigData) throw new Error(`未找到供应商配置 id=${id}`);
+122:   const modelList = await u.vendor.getModelList(id);
+123:   const selectedModel = modelList.find((i: any) => i.modelName == name);
+124:   if (!selectedModel) throw new Error(`未找到模型 ${name} id=${id}`);
+125:   const code = u.vendor.getCode(id);
+126:   const jsCode = transform(code, { transforms: ["typescript"] }).code;
+127:   const running = u.vm(jsCode);
+128:   if (running.vendor) {
+129:     Object.assign(running.vendor.inputValues, JSON.parse(vendorConfigData.inputValues ?? "{}"));
+130:     running.vendor.models = modelList;
+131:   }
+132:   const fn = running[fnName];
+133:   if (!fn) throw new Error(`未找到供应商配置中的函数 ${fnName} id=${id}`);
+134:   if (fnName == "textRequest")
+135:     return (think?: boolean, thinkLevel: 0 | 1 | 2 | 3 = 0) => {
+136:       const effectiveThink = think ?? !!selectedModel.think;
+137:       return fn(selectedModel, effectiveThink, thinkLevel);
+138:     };
+139:   else return <T>(input: T) => fn(input, selectedModel);
+140: }
+141: 
+142: async function withTaskRecord<T>(
+143:   modelKey: AiType | `${string}:${string}`,
+144:   taskClass: string,
+145:   describe: string,
+146:   relatedObjects: string,
+147:   projectId: number,
+148:   fn: (modelName: `${string}:${string}`, think: Boolean, thinkLevel: 0 | 1 | 2 | 3) => Promise<T>,
+149: ): Promise<T> {
+150:   const modelName = await resolveModelName(modelKey);
+151:   const [_, model] = modelName.split(/:(.+)/);
+152:   const taskRecord = await u.task(projectId, taskClass, model, { describe: describe, content: relatedObjects });
+153:   try {
+154:     const result = await fn(modelName, false, 0);
+155: 
+156:     taskRecord(1);
+157:     return result;
+158:   } catch (e) {
+159:     taskRecord(-1, u.error(e).message);
+160:     throw new Error(u.error(e).message);
+161:   }
+162: }
+163: 
+164: async function urlToBase64(url: string, retries = 3, delay = 1000): Promise<string> {
+165:   for (let attempt = 1; attempt <= retries; attempt++) {
+166:     try {
+167:       const res = await axios.get(url, { responseType: "arraybuffer" });
+168:       const base64 = Buffer.from(res.data).toString("base64");
+169:       return `${base64}`;
+170:     } catch (e) {
+171:       if (attempt === retries) throw e;
+172:       await new Promise((resolve) => setTimeout(resolve, delay * attempt));
+173:     }
+174:   }
+175:   throw new Error("urlToBase64 failed");
+176: }
+177: class AiText {
+178:   private AiType: AiType | `${string}:${string}`;
+179:   private think?: boolean;
+180:   private thinkLevel: 0 | 1 | 2 | 3;
+181:   constructor(AiType: AiType | `${string}:${string}`, think?: boolean, thinkLevel: 0 | 1 | 2 | 3 = 0) {
+182:     this.AiType = AiType;
+183:     this.think = think;
+184:     this.thinkLevel = thinkLevel;
+185:   }
+186:   private async resolveModel(middleware?: any | any[]) {
+187:     const switchAiDevTool = await u.db("o_setting").where("key", "switchAiDevTool").first();
+188:     const modelName = await resolveModelName(this.AiType);
+189:     const sdkFn = await getVendorTemplateFn("textRequest", modelName);
+190:     const baseModel = await sdkFn(this.think, this.thinkLevel);
+191:     const mws = [
+192:       ...(switchAiDevTool?.value === "1" ? [devToolsMiddleware()] : []),
+193:       ...(middleware ? (Array.isArray(middleware) ? middleware : [middleware]) : []),
+194:     ];
+195:     return mws.length > 0 ? wrapLanguageModel({ model: baseModel, middleware: mws.length === 1 ? mws[0] : mws }) : baseModel;
+196:   }
+197:   async invoke(input: Omit<Parameters<typeof generateText>[0], "model">) {
+198:     const config = await getModelConfig(this.AiType);
+199: 
+200:     return generateText({
+201:       ...(input.tools && { stopWhen: stepCountIs(Object.keys(input.tools).length * 50) }),
+202:       ...input,
+203:       model: await this.resolveModel(),
+204:       ...(config?.temperature && { temperature: config.temperature }),
+205:       ...(config?.maxOutputTokens && { maxOutputTokens: config.maxOutputTokens }),
+206:     } as Parameters<typeof generateText>[0]);
+207:   }
+208:   async stream(input: Omit<Parameters<typeof streamText>[0], "model">) {
+209:     const config = await getModelConfig(this.AiType);
+210: 
+211:     return streamText({
+212:       ...(input.tools && { stopWhen: stepCountIs(Object.keys(input.tools).length * 50) }),
+213:       ...input,
+214:       model: await this.resolveModel(extractReasoningMiddleware({ tagName: "reasoning_content", separator: "\n" })),
+215:       ...(config?.temperature && { temperature: config.temperature }),
+216:       ...(config?.maxOutputTokens && { maxOutputTokens: config.maxOutputTokens }),
+217:     } as Parameters<typeof streamText>[0]);
+218:   }
+219: }
+220: 
+221: function referenceList2imageBase642(id: string, input: any) {
+222:   const version = u.vendor.getVendor(id).version;
+223:   if (!version || isNaN(parseFloat(version)) || parseFloat(version) < 2.0) {
+224:     input.imageBase64 = input.referenceList.map((item: any) => item.base64);
+225:     return input;
+226:   }
+227:   return input;
+228: }
+229: 
+230: export type ReferenceList = { type: "image"; base64: string } | { type: "audio"; base64: string } | { type: "video"; base64: string };
+231: 
+232: interface ImageConfig {
+233:   prompt: string;
+234:   referenceList?: Extract<ReferenceList, { type: "image" }>[];
+235:   size: "1K" | "2K" | "4K";
+236:   aspectRatio: `${number}:${number}`;
+237: }
+238: 
+239: interface TaskRecord {
+240:   taskClass: string; // 任务分类
+241:   describe: string; // 任务描述
+242:   relatedObjects: string; // 相关对象信息，便于后续分析和追踪
+243:   projectId: number; // 项目ID
+244: }
+245: 
+246: class AiImage {
+247:   private key: `${string}:${string}`;
+248:   private result: string = "";
+249:   constructor(key: `${string}:${string}`) {
+250:     this.key = key;
+251:   }
+252:   async run(input: ImageConfig, taskRecord?: TaskRecord) {
+253:     const modelName = await resolveModelName(this.key);
+254:     const exec = async (mn: `${string}:${string}`) => {
+255:       const fn = await getVendorTemplateFn("imageRequest", mn);
+256:       await referenceList2imageBase642(mn.split(/:(.+)/)[0], input);
+257:       this.result = await fn(input);
+258:       if (this.result.startsWith("http")) this.result = await urlToBase64(this.result);
+259:       return this;
+260:     };
+261:     if (taskRecord) {
+262:       await withTaskRecord(this.key, taskRecord.taskClass, taskRecord.describe, taskRecord.relatedObjects, taskRecord.projectId, exec);
+263:       return this;
+264:     }
+265:     await exec(modelName);
+266:     return this;
+267:   }
+268:   async save(path: string) {
+269:     await u.oss.writeFile(path, this.result);
+270:     return this;
+271:   }
+272: }
+273: 
+274: type VideoMode =
+275:   | "singleImage" //单图参考
+276:   | "startEndRequired" //首尾帧（两张都得有）
+277:   | "endFrameOptional" //首尾帧（尾帧可选）
+278:   | "startFrameOptional" //首尾帧（首帧可选）
+279:   | "text" //文本
+280:   | (`videoReference:${number}` | `imageReference:${number}` | `audioReference:${number}`)[]; //多参考（数字代表限制数量）
+281: 
+282: interface VideoConfig {
+283:   duration: number;
+284:   resolution: string;
+285:   aspectRatio: "16:9" | "9:16";
+286:   prompt: string;
+287:   referenceList?: ReferenceList[];
+288:   audio?: boolean;
+289:   mode: VideoMode[];
+290: }
+291: 
+292: class AiVideo {
+293:   private key: `${string}:${string}`;
+294:   private result: string = "";
+295:   constructor(key: `${string}:${string}`) {
+296:     this.key = key;
+297:   }
+298:   async run(input: VideoConfig, taskRecord?: TaskRecord) {
+299:     const modelName = await resolveModelName(this.key);
+300:     try {
+301:       const exec = async (mn: `${string}:${string}`) => {
+302:         const fn = await getVendorTemplateFn("videoRequest", mn);
+303:         await referenceList2imageBase642(mn.split(/:(.+)/)[0], input);
+304: 
+305:         this.result = await fn(input);
+306: 
+307:         if (this.result.startsWith("http")) this.result = await urlToBase64(this.result);
+308:       };
+309:       if (taskRecord) {
+310:         await withTaskRecord(this.key, taskRecord.taskClass, taskRecord.describe, taskRecord.relatedObjects, taskRecord.projectId, exec);
+311:         return this;
+312:       }
+313:       await exec(modelName);
+314:       return this;
+315:     } catch (e) {
+316:       throw e;
+317:     }
+318:   }
+319:   async save(path: string) {
+320:     await u.oss.writeFile(path, this.result);
+321:     return this;
+322:   }
+323: }
+324: class AiAudio {
+325:   private key: `${string}:${string}`;
+326:   private result: string = "";
+327:   constructor(key: `${string}:${string}`) {
+328:     this.key = key;
+329:   }
+330:   async run(input: VideoConfig, taskRecord?: TaskRecord) {
+331:     const modelName = await resolveModelName(this.key);
+332:     const exec = async (mn: `${string}:${string}`) => {
+333:       try {
+334:         const fn = await getVendorTemplateFn("ttsRequest", mn);
+335:         await referenceList2imageBase642(mn.split(/:(.+)/)[0], input);
+336:         this.result = await fn(input);
+337: 
+338:         if (this.result.startsWith("http")) this.result = await urlToBase64(this.result);
+339:         return this;
+340:       } catch (e) {}
+341:     };
+342:     if (taskRecord) {
+343:       return withTaskRecord(this.key, taskRecord.taskClass, taskRecord.describe, taskRecord.relatedObjects, taskRecord.projectId, exec);
+344:     }
+345:     return await exec(modelName);
+346:   }
+347:   async save(path: string) {
+348:     await u.oss.writeFile(path, this.result);
+349:     return this;
+350:   }
+351: }
+352: 
+353: export default {
+354:   Text: (AiType: AiType | `${string}:${string}`, think?: boolean, thinkLevel?: 0 | 1 | 2 | 3) => new AiText(AiType, think, thinkLevel),
+355:   Image: (key: `${string}:${string}`) => new AiImage(key),
+356:   Video: (key: `${string}:${string}`) => new AiVideo(key),
+357:   Audio: (key: `${string}:${string}`) => new AiAudio(key),
+358: };
+</file>
+
+<file path="src/utils/getPrompts.ts">
+ 1: export async function getPrompts(type: string) {
+ 2:   if (type == "event") {
+ 3:     return `
+ 4: # 事件提取指令
+ 5: 
+ 6: 你是小说文本分析助手。用户每次提供一个章节的原文，你提取该章的结构化事件信息。
+ 7: 
+ 8: ## ⚠️ 输出约束（最高优先级，违反任何一条即为失败）
+ 9: 
+10: 1. 你的**完整回复**只有一行，以 \`|\` 开头、以 \`|\` 结尾，恰好 7 个字段
+11: 2. 回复的**第一个字符**必须是 \`|\`，**最后一个字符**必须是 \`|\`
+12: 3. \`|\` 之前不许有任何字符——没有引导语、没有解释、没有"根据……"、没有"以下是……"
+13: 4. \`|\` 之后不许有任何字符——没有总结、没有提取说明、没有改编建议
+14: 5. 不输出表头行、分隔线、Markdown 标题、emoji、代码块标记
+15: 
+16: ## 输出格式
+17: 
+18: \`\`\`
+19: | 第X章 {章节标题} | {涉及角色} | {核心事件} | {主线关系} | {信息密度} | {预估集长} | {情绪强度} |
+20: \`\`\`
+21: 
+22: ### 字段规范
+23: 
+24: | 字段 | 格式要求 | 示例 |
+25: |------|----------|------|
+26: | 章节 | \`第X章 {章节标题}\` | \`第1章 职业危机与许愿\` |
+27: | 涉及角色 | 有实际戏份的角色，顿号分隔 | \`林逸、白有容\` |
+28: | 核心事件 | 30-60字，必须含动作+结果 | \`林逸因解密风潮事业崩塌，颓废中许愿触发魔法系统绑定\` |
+29: | 主线关系 | **必须**为 \`强/中/弱（3-8字理由）\` | \`强（动机建立+系统激活）\` |
+30: | 信息密度 | \`高\` / \`中\` / \`低\` | \`高\` |
+31: | 预估集长 | **必须**为 \`X秒\`，禁止用分钟 | \`50秒\` |
+32: | 情绪强度 | 文字标签，\`+\` 连接，禁止星级/数字 | \`转折+悬疑\` |
+33: 
+34: **主线关系判定**：强＝直接推动主角弧线；中＝补充世界观/人物关系/伏笔；弱＝过渡/气氛。
+35: 
+36: **预估集长参考**：高密度+高情绪→45-60秒；中→35-45秒；低→25-35秒。
+37: 
+38: **可用情绪标签**：\`冲突\`、\`恐怖\`、\`情感\`、\`转折\`、\`高潮\`、\`平铺\`、\`喜剧\`、\`悬疑\`、\`情感崩溃\`。
+39: 
+40: ## 输出示例
+41: 
+42: 以下两个示例展示的是**完整回复**——除这一行外没有任何其他内容：
+43: 
+44: \`\`\`
+45: | 第1章 职业危机与许愿 | 林逸 | 职业魔术师林逸因解密打假风潮导致事业崩塌，颓废中感慨"如果会魔法就好了"，意外触发神奇魔法系统绑定 | 强（主角动机建立+系统激活） | 高 | 50秒 | 转折+悬疑 |
+46: \`\`\`
+47: \`\`\`
+48: | 第12章 山间小憩 | 凌玄、苏晚卿 | 凌玄与苏晚卿在山间歇脚，苏晚卿回忆幼时往事，两人关系略有缓和但未实质推进 | 弱（气氛过渡） | 低 | 25秒 | 平铺+情感 |
+49: \`\`\`
+50: 
+51: ## 提取规则
+52: 
+53: - 忠于原文，不推测、不脑补、不加入原文未出现的情节
+54: - 角色使用文中主要称呼，保持一致
+55: - 多条平行事件线时，选对主角影响最大的一条，其余简要带过
+56: - 对话密集章节，关注对话推动了什么结果，而非复述对话内容
+57: `;
+58:   }
+59: }
+</file>
+
+</files>
