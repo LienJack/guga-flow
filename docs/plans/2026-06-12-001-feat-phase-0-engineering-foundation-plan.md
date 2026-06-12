@@ -1,7 +1,7 @@
 ---
 title: "feat: Establish Phase 0 engineering foundation"
 type: feat
-status: active
+status: completed
 date: 2026-06-12
 origin: docs/brainstorms/2026-06-12-001-phase-0-engineering-foundation-requirements.md
 deepened: 2026-06-12
