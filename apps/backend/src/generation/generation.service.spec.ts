@@ -462,6 +462,43 @@ describe("GenerationService", () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it("creates batch image-to-video child jobs and reports skipped nodes", async () => {
+    const result = await service.createBatchImagesToVideosJobs("project_1", {
+      operation: "batch_images_to_videos",
+      sourceNodeIds: ["image_1", "missing_image"],
+      durationSeconds: 5,
+      resolution: "720p",
+    });
+
+    expect(prisma.generationJob.create).toHaveBeenCalledTimes(1);
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        operation: "image_to_video",
+        status: "queued",
+        provider: "mock-video",
+        model: "mock-video-v1",
+        sourceNodeId: "image_1",
+        inputJson: expect.objectContaining({
+          operation: "image_to_video",
+          sourceImageAssetId: "asset_image_1",
+          durationSeconds: 5,
+          resolution: "720p",
+        }),
+      }),
+    });
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "image_1" },
+      data: { status: "queued" },
+    });
+    expect(result.jobs).toHaveLength(1);
+    expect(result.skipped).toEqual([
+      expect.objectContaining({
+        nodeId: "missing_image",
+        reason: expect.stringContaining("Image node not found"),
+      }),
+    ]);
+  });
+
   it("lists project jobs with queue summary counts", async () => {
     prisma.generationJob.findMany.mockResolvedValueOnce([
       generationJob({ id: "job_2", status: "running" }),
@@ -565,6 +602,39 @@ describe("GenerationService", () => {
       data: { status: "provider_waiting" },
     });
     expect(result.status).toBe("provider_waiting");
+  });
+
+  it("cancels active image-to-video jobs and marks the source node cancelled", async () => {
+    prisma.generationJob.findFirst.mockResolvedValue(
+      generationJob({
+        operation: "image_to_video",
+        status: "provider_waiting",
+        provider: "mock-video",
+        model: "mock-video-v1",
+        providerTaskId: "provider_task_1",
+        sourceNodeId: "image_1",
+        inputJson: videoInput(),
+      }),
+    );
+
+    const result = await service.cancelJob("project_1", "job_1");
+
+    expect(prisma.generationJob.update).toHaveBeenCalledWith({
+      where: { id: "job_1" },
+      data: {
+        status: "cancelled",
+        outputJson: expect.objectContaining({
+          providerTaskId: "provider_task_1",
+          providerCancelError: null,
+        }),
+        errorMessage: null,
+      },
+    });
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "image_1" },
+      data: { status: "cancelled" },
+    });
+    expect(result.status).toBe("cancelled");
   });
 
   it("marks active jobs failed without creating media side effects", async () => {

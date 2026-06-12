@@ -1,5 +1,6 @@
 import type {
   CreateGenerationJobInput,
+  CreateBatchImagesToVideosJobInput,
   CanvasSnapshotJson,
   GeneratedMediaProviderOutput,
   ImageProviderId,
@@ -21,6 +22,8 @@ import {
 } from "@guga-flow/shared-types";
 import {
   IsArray,
+  ArrayMaxSize,
+  ArrayMinSize,
   IsBoolean,
   IsIn,
   IsInt,
@@ -69,6 +72,51 @@ export class CreateGenerationJobDto implements CreateGenerationJobInput {
   @IsOptional()
   @IsObject()
   providerParams?: CanvasSnapshotJson;
+
+  @IsOptional()
+  @IsIn(VIDEO_PROVIDER_IDS)
+  @MaxLength(80)
+  videoProvider?: VideoProviderId;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  videoModel?: string;
+
+  @IsOptional()
+  @IsIn(PROJECT_ASPECT_RATIOS)
+  videoAspectRatio?: ProjectAspectRatio;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(15)
+  durationSeconds?: number;
+
+  @IsOptional()
+  @IsIn(VIDEO_PROVIDER_RESOLUTIONS)
+  resolution?: VideoProviderResolution;
+
+  @IsOptional()
+  @IsObject()
+  videoProviderParams?: CanvasSnapshotJson;
+}
+
+export class CreateBatchImagesToVideosJobDto implements CreateBatchImagesToVideosJobInput {
+  @IsIn(["batch_images_to_videos"])
+  operation!: "batch_images_to_videos";
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  @MaxLength(160, { each: true })
+  sourceNodeIds!: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  forceFailure?: boolean;
 
   @IsOptional()
   @IsIn(VIDEO_PROVIDER_IDS)

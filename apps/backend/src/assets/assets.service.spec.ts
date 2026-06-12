@@ -263,6 +263,56 @@ describe("AssetsService", () => {
     });
   });
 
+  it("downloads remote generated video bytes before creating the asset", async () => {
+    fetchImpl.mockResolvedValue(
+      new Response(new Uint8Array(Buffer.from("remote-video-bytes")), {
+        status: 200,
+        headers: { "content-type": "video/mp4" },
+      }),
+    );
+    prisma.asset.create.mockResolvedValue(
+      asset({
+        type: "video",
+        purpose: "shot_clip",
+        storageKey: "providers/seedance/tasks/task_1/generated.mp4",
+        mimeType: "video/mp4",
+        originalFilename: "generated.mp4",
+      }),
+    );
+
+    await service.createGeneratedAsset("project_1", {
+      purpose: "shot_clip",
+      providerOutput: {
+        storageKey: "providers/seedance/tasks/task_1/generated.mp4",
+        mimeType: "video/mp4",
+        provider: "seedance",
+        model: "seedance-1-0-pro",
+        prompt: "slow push",
+        referenceAssetIds: [],
+        remoteUrl: "https://cdn.example.test/generated.mp4",
+        providerTaskId: "task_1",
+      },
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(new URL("https://cdn.example.test/generated.mp4"));
+    expect(storage.writeObject).toHaveBeenCalledWith({
+      storageKey: "providers/seedance/tasks/task_1/generated.mp4",
+      buffer: Buffer.from("remote-video-bytes"),
+    });
+    expect(prisma.asset.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "video",
+        purpose: "shot_clip",
+        mimeType: "video/mp4",
+        metadataJson: expect.objectContaining({
+          previewKind: "video",
+          provider: "seedance",
+          providerTaskId: "task_1",
+        }),
+      }),
+    });
+  });
+
   it("rejects failed remote downloads before creating an asset record", async () => {
     fetchImpl.mockResolvedValue(new Response("not found", { status: 404 }));
 

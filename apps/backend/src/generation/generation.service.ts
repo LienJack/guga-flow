@@ -1,10 +1,13 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ProviderError, createVideoProviderRegistry } from "@guga-flow/provider-contracts";
 import type {
   AssetDetail,
   CanvasSnapshotJson,
   CanvasLoadResult,
   CanvasNodeRecord,
   CanvasNodeType,
+  CreateBatchImagesToVideosJobInput,
+  CreateBatchImagesToVideosJobResult,
   CreateGenerationJobInput,
   GeneratedMediaJobOutput,
   GeneratedMediaJobTargetOutput,
@@ -217,6 +220,66 @@ export class GenerationService {
     };
   }
 
+  async createBatchImagesToVideosJobs(
+    projectId: string,
+    input: CreateBatchImagesToVideosJobInput,
+  ): Promise<CreateBatchImagesToVideosJobResult> {
+    if (input.operation !== "batch_images_to_videos") {
+      throw new BadRequestException("Batch generation operation is not supported");
+    }
+
+    const childInputs: ImageToVideoJobInput[] = [];
+    const skipped: CreateBatchImagesToVideosJobResult["skipped"] = [];
+    for (const sourceNodeId of Array.from(new Set(input.sourceNodeIds))) {
+      try {
+        childInputs.push(
+          await this.buildImageToVideoInput(projectId, sourceNodeId, {
+            operation: "image_to_video",
+            sourceNodeId,
+            videoProvider: input.videoProvider,
+            videoModel: input.videoModel,
+            videoAspectRatio: input.videoAspectRatio,
+            durationSeconds: input.durationSeconds,
+            resolution: input.resolution,
+            videoProviderParams: input.videoProviderParams,
+            forceFailure: input.forceFailure,
+          }),
+        );
+      } catch (error) {
+        skipped.push({
+          nodeId: sourceNodeId,
+          reason: error instanceof Error ? error.message : "Image-to-video child job could not be created",
+        });
+      }
+    }
+
+    const jobs = await this.runTransaction(async (tx) => {
+      const createdJobs: GenerationJobModel[] = [];
+      for (const childInput of childInputs) {
+        const created = (await tx.generationJob.create({
+          data: {
+            projectId,
+            operation: childInput.operation,
+            status: "queued",
+            provider: childInput.provider,
+            model: childInput.model,
+            sourceNodeId: childInput.sourceNodeId,
+            inputJson: jsonValue(childInput),
+          },
+        })) as GenerationJobModel;
+        await this.updateNodeStatus(tx, childInput.sourceNodeId, "queued");
+        createdJobs.push(created);
+      }
+      return createdJobs;
+    });
+
+    return {
+      jobs: jobs.map((job) => this.toGenerationJobRecord<ImageToVideoJobInput>(job)),
+      skipped,
+      queueSummary: await this.getQueueSummary(projectId),
+    };
+  }
+
   async listJobs(projectId: string): Promise<GenerationJobListResult> {
     const jobs = (await this.prisma.generationJob.findMany({
       where: { projectId },
@@ -264,6 +327,36 @@ export class GenerationService {
       retryJob: this.toGenerationJobRecord(retry),
       queueSummary: await this.getQueueSummary(projectId),
     };
+  }
+
+  async cancelJob(projectId: string, jobId: string): Promise<GenerationJobRecord> {
+    const existing = await this.findProjectJob(projectId, jobId);
+    if (!["queued", "running", "provider_waiting"].includes(existing.status)) {
+      throw new BadRequestException("Only queued or active generation jobs can be cancelled");
+    }
+
+    const providerCancelError = await this.tryCancelProviderTask(existing);
+    const cancelledAt = new Date().toISOString();
+    const cancelled = await this.runTransaction(async (tx) => {
+      const updated = (await tx.generationJob.update({
+        where: { id: existing.id },
+        data: {
+          status: "cancelled",
+          outputJson: jsonValue({
+            cancelledAt,
+            providerTaskId: existing.providerTaskId,
+            providerCancelError: providerCancelError ?? null,
+          }),
+          errorMessage: providerCancelError
+            ? `PROVIDER_CANCEL_FAILED: ${providerCancelError.message}`
+            : null,
+        },
+      })) as GenerationJobModel;
+      await this.updateNodeStatus(tx, existing.targetNodeId ?? existing.sourceNodeId, "cancelled");
+      return updated;
+    });
+
+    return this.toGenerationJobRecord(cancelled);
   }
 
   async claimNextJob(): Promise<{ job?: GenerationJobRecord }> {
@@ -1008,6 +1101,34 @@ export class GenerationService {
     };
   }
 
+  private async tryCancelProviderTask(job: GenerationJobModel): Promise<ProviderFailure | undefined> {
+    if (job.operation !== "image_to_video" || !job.providerTaskId) {
+      return undefined;
+    }
+
+    try {
+      const provider = createVideoProviderRegistry().get(job.provider);
+      await provider.cancelTask(job.providerTaskId);
+      return undefined;
+    } catch (error) {
+      if (error instanceof ProviderError) {
+        return {
+          provider: error.provider,
+          code: error.code,
+          message: sanitizeProviderErrorMessage(error.message),
+          retryable: error.retryable,
+        };
+      }
+
+      return {
+        provider: job.provider,
+        code: "PROVIDER_CANCEL_FAILED",
+        message: sanitizeProviderErrorMessage(error instanceof Error ? error.message : "Provider cancel failed"),
+        retryable: false,
+      };
+    }
+  }
+
   private async runTransaction<T>(
     fn: (tx: GenerationPrismaClient) => Promise<T>,
   ): Promise<T> {
@@ -1021,3 +1142,10 @@ type GenerationJobRecordResult = {
   job: GenerationJobRecord<GenerationJobInput>;
   queueSummary: GenerationQueueSummary;
 };
+
+function sanitizeProviderErrorMessage(message: string): string {
+  return message
+    .replace(/([?&](key|token|api_key)=)[^&\s]+/gi, "$1[redacted]")
+    .replace(/(authorization:\s*(bearer|key)\s+)[^\s]+/gi, "$1[redacted]")
+    .replace(/((bearer|key)\s+)[^\s]+/gi, "$1[redacted]");
+}

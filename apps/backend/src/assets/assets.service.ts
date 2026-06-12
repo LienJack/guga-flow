@@ -207,6 +207,7 @@ export class AssetsService {
           prompt: output.prompt,
           referenceAssetIds: output.referenceAssetIds,
           providerAssetId: output.assetId,
+          providerTaskId: output.providerTaskId,
           ...(input.metadataJson ?? {}),
         },
       },
