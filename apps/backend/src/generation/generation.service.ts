@@ -1,7 +1,11 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type {
+  AssetDetail,
   CanvasLoadResult,
   CanvasNodeRecord,
+  CanvasNodeType,
+  GeneratedMediaJobOutput,
+  GeneratedMediaProviderOutput,
   GenerationJobInput,
   GenerationJobListResult,
   GenerationJobRecord,
@@ -25,11 +29,15 @@ import {
 import type { GenerationOperation as PrismaGenerationOperation } from "../generated/prisma/client";
 import { Prisma } from "../generated/prisma/client";
 
+import { AssetsService } from "../assets/assets.service";
 import { CanvasService } from "../canvas/canvas.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PromptService } from "../prompt/prompt.service";
 
-type GenerationPrismaClient = Pick<PrismaService, "generationJob" | "canvasNode">;
+type GenerationPrismaClient = Pick<
+  PrismaService,
+  "generationJob" | "canvasNode" | "canvasEdge" | "asset" | "project"
+>;
 
 type GenerationJobModel = {
   id: string;
@@ -46,6 +54,38 @@ type GenerationJobModel = {
   errorMessage: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
+};
+
+type CanvasNodeModel = {
+  id: string;
+  projectId: string;
+  canvasDocumentId: string;
+  tldrawShapeId: string;
+  type: string;
+  title: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex: number;
+  status: string;
+  dataJson: unknown;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+type CanvasEdgeModel = {
+  id: string;
+  projectId: string;
+  canvasDocumentId: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  sourceShapeId: string | null;
+  targetShapeId: string | null;
+  visualArrowShapeId: string | null;
+  relation: string;
+  dataJson: unknown;
+  createdAt: Date | string;
 };
 
 function toIsoString(value: Date | string): string {
@@ -106,6 +146,7 @@ function assertJobInput(value: unknown): GenerationJobInput {
 export class GenerationService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AssetsService) private readonly assetsService: AssetsService,
     @Inject(CanvasService) private readonly canvasService: CanvasService,
     @Inject(PromptService) private readonly promptService: PromptService,
   ) {}
@@ -263,6 +304,79 @@ export class GenerationService {
     return this.toGenerationJobRecord(failed);
   }
 
+  async succeedJob(
+    jobId: string,
+    providerOutput: GeneratedMediaProviderOutput,
+  ): Promise<GenerationJobRecord<GenerationJobInput, GeneratedMediaJobOutput>> {
+    const existing = (await this.prisma.generationJob.findUnique({
+      where: { id: jobId },
+    })) as GenerationJobModel | null;
+    if (!existing) {
+      throw new NotFoundException("Generation job not found");
+    }
+    if (existing.status !== "running" && existing.status !== "provider_waiting") {
+      throw new BadRequestException("Only active generation jobs can succeed");
+    }
+
+    const input = assertJobInput(existing.inputJson);
+    this.validateProviderOutput(existing, input, providerOutput);
+
+    const completed = await this.runTransaction(async (tx) => {
+      const sourceNode = await this.findSourceNode(tx, existing);
+      const asset = await this.assetsService.createGeneratedAsset(
+        existing.projectId,
+        {
+          purpose: input.operation === "shot_to_image" ? "shot_keyframe" : "shot_clip",
+          providerOutput,
+          metadataJson: {
+            generationJobId: existing.id,
+            operation: input.operation,
+            sourceNodeId: sourceNode.id,
+          },
+        },
+        tx,
+      );
+      const targetNode = await this.createGeneratedNode(tx, existing, input, providerOutput, asset, sourceNode);
+      const edge = await this.createGeneratedEdge(tx, existing, input, sourceNode, targetNode, asset);
+      const output: GeneratedMediaJobOutput = {
+        operation: input.operation,
+        sourceNodeId: sourceNode.id,
+        targetNodeId: targetNode.id,
+        assetId: asset.id,
+        edgeId: edge.id,
+        provider: providerOutput.provider,
+        model: providerOutput.model,
+        prompt: providerOutput.prompt,
+        referenceAssetIds: providerOutput.referenceAssetIds,
+        providerOutput,
+        completedAt: new Date().toISOString(),
+      };
+
+      await tx.canvasNode.update({
+        where: { id: targetNode.id },
+        data: {
+          status: "succeeded",
+          dataJson: jsonValue(
+            this.generatedNodeData(existing.id, input, providerOutput, asset, output, sourceNode),
+          ),
+        },
+      });
+      await this.updateNodeStatus(tx, sourceNode.id, "succeeded");
+
+      return (await tx.generationJob.update({
+        where: { id: existing.id },
+        data: {
+          status: "succeeded",
+          targetNodeId: targetNode.id,
+          outputJson: jsonValue(output),
+          errorMessage: null,
+        },
+      })) as GenerationJobModel;
+    });
+
+    return this.toGenerationJobRecord(completed);
+  }
+
   private async buildShotToImageInput(
     projectId: string,
     shotNodeId: string,
@@ -372,6 +486,160 @@ export class GenerationService {
     }
 
     return job;
+  }
+
+  private validateProviderOutput(
+    job: GenerationJobModel,
+    input: GenerationJobInput,
+    output: GeneratedMediaProviderOutput,
+  ): void {
+    if (output.provider !== job.provider) {
+      throw new BadRequestException("Provider output does not match the claimed job provider");
+    }
+    if (input.operation === "shot_to_image" && !output.mimeType.startsWith("image/")) {
+      throw new BadRequestException("Shot image generation must produce an image asset");
+    }
+    if (input.operation === "image_to_video" && !output.mimeType.startsWith("video/")) {
+      throw new BadRequestException("Image video generation must produce a video asset");
+    }
+  }
+
+  private async findSourceNode(
+    tx: GenerationPrismaClient,
+    job: GenerationJobModel,
+  ): Promise<CanvasNodeModel> {
+    if (!job.sourceNodeId) {
+      throw new BadRequestException("Generation job has no source node");
+    }
+
+    const sourceNode = (await tx.canvasNode.findFirst({
+      where: {
+        id: job.sourceNodeId,
+        projectId: job.projectId,
+      },
+    })) as CanvasNodeModel | null;
+    if (!sourceNode) {
+      throw new NotFoundException("Generation source node not found");
+    }
+
+    return sourceNode;
+  }
+
+  private async createGeneratedNode(
+    tx: GenerationPrismaClient,
+    job: GenerationJobModel,
+    input: GenerationJobInput,
+    providerOutput: GeneratedMediaProviderOutput,
+    asset: AssetDetail,
+    sourceNode: CanvasNodeModel,
+  ): Promise<CanvasNodeModel> {
+    const targetType: Extract<CanvasNodeType, "image" | "video"> =
+      input.operation === "shot_to_image" ? "image" : "video";
+    if (input.operation === "shot_to_image" && sourceNode.type !== "shot") {
+      throw new BadRequestException("Shot image completion requires a Shot source node");
+    }
+    if (input.operation === "image_to_video" && sourceNode.type !== "image") {
+      throw new BadRequestException("Image video completion requires an Image source node");
+    }
+
+    return (await tx.canvasNode.create({
+      data: {
+        projectId: job.projectId,
+        canvasDocumentId: sourceNode.canvasDocumentId,
+        tldrawShapeId: `shape:generated-${job.id}-${targetType}`,
+        type: targetType,
+        title: this.generatedNodeTitle(sourceNode, targetType),
+        x: sourceNode.x + sourceNode.width + 120,
+        y: sourceNode.y,
+        width: 320,
+        height: targetType === "image" ? 220 : 180,
+        zIndex: sourceNode.zIndex + 1,
+        status: "succeeded",
+        dataJson: jsonValue({
+          assetId: asset.id,
+          prompt: providerOutput.prompt,
+          provider: providerOutput.provider,
+          model: providerOutput.model,
+          generationJobId: job.id,
+          generationOperation: input.operation,
+          generatedFromNodeId: sourceNode.id,
+          sourceNodeIds: this.sourceNodeIdsForInput(input),
+          referenceAssetIds: providerOutput.referenceAssetIds,
+          inputJson: input,
+        }),
+      },
+    })) as CanvasNodeModel;
+  }
+
+  private async createGeneratedEdge(
+    tx: GenerationPrismaClient,
+    job: GenerationJobModel,
+    input: GenerationJobInput,
+    sourceNode: CanvasNodeModel,
+    targetNode: CanvasNodeModel,
+    asset: AssetDetail,
+  ): Promise<CanvasEdgeModel> {
+    const relation = input.operation === "shot_to_image" ? "generated_image" : "generated_video";
+
+    return (await tx.canvasEdge.create({
+      data: {
+        projectId: job.projectId,
+        canvasDocumentId: sourceNode.canvasDocumentId,
+        sourceNodeId: sourceNode.id,
+        targetNodeId: targetNode.id,
+        sourceShapeId: sourceNode.tldrawShapeId,
+        targetShapeId: targetNode.tldrawShapeId,
+        relation,
+        dataJson: jsonValue({
+          generationJobId: job.id,
+          assetId: asset.id,
+        }),
+      },
+    })) as CanvasEdgeModel;
+  }
+
+  private generatedNodeData(
+    jobId: string,
+    input: GenerationJobInput,
+    providerOutput: GeneratedMediaProviderOutput,
+    asset: AssetDetail,
+    output: GeneratedMediaJobOutput,
+    sourceNode: CanvasNodeModel,
+  ): Record<string, unknown> {
+    return {
+      assetId: asset.id,
+      prompt: providerOutput.prompt,
+      ...(input.operation === "image_to_video" ? { durationSeconds: input.durationSeconds } : {}),
+      description: `Generated by ${providerOutput.provider}`,
+      provider: providerOutput.provider,
+      model: providerOutput.model,
+      generationJobId: jobId,
+      generationOperation: input.operation,
+      generatedFromNodeId: sourceNode.id,
+      sourceNodeIds: this.sourceNodeIdsForInput(input),
+      referenceAssetIds: providerOutput.referenceAssetIds,
+      inputJson: input,
+      outputJson: output,
+    };
+  }
+
+  private generatedNodeTitle(sourceNode: CanvasNodeModel, targetType: "image" | "video"): string {
+    const sourceTitle = sourceNode.title?.trim() || sourceNode.type;
+    return targetType === "image" ? `${sourceTitle} Image` : `${sourceTitle} Video`;
+  }
+
+  private sourceNodeIdsForInput(input: GenerationJobInput): string[] {
+    if (input.operation === "shot_to_image") {
+      return uniqueStrings([
+        input.sourceNodeId,
+        input.sourceNodeIds.shotNodeId,
+        input.sourceNodeIds.sceneNodeId,
+        ...input.sourceNodeIds.characterNodeIds,
+        input.sourceNodeIds.locationNodeId,
+      ]);
+    }
+
+    return uniqueStrings(input.sourceNodeIds);
   }
 
   private async getQueueSummary(projectId: string): Promise<GenerationQueueSummary> {

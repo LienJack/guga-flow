@@ -1,8 +1,10 @@
 import type {
   CreateGenerationJobInput,
+  GeneratedMediaProviderOutput,
   Phase8GenerationOperation,
   ProviderFailure,
   WorkerGenerationJobFailInput,
+  WorkerGenerationJobSucceedInput,
 } from "@guga-flow/shared-types";
 import { PHASE_8_GENERATION_OPERATIONS } from "@guga-flow/shared-types";
 import { IsBoolean, IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
@@ -24,4 +26,9 @@ export class CreateGenerationJobDto implements CreateGenerationJobInput {
 export class WorkerGenerationJobFailDto implements WorkerGenerationJobFailInput {
   @IsObject()
   error!: ProviderFailure;
+}
+
+export class WorkerGenerationJobSucceedDto implements WorkerGenerationJobSucceedInput {
+  @IsObject()
+  providerOutput!: GeneratedMediaProviderOutput;
 }

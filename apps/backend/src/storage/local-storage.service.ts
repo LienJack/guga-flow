@@ -5,7 +5,7 @@ import path from "node:path";
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
-import type { PutObjectInput, StoredObject } from "./storage.types";
+import type { PutObjectInput, StoredObject, WriteObjectInput } from "./storage.types";
 
 function sanitizeFilename(filename: string): string {
   const basename = path.basename(filename).trim() || "upload";
@@ -24,6 +24,11 @@ export class LocalStorageService {
   async putObject(input: PutObjectInput): Promise<StoredObject> {
     const filename = `${randomUUID()}-${sanitizeFilename(input.originalFilename)}`;
     const storageKey = path.posix.join(input.projectId, filename);
+    return this.writeObject({ storageKey, buffer: input.buffer });
+  }
+
+  async writeObject(input: WriteObjectInput): Promise<StoredObject> {
+    const storageKey = path.posix.normalize(input.storageKey);
     const absolutePath = this.resolveStorageKey(storageKey);
 
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });

@@ -64,6 +64,11 @@ function createStorageMock() {
       absolutePath: "/tmp/stored-hero.png",
       sizeBytes: 11,
     })),
+    writeObject: vi.fn(async (input: { storageKey: string; buffer: Buffer }) => ({
+      storageKey: input.storageKey,
+      absolutePath: `/tmp/${input.storageKey}`,
+      sizeBytes: input.buffer.byteLength,
+    })),
     readObject: vi.fn(async () => Buffer.from("hello text")),
     deleteObject: vi.fn(async () => undefined),
   };
@@ -126,6 +131,64 @@ describe("AssetsService", () => {
 
     expect(storage.putObject).not.toHaveBeenCalled();
     expect(prisma.asset.create).not.toHaveBeenCalled();
+  });
+
+  it("creates generated mock asset records with placeholder bytes", async () => {
+    prisma.asset.create.mockResolvedValue(
+      asset({
+        type: "image",
+        purpose: "shot_keyframe",
+        storageKey: "mock/images/generated.png",
+        mimeType: "image/png",
+        originalFilename: "generated.png",
+        metadataJson: {
+          previewKind: "image",
+          provider: "mock-image",
+          model: "mock-image-v1",
+        },
+      }),
+    );
+
+    const result = await service.createGeneratedAsset("project_1", {
+      purpose: "shot_keyframe",
+      providerOutput: {
+        assetId: "provider_asset_1",
+        storageKey: "mock/images/generated.png",
+        mimeType: "image/png",
+        provider: "mock-image",
+        model: "mock-image-v1",
+        prompt: "hero at console",
+        referenceAssetIds: ["asset_ref_1"],
+      },
+      metadataJson: {
+        generationJobId: "job_1",
+      },
+    });
+
+    expect(storage.writeObject).toHaveBeenCalledWith({
+      storageKey: "mock/images/generated.png",
+      buffer: expect.any(Buffer),
+    });
+    expect(prisma.asset.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        type: "image",
+        purpose: "shot_keyframe",
+        storageKey: "mock/images/generated.png",
+        mimeType: "image/png",
+        metadataJson: expect.objectContaining({
+          provider: "mock-image",
+          model: "mock-image-v1",
+          providerAssetId: "provider_asset_1",
+          generationJobId: "job_1",
+        }),
+      }),
+    });
+    expect(result).toMatchObject({
+      id: "asset_1",
+      purpose: "shot_keyframe",
+      previewKind: "image",
+    });
   });
 
   it("returns text previews for document assets", async () => {

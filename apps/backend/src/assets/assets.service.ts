@@ -6,6 +6,7 @@ import {
   type AssetPreviewKind,
   type AssetPurpose,
   type AssetType,
+  type GeneratedMediaProviderOutput,
   type UploadableAssetMimeType,
 } from "@guga-flow/shared-types";
 
@@ -30,11 +31,24 @@ type AssetModel = {
   createdAt: Date | string;
 };
 
+type AssetPrismaClient = Pick<PrismaService, "project" | "asset">;
+
 export interface AssetPreviewPayload {
   asset: AssetDetail;
   body: Buffer;
   mimeType: string;
 }
+
+export interface CreateGeneratedAssetInput {
+  providerOutput: GeneratedMediaProviderOutput;
+  purpose: Extract<AssetPurpose, "shot_keyframe" | "shot_clip">;
+  metadataJson?: Record<string, unknown>;
+}
+
+const TRANSPARENT_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+  "base64",
+);
 
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -54,6 +68,16 @@ function assetTypeForMime(mimeType: UploadableAssetMimeType): AssetType {
   return "document";
 }
 
+function assetTypeForGeneratedMime(mimeType: string): Extract<AssetType, "image" | "video"> {
+  if (mimeType.startsWith("image/")) {
+    return "image";
+  }
+  if (mimeType.startsWith("video/")) {
+    return "video";
+  }
+  throw new BadRequestException("Generated asset must be an image or video");
+}
+
 function previewKindForMime(mimeType: string): AssetPreviewKind {
   if (mimeType.startsWith("image/")) {
     return "image";
@@ -65,6 +89,27 @@ function previewKindForMime(mimeType: string): AssetPreviewKind {
     return "text";
   }
   return "metadata";
+}
+
+function originalFilenameFromStorageKey(storageKey: string): string {
+  const filename = storageKey.split("/").pop()?.trim();
+  return filename || "generated-asset";
+}
+
+function generatedPlaceholderBuffer(output: GeneratedMediaProviderOutput): Buffer {
+  if (output.mimeType === "image/png") {
+    return TRANSPARENT_PNG;
+  }
+
+  return Buffer.from(
+    [
+      "guga-flow mock generated media",
+      `provider=${output.provider}`,
+      `model=${output.model}`,
+      `prompt=${output.prompt}`,
+    ].join("\n"),
+    "utf8",
+  );
 }
 
 @Injectable()
@@ -118,6 +163,43 @@ export class AssetsService {
     return this.toAssetRecord(asset);
   }
 
+  async createGeneratedAsset(
+    projectId: string,
+    input: CreateGeneratedAssetInput,
+    client: AssetPrismaClient = this.prisma,
+  ): Promise<AssetDetail> {
+    await this.ensureProjectExists(projectId, client);
+
+    const output = input.providerOutput;
+    const type = assetTypeForGeneratedMime(output.mimeType);
+    const stored = await this.storage.writeObject({
+      storageKey: output.storageKey,
+      buffer: generatedPlaceholderBuffer(output),
+    });
+    const asset = await client.asset.create({
+      data: {
+        projectId,
+        type,
+        purpose: input.purpose,
+        storageKey: stored.storageKey,
+        mimeType: output.mimeType,
+        originalFilename: originalFilenameFromStorageKey(stored.storageKey),
+        sizeBytes: stored.sizeBytes,
+        metadataJson: {
+          previewKind: previewKindForMime(output.mimeType),
+          provider: output.provider,
+          model: output.model,
+          prompt: output.prompt,
+          referenceAssetIds: output.referenceAssetIds,
+          providerAssetId: output.assetId,
+          ...(input.metadataJson ?? {}),
+        },
+      },
+    });
+
+    return this.toAssetRecord(asset);
+  }
+
   async getAsset(projectId: string, assetId: string): Promise<AssetDetail> {
     const asset = await this.findAsset(projectId, assetId);
     const detail = this.toAssetRecord(asset);
@@ -162,8 +244,11 @@ export class AssetsService {
     }
   }
 
-  private async ensureProjectExists(projectId: string): Promise<void> {
-    const project = await this.prisma.project.findUnique({
+  private async ensureProjectExists(
+    projectId: string,
+    client: AssetPrismaClient = this.prisma,
+  ): Promise<void> {
+    const project = await client.project.findUnique({
       where: { id: projectId },
       select: { id: true },
     });

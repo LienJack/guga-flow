@@ -700,6 +700,20 @@ export class CanvasService {
       return;
     }
 
+    if (relation === "generated_image") {
+      if (sourceNode.type !== "shot" || targetNode.type !== "image") {
+        throw new BadRequestException("Generated image edges must connect a shot to an image");
+      }
+      return;
+    }
+
+    if (relation === "generated_video") {
+      if (sourceNode.type !== "image" || targetNode.type !== "video") {
+        throw new BadRequestException("Generated video edges must connect an image to a video");
+      }
+      return;
+    }
+
     throw new BadRequestException("Canvas edge relation is not supported for semantic binding yet");
   }
 

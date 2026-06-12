@@ -696,6 +696,46 @@ describe("CanvasService", () => {
     expect(prisma.canvasNode.update).not.toHaveBeenCalled();
   });
 
+  it("creates generated media semantic edges without mutating source node data", async () => {
+    const shotNode = canvasNode({
+      id: "shot_1",
+      tldrawShapeId: "shape:shot-1",
+      type: "shot",
+    });
+    const imageNode = canvasNode({
+      id: "image_1",
+      tldrawShapeId: "shape:image-1",
+      type: "image",
+    });
+    prisma.canvasNode.findFirst.mockImplementation(async ({ where }) => {
+      if (where.id === "shot_1") {
+        return shotNode;
+      }
+      if (where.id === "image_1") {
+        return imageNode;
+      }
+      return null;
+    });
+    prisma.canvasEdge.create.mockResolvedValue(
+      canvasEdge({
+        id: "edge_generated_image",
+        sourceNodeId: "shot_1",
+        targetNodeId: "image_1",
+        relation: "generated_image",
+      }),
+    );
+
+    const result = await service.createEdge("project_1", {
+      sourceNodeId: "shot_1",
+      targetNodeId: "image_1",
+      relation: "generated_image",
+    });
+
+    expect(result.edge.relation).toBe("generated_image");
+    expect(result.updatedNodes).toEqual([]);
+    expect(prisma.canvasNode.update).not.toHaveBeenCalled();
+  });
+
   it("deletes semantic edges and rolls back shot references", async () => {
     const characterNode = canvasNode({
       id: "character_1",

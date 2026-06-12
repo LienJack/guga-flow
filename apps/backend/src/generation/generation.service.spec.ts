@@ -10,6 +10,7 @@ import type {
 } from "@guga-flow/shared-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { AssetsService } from "../assets/assets.service";
 import { CanvasService } from "../canvas/canvas.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PromptService } from "../prompt/prompt.service";
@@ -73,8 +74,23 @@ function createPrismaMock() {
         }),
       ),
     },
+    project: {
+      findUnique: vi.fn(async (): Promise<{ id: string } | null> => ({ id: "project_1" })),
+    },
+    asset: {
+      create: vi.fn(),
+    },
     canvasNode: {
       update: vi.fn(async (_args: MockUpdateArgs) => ({})),
+      findFirst: vi.fn(async (_args?: MockFindArgs): Promise<CanvasNodeRecord | null> => null),
+      create: vi.fn(async (_args: MockCreateArgs): Promise<CanvasNodeRecord> =>
+        canvasNode<ImageNodeData>("image_1", "image", "Generated Image", {}),
+      ),
+    },
+    canvasEdge: {
+      create: vi.fn(async (_args: MockCreateArgs): Promise<CanvasEdgeRecord> =>
+        canvasEdge("edge_1", "shot_1", "image_1", "generated_image"),
+      ),
     },
   };
 
@@ -98,18 +114,40 @@ function createPromptServiceMock() {
   };
 }
 
+function createAssetsServiceMock() {
+  return {
+    createGeneratedAsset: vi.fn(async () => ({
+      id: "asset_generated_1",
+      projectId: "project_1",
+      type: "image",
+      purpose: "shot_keyframe",
+      storageKey: "mock/images/generated.png",
+      mimeType: "image/png",
+      originalFilename: "generated.png",
+      sizeBytes: 68,
+      metadataJson: {},
+      previewKind: "image",
+      previewUrl: "/api/v1/projects/project_1/assets/asset_generated_1/preview",
+      createdAt: createdAt.toISOString(),
+    })),
+  };
+}
+
 describe("GenerationService", () => {
   let prisma: ReturnType<typeof createPrismaMock>;
+  let assetsService: ReturnType<typeof createAssetsServiceMock>;
   let canvasService: ReturnType<typeof createCanvasServiceMock>;
   let promptService: ReturnType<typeof createPromptServiceMock>;
   let service: GenerationService;
 
   beforeEach(() => {
     prisma = createPrismaMock();
+    assetsService = createAssetsServiceMock();
     canvasService = createCanvasServiceMock();
     promptService = createPromptServiceMock();
     service = new GenerationService(
       prisma as unknown as PrismaService,
+      assetsService as unknown as AssetsService,
       canvasService as unknown as CanvasService,
       promptService as unknown as PromptService,
     );
@@ -261,6 +299,120 @@ describe("GenerationService", () => {
       data: { status: "failed" },
     });
     expect(result.status).toBe("failed");
+  });
+
+  it("completes shot-to-image jobs with generated asset, node, edge, and output trace", async () => {
+    prisma.generationJob.findUnique.mockResolvedValue(generationJob({ status: "running" }));
+    prisma.canvasNode.findFirst.mockResolvedValue(
+      canvasNode<ShotNodeData>("shot_1", "shot", "Shot 01", {
+        imagePrompt: "hero at console",
+      }),
+    );
+    prisma.canvasNode.create.mockResolvedValue(
+      canvasNode<ImageNodeData>("image_1", "image", "Shot 01 Image", {
+        assetId: "asset_generated_1",
+      }),
+    );
+    prisma.canvasEdge.create.mockResolvedValue(
+      canvasEdge("edge_generated_image_1", "shot_1", "image_1", "generated_image"),
+    );
+    prisma.generationJob.update.mockResolvedValue(
+      generationJob({
+        status: "succeeded",
+        targetNodeId: "image_1",
+        outputJson: {
+          operation: "shot_to_image",
+          assetId: "asset_generated_1",
+          targetNodeId: "image_1",
+          edgeId: "edge_generated_image_1",
+        },
+      }),
+    );
+
+    const result = await service.succeedJob("job_1", {
+      assetId: "provider_asset_1",
+      storageKey: "mock/images/provider_asset_1.png",
+      mimeType: "image/png",
+      provider: "mock-image",
+      model: "mock-image-v1",
+      prompt: "Image prompt: hero at console",
+      referenceAssetIds: ["asset_ref_1"],
+    });
+
+    expect(assetsService.createGeneratedAsset).toHaveBeenCalledWith(
+      "project_1",
+      expect.objectContaining({
+        purpose: "shot_keyframe",
+        providerOutput: expect.objectContaining({
+          storageKey: "mock/images/provider_asset_1.png",
+        }),
+        metadataJson: expect.objectContaining({
+          generationJobId: "job_1",
+          operation: "shot_to_image",
+          sourceNodeId: "shot_1",
+        }),
+      }),
+      expect.any(Object),
+    );
+    expect(prisma.canvasNode.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        canvasDocumentId: "canvas_1",
+        type: "image",
+        title: "Shot 01 Image",
+        status: "succeeded",
+        dataJson: expect.objectContaining({
+          assetId: "asset_generated_1",
+          generationJobId: "job_1",
+          generationOperation: "shot_to_image",
+          generatedFromNodeId: "shot_1",
+        }),
+      }),
+    });
+    expect(prisma.canvasEdge.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sourceNodeId: "shot_1",
+        targetNodeId: "image_1",
+        relation: "generated_image",
+        dataJson: expect.objectContaining({
+          generationJobId: "job_1",
+          assetId: "asset_generated_1",
+        }),
+      }),
+    });
+    expect(prisma.generationJob.update).toHaveBeenCalledWith({
+      where: { id: "job_1" },
+      data: expect.objectContaining({
+        status: "succeeded",
+        targetNodeId: "image_1",
+        errorMessage: null,
+        outputJson: expect.objectContaining({
+          operation: "shot_to_image",
+          targetNodeId: "image_1",
+          assetId: "asset_generated_1",
+          edgeId: "edge_generated_image_1",
+        }),
+      }),
+    });
+    expect(result.status).toBe("succeeded");
+    expect(result.targetNodeId).toBe("image_1");
+  });
+
+  it("rejects provider outputs that do not match the active job operation", async () => {
+    prisma.generationJob.findUnique.mockResolvedValue(generationJob({ status: "running" }));
+
+    await expect(
+      service.succeedJob("job_1", {
+        storageKey: "mock/videos/wrong.mp4",
+        mimeType: "video/mp4",
+        provider: "mock-image",
+        model: "mock-image-v1",
+        prompt: "wrong kind",
+        referenceAssetIds: [],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(assetsService.createGeneratedAsset).not.toHaveBeenCalled();
   });
 
   it("retries failed jobs by creating a new queued job", async () => {

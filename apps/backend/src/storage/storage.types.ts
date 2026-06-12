@@ -5,6 +5,11 @@ export interface PutObjectInput {
   buffer: Buffer;
 }
 
+export interface WriteObjectInput {
+  storageKey: string;
+  buffer: Buffer;
+}
+
 export interface StoredObject {
   storageKey: string;
   absolutePath: string;

@@ -38,6 +38,18 @@ describe("LocalStorageService", () => {
     await expect(service.readObject(stored.storageKey)).rejects.toThrow();
   });
 
+  it("writes generated objects at explicit provider storage keys", async () => {
+    const stored = await service.writeObject({
+      storageKey: "mock/images/generated-image.png",
+      buffer: Buffer.from("generated-image-bytes"),
+    });
+
+    expect(stored.storageKey).toBe("mock/images/generated-image.png");
+    await expect(service.readObject(stored.storageKey)).resolves.toEqual(
+      Buffer.from("generated-image-bytes"),
+    );
+  });
+
   it("prevents storage keys from escaping the upload root", () => {
     expect(() => service.resolveStorageKey("../outside.txt")).toThrow(
       "Storage key escapes upload storage root",
