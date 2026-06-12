@@ -1,6 +1,6 @@
 # Development
 
-This document covers the Phase 0 local development path for guga-flow. It follows the canvas-first and mock-first constraints from `docs/infinite-canvas-video-long-task-development-flow.md`.
+This document covers the current local development path for guga-flow. It follows the canvas-first and mock-first constraints from `docs/infinite-canvas-video-long-task-development-flow.md`.
 
 ## Runtime
 
@@ -38,7 +38,7 @@ IMAGE_PROVIDER=mock-image
 VIDEO_PROVIDER=mock-video
 ```
 
-Real provider keys are intentionally not required in Phase 0 and must stay server-side in backend or worker configuration.
+Real provider keys are intentionally not required in the current mock-first path and must stay server-side in backend or worker configuration.
 
 ## Local Infrastructure
 
@@ -56,7 +56,7 @@ Ports:
 - `5432`: PostgreSQL
 - `6379`: Redis
 
-Direct app ports are the primary Phase 0 development path. The Nginx gateway mirrors the target local architecture and becomes more useful as cross-app routes grow.
+Direct app ports are the primary development path. The Nginx gateway mirrors the target local architecture and becomes more useful as cross-app routes grow.
 
 ## Database
 
@@ -81,7 +81,7 @@ The initial schema preserves the hybrid persistence foundation:
 - `GenerationJob`
 - `EditorExport`
 
-Phase 0 does not implement Project CRUD or canvas save/load behavior.
+Project and asset APIs are available. Canvas save/load behavior remains deferred to Phase 2.
 
 ## Development Servers
 
@@ -90,6 +90,29 @@ pnpm run dev
 ```
 
 This builds shared packages first and then starts all app surfaces in parallel.
+
+Open the frontend at `http://localhost:3001`. The home page is the project dashboard. Creating or opening a project routes to `/projects/:projectId/canvas`, which currently hosts the Phase 1 canvas workspace shell and asset library.
+
+## Project And Asset Workflow
+
+Phase 1 supports:
+
+- project list/create/open/update/delete/duplicate
+- uploaded image, video, txt, and markdown assets
+- project-scoped asset list/detail/preview/delete
+- local storage through backend-owned upload paths
+
+Supported upload MIME types:
+
+- `image/png`
+- `image/jpeg`
+- `image/webp`
+- `video/mp4`
+- `video/webm`
+- `text/plain`
+- `text/markdown`
+
+Uploaded files are stored under `UPLOAD_STORAGE_DIR` and exposed through backend preview routes. Provider API keys are not used by the browser.
 
 ## Mock Workflow Verification
 
@@ -115,23 +138,23 @@ Notes:
 - `pnpm run build` generates the Prisma client before building workspaces.
 - If you see an engine warning, confirm you are running Node 26.3.0 or newer.
 
-## Phase 0 Boundaries
+## Current Boundaries
 
 Included:
 
 - monorepo scaffold
-- frontend workbench shell
-- backend health/config/Prisma foundation
+- frontend project dashboard and workbench shell
+- backend health/config/Prisma/project/asset foundation
+- local asset upload and preview
 - worker mock workflow
 - shared types and provider contracts
 - local infra and quality gates
 
 Deferred:
 
-- Project CRUD
-- asset upload
 - tldraw canvas persistence
 - custom business shapes
+- semantic asset binding
 - persistent generation queue
 - real provider adapters
 - editor package zip export

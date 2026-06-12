@@ -2,13 +2,14 @@
 
 guga-flow is a canvas-first novel-to-video production platform. The MVP keeps novels, storyboard scenes, characters, locations, generated images, generated videos, and editor packages as traceable production nodes on an infinite canvas.
 
-## Phase 0 Status
+## Current Status
 
-This repository is in Phase 0 of `docs/infinite-canvas-video-long-task-development-flow.md`: engineering foundation. The current scaffold provides:
+This repository has completed Phase 1 of `docs/infinite-canvas-video-long-task-development-flow.md`: project management and asset library. The current app provides:
 
 - pnpm TypeScript monorepo with `apps/*` and `packages/*`
-- Next.js frontend shell
-- NestJS backend shell with Prisma foundation
+- Next.js project dashboard and project canvas workspace route
+- NestJS backend with Prisma-backed project APIs
+- Local asset upload, listing, preview, and deletion APIs
 - Worker mock workflow shell
 - Shared domain types and provider contracts
 - Local Postgres/Redis/Nginx infrastructure definition
