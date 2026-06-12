@@ -553,29 +553,30 @@ describe("GenerationService", () => {
   });
 
   it("marks running video jobs as waiting for provider completion", async () => {
-    prisma.generationJob.findUnique.mockResolvedValue(
-      generationJob({
-        operation: "image_to_video",
-        status: "running",
-        provider: "seedance",
-        model: "seedance-1-0-pro",
-        sourceNodeId: "image_1",
-        inputJson: {
-          ...videoInput(),
+    prisma.generationJob.findUnique
+      .mockResolvedValueOnce(
+        generationJob({
+          operation: "image_to_video",
+          status: "running",
           provider: "seedance",
           model: "seedance-1-0-pro",
-        },
-      }),
-    );
-    prisma.generationJob.update.mockResolvedValue(
-      generationJob({
-        operation: "image_to_video",
-        status: "provider_waiting",
-        provider: "seedance",
-        model: "seedance-1-0-pro",
-        providerTaskId: "seedance_task_1",
-      }),
-    );
+          sourceNodeId: "image_1",
+          inputJson: {
+            ...videoInput(),
+            provider: "seedance",
+            model: "seedance-1-0-pro",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        generationJob({
+          operation: "image_to_video",
+          status: "provider_waiting",
+          provider: "seedance",
+          model: "seedance-1-0-pro",
+          providerTaskId: "seedance_task_1",
+        }),
+      );
 
     const result = await service.waitJob("job_1", {
       provider: "seedance",
@@ -584,8 +585,8 @@ describe("GenerationService", () => {
       rawJson: { providerTaskId: "seedance_task_1" },
     });
 
-    expect(prisma.generationJob.update).toHaveBeenCalledWith({
-      where: { id: "job_1" },
+    expect(prisma.generationJob.updateMany).toHaveBeenCalledWith({
+      where: { id: "job_1", status: { in: ["running", "provider_waiting"] } },
       data: {
         status: "provider_waiting",
         providerTaskId: "seedance_task_1",
@@ -616,11 +617,22 @@ describe("GenerationService", () => {
         inputJson: videoInput(),
       }),
     );
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "image_to_video",
+        status: "cancelled",
+        provider: "mock-video",
+        model: "mock-video-v1",
+        providerTaskId: "provider_task_1",
+        sourceNodeId: "image_1",
+        inputJson: videoInput(),
+      }),
+    );
 
     const result = await service.cancelJob("project_1", "job_1");
 
-    expect(prisma.generationJob.update).toHaveBeenCalledWith({
-      where: { id: "job_1" },
+    expect(prisma.generationJob.updateMany).toHaveBeenCalledWith({
+      where: { id: "job_1", status: { in: ["queued", "running", "provider_waiting"] } },
       data: {
         status: "cancelled",
         outputJson: expect.objectContaining({
@@ -637,6 +649,26 @@ describe("GenerationService", () => {
     expect(result.status).toBe("cancelled");
   });
 
+  it("does not cancel jobs that leave active state before the cancel transaction", async () => {
+    prisma.generationJob.findFirst.mockResolvedValue(
+      generationJob({
+        operation: "image_to_video",
+        status: "provider_waiting",
+        provider: "mock-video",
+        model: "mock-video-v1",
+        providerTaskId: "provider_task_1",
+        sourceNodeId: "image_1",
+        inputJson: videoInput(),
+      }),
+    );
+    prisma.generationJob.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(service.cancelJob("project_1", "job_1")).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.generationJob.update).not.toHaveBeenCalled();
+    expect(prisma.canvasNode.update).not.toHaveBeenCalled();
+  });
+
   it("marks active jobs failed without creating media side effects", async () => {
     const failure: ProviderFailure = {
       provider: "mock-image",
@@ -644,12 +676,20 @@ describe("GenerationService", () => {
       message: "mock failure requested",
       retryable: true,
     };
-    prisma.generationJob.findUnique.mockResolvedValue(generationJob({ status: "running" }));
+    prisma.generationJob.findUnique
+      .mockResolvedValueOnce(generationJob({ status: "running" }))
+      .mockResolvedValueOnce(
+        generationJob({
+          status: "failed",
+          errorMessage: "MOCK_PROVIDER_FAILURE: mock failure requested",
+          outputJson: { error: failure },
+        }),
+      );
 
     const result = await service.failJob("job_1", failure);
 
-    expect(prisma.generationJob.update).toHaveBeenCalledWith({
-      where: { id: "job_1" },
+    expect(prisma.generationJob.updateMany).toHaveBeenCalledWith({
+      where: { id: "job_1", status: { in: ["running", "provider_waiting"] } },
       data: {
         status: "failed",
         errorMessage: "MOCK_PROVIDER_FAILURE: mock failure requested",
@@ -663,6 +703,27 @@ describe("GenerationService", () => {
       data: { status: "failed" },
     });
     expect(result.status).toBe("failed");
+  });
+
+  it("does not complete jobs that leave active state before media side effects", async () => {
+    prisma.generationJob.findUnique.mockResolvedValue(generationJob({ status: "running" }));
+    prisma.generationJob.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(
+      service.succeedJob("job_1", {
+        assetId: "provider_asset_1",
+        storageKey: "mock/images/provider_asset_1.png",
+        mimeType: "image/png",
+        provider: "mock-image",
+        model: "mock-image-v1",
+        prompt: "Image prompt: hero at console",
+        referenceAssetIds: ["asset_ref_1"],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(assetsService.createGeneratedAsset).not.toHaveBeenCalled();
+    expect(prisma.canvasNode.create).not.toHaveBeenCalled();
+    expect(prisma.canvasEdge.create).not.toHaveBeenCalled();
   });
 
   it("completes shot-to-image jobs with generated asset, node, edge, and output trace", async () => {

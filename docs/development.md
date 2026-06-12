@@ -409,6 +409,64 @@ Optional live smoke:
 - Generate a low-count Shot image job from the Inspector, run the worker once, and confirm the resulting Asset preview is served by the backend.
 - Remove keys after the smoke if the environment is shared. Never put provider keys in frontend env files or browser storage.
 
+## Real Video Provider Workflow
+
+Phase 10 extends `image_to_video` with a safe video provider catalog, async provider task submission/polling, cancel routing, remote video persistence, and batch Image -> Video child jobs.
+
+Provider catalog API:
+
+- `GET /api/v1/providers/video` returns safe metadata for `mock-video`, `seedance`, and `happyhorse`.
+- Real video providers are disabled when their server-side keys are missing and are rejected before job creation.
+- The browser receives model, duration, resolution, aspect ratio, cancel support, and provider parameter metadata, never raw key values.
+- `/api/v1/health` reports video provider key presence as booleans for `seedance` and `happyhorse`.
+
+Server-side video provider keys:
+
+```text
+SEEDANCE_API_KEY=
+BYTEPLUS_API_KEY=
+ARK_API_KEY=
+MODELARK_API_KEY=
+HAPPYHORSE_API_KEY=
+FAL_KEY=
+FAL_API_KEY=
+RUNWARE_API_KEY=
+VIDEO_API_KEY=
+```
+
+`seedance` uses `SEEDANCE_API_KEY`, `BYTEPLUS_API_KEY`, `ARK_API_KEY`, or `MODELARK_API_KEY`. `happyhorse` uses `HAPPYHORSE_API_KEY`, `FAL_KEY`, `FAL_API_KEY`, or `RUNWARE_API_KEY`. Keep these keys in backend and worker env files only. Do not put provider keys in frontend env files or browser storage.
+
+Async job behavior:
+
+- Selecting an ImageNode with an asset shows provider, model, aspect ratio, duration, resolution, and provider parameter controls in the Inspector.
+- Creating an `image_to_video` job persists provider settings in `GenerationJob.inputJson`.
+- The worker calls `createTask` once for a new video job. Waiting providers return `providerTaskId`; the backend records it through the worker `wait` endpoint and moves the job to `provider_waiting`.
+- A later worker claim of a `provider_waiting` job polls `getTask` by `providerTaskId` instead of submitting another provider task.
+- Provider success posts one video provider output to backend completion. Remote HTTPS video URLs are downloaded server-side into project storage before the VideoNode and `generated_video` edge are created.
+- Active jobs can be cancelled from the Inspector. The backend records `cancelled` and makes one best-effort `cancelTask` call when a provider task id is present.
+- Multi-selecting ImageNodes enables batch Image -> Video. The backend creates one child `image_to_video` job per valid selected image and reports skipped nodes without creating browser-side provider work.
+
+Phase 10 no-key smoke checklist:
+
+- Run `GET /api/v1/providers/video` with no real keys and confirm `mock-video.enabled === true`, `seedance.enabled === false`, and `happyhorse.enabled === false`.
+- Confirm `/api/v1/providers/video` and `/api/v1/health` do not contain raw key values.
+- Open `/projects/:projectId/canvas`, select an ImageNode, and confirm the video generation panel shows `mock-video` enabled and real video providers disabled with non-secret reasons.
+- Confirm the queue footer shows queued, running, waiting, failed, and cancelled counts without horizontal overflow on mobile.
+
+Phase 10 mocked-real-provider smoke checklist:
+
+- Stub a video provider `createTask` response, confirm the worker moves the job to `provider_waiting` with one `providerTaskId`.
+- Poll a completed task with an HTTPS `.mp4`/`.webm` URL and confirm the backend creates a project video Asset, VideoNode, and `generated_video` edge.
+- Cancel a waiting job and confirm the UI stops treating it as active.
+- Batch two ImageNodes and confirm child jobs are queued independently while invalid selections are reported as skipped.
+
+Optional live smoke:
+
+- Set one server-side video provider key in backend and worker env files only.
+- Restart backend and worker so `GET /api/v1/providers/video` reports the chosen provider enabled.
+- Generate a short low-resolution Image -> Video job from the Inspector, run the worker loop until completion, and confirm the resulting Asset preview is served by the backend.
+- Remove keys after the smoke if the environment is shared. Live video provider calls can incur cost.
+
 ## Mock Workflow Verification
 
 Run the worker-owned mock media workflow:
@@ -476,6 +534,13 @@ Included:
 - backend-owned inline and remote generated image persistence
 - multi-output Shot image completion into multiple ImageNodes and generated edges
 - compact Shot generation provider settings in the Inspector
+- safe video provider catalog with disabled-state metadata for `mock-video`, `seedance`, and `happyhorse`
+- fetch-based `seedance` and `happyhorse` video adapters behind provider contracts
+- async video provider task lifecycle through `createTask`, `provider_waiting`, `getTask`, and backend worker wait endpoint
+- video generation cancel routing with best-effort provider task cancellation
+- backend-owned remote generated video persistence into project Assets
+- batch ImageNode -> VideoNode generation child jobs
+- compact ImageNode video generation settings and multi-select batch controls in the Inspector
 - selection-aware Inspector with type-specific business forms
 - worker mock workflow
 - shared types and provider contracts
@@ -484,8 +549,5 @@ Included:
 Deferred:
 
 - StyleAsset and PropAsset reference workflows
-- real video provider adapters
-- provider-specific polling and cancellation
-- batch generation
 - editor package zip export
 - selected VideoNode editor export workflow

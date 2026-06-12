@@ -58,7 +58,7 @@ export async function runOneGenerationJob(
     return { status: "succeeded", jobId: job.id };
   } catch (error) {
     const failure = toProviderFailure(error, job.provider);
-    await options.client.failJob(job.id, failure);
+    await reportFailure(options, job.id, failure);
     options.logger?.error(`Generation job ${job.id} failed: ${failure.message}`);
     return { status: "failed", jobId: job.id, error: failure };
   }
@@ -78,4 +78,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+async function reportFailure(
+  options: GenerationWorkerRunnerOptions,
+  jobId: string,
+  failure: ProviderFailure,
+): Promise<void> {
+  try {
+    await options.client.failJob(jobId, failure);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown worker API error";
+    options.logger?.error(`Generation job ${jobId} failure report was rejected: ${message}`);
+  }
 }

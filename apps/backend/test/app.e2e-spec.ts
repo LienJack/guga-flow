@@ -326,7 +326,12 @@ function createPrismaE2eMock() {
       findUnique: vi.fn(async ({ where }) => generationJobs.get(where.id) ?? null),
       updateMany: vi.fn(async ({ where, data }) => {
         const existing = generationJobs.get(where.id);
-        if (!existing || existing.status !== where.status) {
+        const statusMatches =
+          !where.status ||
+          (typeof where.status === "string"
+            ? existing?.status === where.status
+            : where.status.in?.includes(existing?.status));
+        if (!existing || !statusMatches) {
           return { count: 0 };
         }
         generationJobs.set(where.id, {

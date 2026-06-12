@@ -286,6 +286,45 @@ describe("generation worker runner", () => {
       },
     });
   });
+
+  it("does not throw when a terminal update is rejected after cancellation", async () => {
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    };
+    vi.mocked(client.claimNextJob).mockResolvedValue({
+      job: jobRecord("job_video", videoInput(), {
+        operation: "image_to_video",
+        provider: "mock-video",
+      }),
+    });
+    vi.mocked(client.succeedJob).mockRejectedValueOnce(
+      new Error("Worker API /worker/generation/jobs/job_video/succeed failed with 400"),
+    );
+    vi.mocked(client.failJob).mockRejectedValueOnce(
+      new Error("Worker API /worker/generation/jobs/job_video/fail failed with 400"),
+    );
+
+    const result = await runOneGenerationJob({ client, registry, logger });
+
+    expect(client.failJob).toHaveBeenCalledWith(
+      "job_video",
+      expect.objectContaining({
+        provider: "mock-video",
+        code: "WORKER_EXECUTOR_ERROR",
+      }),
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("failure report was rejected"),
+    );
+    expect(result).toMatchObject({
+      status: "failed",
+      jobId: "job_video",
+      error: {
+        code: "WORKER_EXECUTOR_ERROR",
+      },
+    });
+  });
 });
 
 function shotInput(): ShotToImageJobInput {

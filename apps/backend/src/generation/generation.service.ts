@@ -100,6 +100,9 @@ type CanvasEdgeModel = {
   createdAt: Date | string;
 };
 
+const CANCELLABLE_JOB_STATUSES: GenerationJobStatus[] = ["queued", "running", "provider_waiting"];
+const WORKER_ACTIVE_JOB_STATUSES: GenerationJobStatus[] = ["running", "provider_waiting"];
+
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
 }
@@ -115,6 +118,18 @@ function isGenerationJobStatus(value: unknown): value is GenerationJobStatus {
   return (
     typeof value === "string" &&
     GENERATION_JOB_STATUSES.includes(value as GenerationJobStatus)
+  );
+}
+
+function isCancellableJobStatus(value: unknown): value is GenerationJobStatus {
+  return (
+    typeof value === "string" && CANCELLABLE_JOB_STATUSES.includes(value as GenerationJobStatus)
+  );
+}
+
+function isWorkerActiveJobStatus(value: unknown): value is GenerationJobStatus {
+  return (
+    typeof value === "string" && WORKER_ACTIVE_JOB_STATUSES.includes(value as GenerationJobStatus)
   );
 }
 
@@ -331,32 +346,58 @@ export class GenerationService {
 
   async cancelJob(projectId: string, jobId: string): Promise<GenerationJobRecord> {
     const existing = await this.findProjectJob(projectId, jobId);
-    if (!["queued", "running", "provider_waiting"].includes(existing.status)) {
+    if (!isCancellableJobStatus(existing.status)) {
       throw new BadRequestException("Only queued or active generation jobs can be cancelled");
     }
 
-    const providerCancelError = await this.tryCancelProviderTask(existing);
     const cancelledAt = new Date().toISOString();
     const cancelled = await this.runTransaction(async (tx) => {
-      const updated = (await tx.generationJob.update({
-        where: { id: existing.id },
+      const claimed = await tx.generationJob.updateMany({
+        where: { id: existing.id, status: { in: CANCELLABLE_JOB_STATUSES } },
         data: {
           status: "cancelled",
           outputJson: jsonValue({
             cancelledAt,
             providerTaskId: existing.providerTaskId,
-            providerCancelError: providerCancelError ?? null,
+            providerCancelError: null,
           }),
-          errorMessage: providerCancelError
-            ? `PROVIDER_CANCEL_FAILED: ${providerCancelError.message}`
-            : null,
+          errorMessage: null,
         },
-      })) as GenerationJobModel;
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException("Only queued or active generation jobs can be cancelled");
+      }
+      const updated = (await tx.generationJob.findUnique({
+        where: { id: existing.id },
+      })) as GenerationJobModel | null;
+      if (!updated) {
+        throw new NotFoundException("Generation job not found");
+      }
       await this.updateNodeStatus(tx, existing.targetNodeId ?? existing.sourceNodeId, "cancelled");
       return updated;
     });
 
-    return this.toGenerationJobRecord(cancelled);
+    const providerCancelError = await this.tryCancelProviderTask(existing);
+    if (!providerCancelError) {
+      return this.toGenerationJobRecord(cancelled);
+    }
+
+    const cancelWithProviderError = await this.runTransaction(async (tx) => {
+      const updated = (await tx.generationJob.update({
+        where: { id: existing.id },
+        data: {
+          outputJson: jsonValue({
+            cancelledAt,
+            providerTaskId: existing.providerTaskId,
+            providerCancelError,
+          }),
+          errorMessage: `PROVIDER_CANCEL_FAILED: ${providerCancelError.message}`,
+        },
+      })) as GenerationJobModel;
+      return updated;
+    });
+
+    return this.toGenerationJobRecord(cancelWithProviderError);
   }
 
   async claimNextJob(): Promise<{ job?: GenerationJobRecord }> {
@@ -408,7 +449,7 @@ export class GenerationService {
     if (!existing) {
       throw new NotFoundException("Generation job not found");
     }
-    if (existing.status !== "running" && existing.status !== "provider_waiting") {
+    if (!isWorkerActiveJobStatus(existing.status)) {
       throw new BadRequestException("Only active generation jobs can wait for provider completion");
     }
     if (waitInput.provider !== existing.provider) {
@@ -416,8 +457,8 @@ export class GenerationService {
     }
 
     const waiting = await this.runTransaction(async (tx) => {
-      const updated = (await tx.generationJob.update({
-        where: { id: existing.id },
+      const claimed = await tx.generationJob.updateMany({
+        where: { id: existing.id, status: { in: WORKER_ACTIVE_JOB_STATUSES } },
         data: {
           status: "provider_waiting",
           providerTaskId: waitInput.providerTaskId,
@@ -430,7 +471,16 @@ export class GenerationService {
           }),
           errorMessage: null,
         },
-      })) as GenerationJobModel;
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException("Only active generation jobs can wait for provider completion");
+      }
+      const updated = (await tx.generationJob.findUnique({
+        where: { id: existing.id },
+      })) as GenerationJobModel | null;
+      if (!updated) {
+        throw new NotFoundException("Generation job not found");
+      }
       await this.updateNodeStatus(tx, existing.targetNodeId ?? existing.sourceNodeId, "provider_waiting");
       return updated;
     });
@@ -445,19 +495,28 @@ export class GenerationService {
     if (!existing) {
       throw new NotFoundException("Generation job not found");
     }
-    if (existing.status !== "running" && existing.status !== "provider_waiting") {
+    if (!isWorkerActiveJobStatus(existing.status)) {
       throw new BadRequestException("Only active generation jobs can fail");
     }
 
     const failed = await this.runTransaction(async (tx) => {
-      const updated = (await tx.generationJob.update({
-        where: { id: existing.id },
+      const claimed = await tx.generationJob.updateMany({
+        where: { id: existing.id, status: { in: WORKER_ACTIVE_JOB_STATUSES } },
         data: {
           status: "failed",
           errorMessage: `${failure.code}: ${failure.message}`,
           outputJson: jsonValue({ error: failure }),
         },
-      })) as GenerationJobModel;
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException("Only active generation jobs can fail");
+      }
+      const updated = (await tx.generationJob.findUnique({
+        where: { id: existing.id },
+      })) as GenerationJobModel | null;
+      if (!updated) {
+        throw new NotFoundException("Generation job not found");
+      }
       await this.updateNodeStatus(tx, existing.targetNodeId ?? existing.sourceNodeId, "failed");
       return updated;
     });
@@ -476,7 +535,7 @@ export class GenerationService {
     if (!existing) {
       throw new NotFoundException("Generation job not found");
     }
-    if (existing.status !== "running" && existing.status !== "provider_waiting") {
+    if (!isWorkerActiveJobStatus(existing.status)) {
       throw new BadRequestException("Only active generation jobs can succeed");
     }
 
@@ -485,6 +544,13 @@ export class GenerationService {
     completionOutputs.forEach((output) => this.validateProviderOutput(existing, input, output));
 
     const completed = await this.runTransaction(async (tx) => {
+      const claimed = await tx.generationJob.updateMany({
+        where: { id: existing.id, status: { in: WORKER_ACTIVE_JOB_STATUSES } },
+        data: { errorMessage: null },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException("Only active generation jobs can succeed");
+      }
       const sourceNode = await this.findSourceNode(tx, existing);
       const targets: Array<{
         asset: AssetDetail;
