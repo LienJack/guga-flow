@@ -94,6 +94,10 @@ export function NodeReferenceAssets({
     try {
       const uploaded = await uploadAsset(projectId, { file, purpose });
       setAssets((current) => [uploaded, ...current]);
+      if (!isReferenceBindableAsset(uploaded)) {
+        setError("Uploaded file is not a bindable image asset");
+        return;
+      }
       const result = await updateCanvasNode(
         projectId,
         node.id,

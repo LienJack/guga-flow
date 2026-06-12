@@ -265,6 +265,46 @@ Phase 6 browser/API smoke checklist:
 - Confirm the post-import canvas snapshot autosave returns 200 and the topbar returns to `Saved`.
 - Check browser console errors. The tldraw zh-cn missing-message warning is acceptable if no application error is logged.
 
+## Prompt Composer And Reference Asset Workflow
+
+Phase 7 prepares imported storyboard graph state for later mock generation by composing prompts from normalized CanvasNode and CanvasEdge records.
+
+Backend prompt API:
+
+- `POST /api/v1/projects/:projectId/prompts/shot/:shotNodeId/compose` returns a read-only composed prompt preview for a project-scoped Shot node.
+- The compose response includes separate image and video prompt outputs, a negative prompt, structured debug parts, missing-context entries, source node ids, and validated image reference asset ids.
+- The backend resolves the current project canvas graph and project assets before calling the shared prompt composer. Missing Shot nodes return 404; non-Shot nodes return 400.
+- The route does not create `GenerationJob` rows, call providers, update Shot prompt fields, or create Image/Video nodes.
+
+Composition behavior:
+
+- Shot fields contribute visual, action, camera, duration, image prompt, video prompt, and negative prompt text.
+- Linked Scene, Character, and Location context is resolved from normalized semantic edges and current node `dataJson`.
+- Character nodes expose editable `identityPrompt` and existing consistency/appearance fields.
+- Location nodes expose editable `locationPrompt` and existing consistency/environment fields.
+- Character and Location `referenceAssetIds` are node-scoped image reference bindings. Duplicate ids are deduplicated; non-image or missing assets are reported as missing context rather than passed to future generation input.
+- The shared composer is pure and deterministic so Phase 8 job creation can reuse the same prompt/debug shape server-side.
+
+Frontend behavior:
+
+- Selecting a Character or Location shows prompt fields in the Inspector form.
+- The node-level Reference images panel uploads new image references with the appropriate purpose and binds or removes project image asset ids from the selected node without deleting assets.
+- Selecting a Shot shows a Prompt preview panel with image/video prompt sections, negative prompt, missing-context status, reference image count, and debug parts.
+- Prompt preview refreshes when the selected Shot changes or when graph nodes/edges change, including Character/Location edits and reference-image binding.
+- The global Asset Library remains the place to list, preview, and delete project assets.
+
+Phase 7 browser/API smoke checklist:
+
+- Apply pending migrations to local Postgres before using the real backend API.
+- Create a project, novel source, mock storyboard draft, mark the draft ready, and import it into the canvas.
+- Select an imported Shot and confirm the Prompt preview panel shows distinct Image prompt and Video prompt sections with Character, Location, Scene, and Shot debug parts.
+- Edit a linked Character `identityPrompt` and linked Location `locationPrompt`, save each node, reselect or refresh the Shot, and confirm the prompt preview reflects the edited text.
+- Upload or bind a Character/Location image reference in the node Reference images panel, refresh, and confirm the bound asset id appears in the compose API `referenceAssetIds`.
+- Call `POST /api/v1/projects/:projectId/prompts/shot/:shotNodeId/compose` directly and confirm it returns image/video prompt output, debug parts, source node ids, and reference asset ids.
+- Confirm non-Shot compose requests return 400 and cross-project Shot ids return 404.
+- Confirm canvas autosave still reaches `Saved`, Asset Library preview/delete remains usable, and semantic edge Inspector still opens and deletes edges.
+- Check browser console errors. The tldraw zh-cn missing-message warning is acceptable if no application error is logged.
+
 ## Mock Workflow Verification
 
 Run the worker-owned mock media workflow:
@@ -311,6 +351,10 @@ Included:
 - workbench Novel/Storyboard panel and compact storyboard editor
 - storyboard draft import into normalized CanvasNode and CanvasEdge graph state
 - deterministic storyboard import layout, new-version duplicate policy, import provenance, and canvas fit after import
+- shared graph-derived prompt composer for imported Shot, Scene, Character, Location, and reference asset context
+- backend Shot prompt compose API with structured debug parts and missing-context reporting
+- Character/Location prompt fields plus node-scoped reference image binding in the Inspector
+- Shot prompt preview/debug panel in the Inspector
 - selection-aware Inspector with type-specific business forms
 - worker mock workflow
 - shared types and provider contracts
@@ -319,5 +363,9 @@ Included:
 Deferred:
 
 - persistent generation queue
+- GenerationJob creation from composed prompts
+- provider execution from prompt preview output
+- generated ImageNode or VideoNode creation
+- StyleAsset and PropAsset reference workflows
 - real provider adapters
 - editor package zip export

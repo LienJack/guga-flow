@@ -1,7 +1,7 @@
 ---
 title: "feat: Add prompt composer and reference asset binding"
 type: feat
-status: active
+status: completed
 date: 2026-06-12
 origin: docs/brainstorms/2026-06-12-008-phase-7-prompt-composer-assets-requirements.md
 ---
