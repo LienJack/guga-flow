@@ -285,6 +285,39 @@ describe("AssetsService", () => {
     expect(prisma.asset.create).not.toHaveBeenCalled();
   });
 
+  it("rejects non-https or local generated remote URLs before fetching", async () => {
+    for (const remoteUrl of [
+      "http://cdn.example.test/generated.png",
+      "https://localhost/generated.png",
+      "https://127.0.0.1/generated.png",
+      "https://[::1]/generated.png",
+      "https://[fd00::1]/generated.png",
+      "https://[fe80::1]/generated.png",
+      "https://0.0.0.0/generated.png",
+      "https://172.16.0.10/generated.png",
+      "https://192.168.1.20/generated.png",
+    ]) {
+      await expect(
+        service.createGeneratedAsset("project_1", {
+          purpose: "shot_keyframe",
+          providerOutput: {
+            storageKey: "providers/image2/blocked.png",
+            mimeType: "image/png",
+            provider: "image2",
+            model: "gpt-image-2",
+            prompt: "blocked",
+            referenceAssetIds: [],
+            remoteUrl,
+          },
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    }
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(storage.writeObject).not.toHaveBeenCalled();
+    expect(prisma.asset.create).not.toHaveBeenCalled();
+  });
+
   it("returns text previews for document assets", async () => {
     prisma.asset.findFirst.mockResolvedValue(
       asset({

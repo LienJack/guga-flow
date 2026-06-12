@@ -39,20 +39,22 @@ export class Image2Provider implements ImageProvider {
     this.assertConfigured();
 
     const model = input.model ?? DEFAULT_IMAGE2_MODEL;
-    const response = await this.fetchImpl(`${this.baseUrl}/images/generations`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${this.apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        prompt: composePrompt(input),
-        n: normalizeCount(input.count, 4),
-        size: openAiSizeFromAspectRatio(input.aspectRatio),
-        quality: stringParam(input.providerParams, "quality") ?? undefined,
+    const response = await fetchWithProviderError(this.capability.id, () =>
+      this.fetchImpl(`${this.baseUrl}/images/generations`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.apiKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          prompt: composePrompt(input),
+          n: normalizeCount(input.count, 4),
+          size: openAiSizeFromAspectRatio(input.aspectRatio),
+          quality: stringParam(input.providerParams, "quality") ?? undefined,
+        }),
       }),
-    });
+    );
 
     const json = await readJsonResponse(response, this.capability.id);
     const data = arrayProp(json, "data");
@@ -104,31 +106,33 @@ export class BananaProvider implements ImageProvider {
     this.assertConfigured();
 
     const model = input.model ?? DEFAULT_BANANA_MODEL;
-    const response = await this.fetchImpl(
-      `${this.baseUrl}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(
-        this.apiKey ?? "",
-      )}`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: composePrompt(input) }],
-            },
-          ],
-          generationConfig: {
-            responseModalities: ["IMAGE"],
-            imageConfig: {
-              aspectRatio: input.aspectRatio ?? "16:9",
-              imageSize: stringParam(input.providerParams, "imageSize") ?? undefined,
-            },
+    const response = await fetchWithProviderError(this.capability.id, () =>
+      this.fetchImpl(
+        `${this.baseUrl}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(
+          this.apiKey ?? "",
+        )}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
           },
-        }),
-      },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: "user",
+                parts: [{ text: composePrompt(input) }],
+              },
+            ],
+            generationConfig: {
+              responseModalities: ["IMAGE"],
+              imageConfig: {
+                aspectRatio: input.aspectRatio ?? "16:9",
+                imageSize: stringParam(input.providerParams, "imageSize") ?? undefined,
+              },
+            },
+          }),
+        },
+      ),
     );
 
     const json = await readJsonResponse(response, this.capability.id);
@@ -220,6 +224,22 @@ async function readJsonResponse(response: Response, provider: string): Promise<u
     message: `${provider} request failed with ${response.status}: ${extractProviderMessage(json)}`,
     retryable: response.status === 429 || response.status >= 500,
   });
+}
+
+async function fetchWithProviderError(
+  provider: string,
+  runFetch: () => Promise<Response>,
+): Promise<Response> {
+  try {
+    return await runFetch();
+  } catch (error) {
+    throw new ProviderError({
+      provider,
+      code: "PROVIDER_REQUEST_FAILED",
+      message: `${provider} request failed: ${sanitizeProviderError(error)}`,
+      retryable: true,
+    });
+  }
 }
 
 function openAiImageOutputFromItem(
@@ -399,6 +419,14 @@ function extractProviderMessage(json: unknown): string {
   }
 
   return "provider request failed";
+}
+
+function sanitizeProviderError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "network error";
+  return message
+    .replace(/([?&]key=)[^&\s]+/gi, "$1[redacted]")
+    .replace(/(authorization:\s*bearer\s+)[^\s]+/gi, "$1[redacted]")
+    .replace(/(bearer\s+)[^\s]+/gi, "$1[redacted]");
 }
 
 function arrayProp(value: unknown, key: string): unknown[] {

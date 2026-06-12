@@ -192,6 +192,27 @@ describe("real image providers", () => {
     });
   });
 
+  it("normalizes fetch failures without exposing query-string keys", async () => {
+    const provider = new BananaProvider({
+      apiKey: "secret-gemini-key",
+      fetchImpl: vi.fn(async () => {
+        throw new Error("fetch failed for https://gemini.example.test?key=secret-gemini-key");
+      }),
+    });
+
+    await expect(
+      provider.generateImage({
+        projectId: "project_1",
+        prompt: "network fail",
+      }),
+    ).rejects.toMatchObject({
+      provider: "banana",
+      code: "PROVIDER_REQUEST_FAILED",
+      message: expect.not.stringContaining("secret-gemini-key"),
+      retryable: true,
+    });
+  });
+
   it("selects mock and real providers by id", () => {
     const registry = createImageProviderRegistry({
       env: {

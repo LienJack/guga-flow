@@ -353,6 +353,62 @@ Phase 8 browser/API smoke checklist:
 - Open `/projects/:projectId/canvas`, select the Shot and ImageNode, and confirm Inspector actions, queue counts, generated assets, and generated nodes render.
 - Check browser console errors. The tldraw zh-cn missing-message warning is acceptable if no application error is logged.
 
+## Real Image Provider Workflow
+
+Phase 9 extends `shot_to_image` with safe image provider selection, real image adapter seams, server-side media persistence, and multi-output ImageNode completion.
+
+Provider catalog API:
+
+- `GET /api/v1/providers/image` returns safe metadata for `mock-image`, `image2`, and `banana`.
+- The catalog includes enabled state, disabled reason, model options, supported aspect ratios, output count limits, and provider parameter metadata.
+- The catalog never includes API key values. Browser-visible provider settings never request or store secrets.
+- Health output includes selected image provider and per-provider key presence booleans without exposing key values.
+
+Server-side image provider keys:
+
+```text
+OPENAI_API_KEY=
+IMAGE2_API_KEY=
+GEMINI_API_KEY=
+GOOGLE_API_KEY=
+BANANA_API_KEY=
+```
+
+`image2` uses `OPENAI_API_KEY` or `IMAGE2_API_KEY`. `banana` uses `GEMINI_API_KEY`, `GOOGLE_API_KEY`, or `BANANA_API_KEY`. The mock provider remains enabled with no keys. When real keys are absent, `image2` and `banana` are disabled in the catalog and rejected before job creation.
+
+Generation behavior:
+
+- Selecting a Shot shows provider, model, aspect ratio, output count, and provider parameter controls in the Inspector generation panel.
+- Default settings use `mock-image` and remain compatible with the Phase 8 mock path.
+- `shot_to_image` job input preserves provider, model, aspect ratio, count, provider params, prompt debug parts, and reference metadata.
+- Reference asset ids are capped to the selected provider's limit; omitted ids are recorded in job input with a visible omission reason.
+- Worker adapter dispatch selects `mock-image`, `image2`, or `banana` from the shared provider registry.
+- `image2` and `banana` adapters normalize inline base64 image bytes, remote image URLs, and provider HTTP failures into typed outputs or readable `ProviderFailure` values.
+- Backend completion downloads remote URLs server-side or decodes inline base64 before creating project `Asset` rows.
+- Multi-output image completion creates one Asset, one ImageNode, and one `generated_image` edge per provider output. The job output keeps first-target compatibility fields plus a complete `targets` trace.
+- Retry remains append-only and preserves the original provider settings.
+
+Phase 9 no-key smoke checklist:
+
+- Run `GET /api/v1/providers/image` with no real keys and confirm `mock-image.enabled === true`, `image2.enabled === false`, and `banana.enabled === false`.
+- Confirm the provider catalog and `/api/v1/health` response do not contain raw key values.
+- Open `/projects/:projectId/canvas`, select a Shot, and confirm disabled real providers render with non-secret disabled reasons while `mock-image` remains selectable.
+- Create a default Shot image job and run `worker:once`; confirm the mock output still creates a generated image Asset, ImageNode, and `generated_image` edge.
+
+Phase 9 mocked-real-provider smoke checklist:
+
+- Use tests or a local stubbed provider response to complete an `image2` job with multiple outputs.
+- Include one inline base64 output and one HTTPS remote URL output, and confirm preview bytes are served from local asset storage rather than the provider URL.
+- Confirm the completed job output contains `targets` for each generated ImageNode and edge.
+- Force or mock a provider failure and confirm the failed job stores a readable error while retry creates a new queued job with the same provider settings.
+
+Optional live smoke:
+
+- Set server-side OpenAI/Gemini image keys in backend and worker env files only.
+- Restart backend and worker so `GET /api/v1/providers/image` reports the chosen real provider enabled.
+- Generate a low-count Shot image job from the Inspector, run the worker once, and confirm the resulting Asset preview is served by the backend.
+- Remove keys after the smoke if the environment is shared. Never put provider keys in frontend env files or browser storage.
+
 ## Mock Workflow Verification
 
 Run the worker-owned mock media workflow:
@@ -415,6 +471,11 @@ Included:
 - generated mock media asset persistence with previewable placeholder bytes
 - generated ImageNode and VideoNode creation with `generated_image` and `generated_video` semantic edges
 - generation job retry, failed job visibility, and queue polling in the workbench
+- safe image provider catalog with disabled-state metadata for `mock-image`, `image2`, and `banana`
+- fetch-based `image2` and `banana` image adapters behind provider contracts
+- backend-owned inline and remote generated image persistence
+- multi-output Shot image completion into multiple ImageNodes and generated edges
+- compact Shot generation provider settings in the Inspector
 - selection-aware Inspector with type-specific business forms
 - worker mock workflow
 - shared types and provider contracts
@@ -423,8 +484,8 @@ Included:
 Deferred:
 
 - StyleAsset and PropAsset reference workflows
-- real provider adapters
-- provider-specific polling, cancellation, and remote result download
+- real video provider adapters
+- provider-specific polling and cancellation
 - batch generation
 - editor package zip export
 - selected VideoNode editor export workflow

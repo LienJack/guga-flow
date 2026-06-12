@@ -634,6 +634,32 @@ describe("GenerationService", () => {
     expect(prisma.generationJob.update).not.toHaveBeenCalled();
   });
 
+  it("rejects shot image completions with more outputs than the requested count", async () => {
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        status: "running",
+        provider: "image2",
+        model: "gpt-image-2",
+        inputJson: shotToImageInput({ provider: "image2", model: "gpt-image-2", count: 1 }),
+      }),
+    );
+    const providerOutputs = [1, 2].map((index) => ({
+      storageKey: `providers/image2/project_1/generated_${index}.png`,
+      mimeType: "image/png",
+      provider: "image2",
+      model: "gpt-image-2",
+      prompt: `Image prompt ${index}`,
+      referenceAssetIds: [],
+    }));
+
+    await expect(service.succeedJob("job_1", providerOutputs[0]!, providerOutputs)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+
+    expect(assetsService.createGeneratedAsset).not.toHaveBeenCalled();
+    expect(prisma.canvasNode.create).not.toHaveBeenCalled();
+  });
+
   it("rejects provider outputs that do not match the active job operation", async () => {
     prisma.generationJob.findUnique.mockResolvedValue(generationJob({ status: "running" }));
 

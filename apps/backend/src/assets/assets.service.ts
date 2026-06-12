@@ -233,8 +233,11 @@ export class AssetsService {
     } catch {
       throw new BadRequestException("Generated asset remote URL is invalid");
     }
-    if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
-      throw new BadRequestException("Generated asset remote URL must use http or https");
+    if (parsedUrl.protocol !== "https:") {
+      throw new BadRequestException("Generated asset remote URL must use https");
+    }
+    if (isBlockedRemoteHost(parsedUrl.hostname)) {
+      throw new BadRequestException("Generated asset remote URL host is not allowed");
     }
 
     const response = await this.fetchImpl(parsedUrl);
@@ -344,4 +347,31 @@ export class AssetsService {
       previewUrl: `/api/v1/projects/${asset.projectId}/assets/${asset.id}/preview`,
     };
   }
+}
+
+function isBlockedRemoteHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (normalized === "localhost" || normalized.endsWith(".localhost") || normalized === "::1") {
+    return true;
+  }
+  if (
+    normalized === "0.0.0.0" ||
+    normalized.startsWith("127.") ||
+    normalized.startsWith("10.") ||
+    normalized.startsWith("169.254.")
+  ) {
+    return true;
+  }
+  if (normalized.startsWith("192.168.")) {
+    return true;
+  }
+  if (normalized.startsWith("::ffff:127.") || normalized.startsWith("fe80:")) {
+    return true;
+  }
+  if (/^f[cd][0-9a-f]{0,2}:/i.test(normalized)) {
+    return true;
+  }
+
+  const private172Match = /^172\.(1[6-9]|2\d|3[0-1])\./.exec(normalized);
+  return Boolean(private172Match);
 }

@@ -1,7 +1,7 @@
 ---
 title: "feat: Add real image provider generation"
 type: feat
-status: active
+status: completed
 date: 2026-06-12
 origin: docs/brainstorms/2026-06-12-010-phase-9-real-image-provider-requirements.md
 ---
@@ -410,6 +410,18 @@ flowchart TB
 - Targeted package tests for U1-U5 pass.
 - Full quality gates pass.
 - Browser/API smoke evidence is recorded in the plan before final Phase 9 commit.
+
+---
+
+## Verification Evidence
+
+- Full quality gates passed on 2026-06-12: `pnpm run format:check`, `pnpm run test`, `pnpm run build`, and `pnpm run mock:workflow`. The local shell still reports Node `v22.22.2` against repo engines `>=26.3.0`; Phase 9 keeps the Node 26 architecture requirement and treats this as an environment upgrade item, not a reason to lower engines.
+- Targeted review-fix gates passed after hardening changes: `pnpm --filter @guga-flow/provider-contracts test`, `pnpm --filter @guga-flow/provider-contracts lint`, `pnpm --filter @guga-flow/backend test -- assets generation`, and `pnpm --filter @guga-flow/backend lint`.
+- API no-key smoke passed against `http://localhost:3002`: `GET /api/v1/providers/image` returned `mock-image` enabled, `image2` disabled with `Image 2 server-side key is not configured`, and `banana` disabled with `Nano Banana server-side key is not configured`; the payload contained no actual secret-like values. `GET /api/v1/health` returned status `ok`, image provider mode `mock-image`, and per-provider key-presence booleans without secret values.
+- Browser smoke passed against `http://localhost:3001/projects/cmqb7t7xb0000a3svlcg4y8cq/canvas`: selecting `Shot: Smoke Shot 01` opened the Inspector Generation panel with Provider, Model, Aspect, Count, enabled Mock Image, unavailable Image 2, unavailable Nano Banana, and `Generate Image`. Network smoke showed project canvas/assets/jobs requests returning 200/304. Console retained unrelated tldraw zh-cn missing-message warnings and older connection-refused resource records, with no new Phase 9 provider-secret exposure.
+- Mock workflow smoke passed and produced a complete storyboard/image/video/editor-package flow using mock providers, preserving Phase 8 no-key compatibility while Phase 9 provider settings are present.
+- Code review findings were fixed before completion: generated remote asset downloads now require HTTPS and reject obvious local/private hosts, adapter fetch rejections normalize into sanitized `ProviderError`s, and backend image completion rejects more provider outputs than the requested `count`.
+- Optional live-provider smoke was not run because this checkout has no OpenAI/Gemini image keys configured. `docs/development.md` now documents the manual live-smoke path for environments with server-side credentials.
 
 ---
 

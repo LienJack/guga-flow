@@ -600,6 +600,12 @@ export class GenerationService {
     if (outputs.length < 1) {
       throw new BadRequestException("Shot image generation requires at least one provider output");
     }
+    const requestedCount = input.count ?? 1;
+    if (outputs.length > requestedCount) {
+      throw new BadRequestException(
+        `Shot image generation returned ${outputs.length} outputs for requested count ${requestedCount}`,
+      );
+    }
 
     return outputs;
   }
