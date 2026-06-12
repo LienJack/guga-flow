@@ -1,3 +1,5 @@
+import type { AssetListItem } from "./assets";
+
 export const CANVAS_NODE_TYPES = [
   "novel",
   "scene_frame",
@@ -41,10 +43,21 @@ export const NODE_STATUSES = [
 ] as const;
 export type NodeStatus = (typeof NODE_STATUSES)[number];
 
+export const CANVAS_SAVE_STATUSES = ["idle", "saving", "saved", "failed"] as const;
+export type CanvasSaveStatus = (typeof CANVAS_SAVE_STATUSES)[number];
+
+export type CanvasSnapshotJson =
+  | string
+  | number
+  | boolean
+  | null
+  | CanvasSnapshotJson[]
+  | { [key: string]: CanvasSnapshotJson };
+
 export interface CanvasDocumentRecord {
   id: string;
   projectId: string;
-  snapshotJson: unknown;
+  snapshotJson: CanvasSnapshotJson;
   createdAt: string;
   updatedAt: string;
 }
@@ -79,4 +92,19 @@ export interface CanvasEdgeRecord<TData = unknown> {
   relation: CanvasEdgeRelation;
   dataJson?: TData;
   createdAt: string;
+}
+
+export interface CanvasLoadResult {
+  canvasDocument: CanvasDocumentRecord;
+  nodes: CanvasNodeRecord[];
+  edges: CanvasEdgeRecord[];
+  assets: AssetListItem[];
+}
+
+export interface SaveCanvasSnapshotInput {
+  snapshotJson: CanvasSnapshotJson;
+}
+
+export interface SaveCanvasSnapshotResult {
+  canvasDocument: CanvasDocumentRecord;
 }
