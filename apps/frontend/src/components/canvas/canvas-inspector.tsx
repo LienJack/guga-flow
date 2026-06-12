@@ -1,27 +1,39 @@
-import type { CanvasNodeRecord, UpdateCanvasNodeInput } from "@guga-flow/shared-types";
+import type { CanvasEdgeRecord, CanvasNodeRecord, UpdateCanvasNodeInput } from "@guga-flow/shared-types";
 import React from "react";
 
 import { updateCanvasNode } from "../../lib/api";
 import { AssetLibrary } from "../projects/asset-library";
+import { type CanvasGraphState } from "./canvas-edge-data";
+import { CanvasEdgeInspector } from "./canvas-edge-inspector";
 import type { CanvasSelectionState } from "./canvas-selection";
 import { BusinessNodeForm } from "./business-node-form";
 
 interface CanvasInspectorProps {
+  edges: CanvasEdgeRecord[];
   projectId: string;
   nodes: CanvasNodeRecord[];
   selection: CanvasSelectionState;
+  onGraphUpdated(graph: CanvasGraphState): void;
   onNodeUpdated(node: CanvasNodeRecord): void;
+  onSelectionChange(selection: CanvasSelectionState): void;
 }
 
 export function CanvasInspector({
+  edges,
   nodes,
+  onGraphUpdated,
   onNodeUpdated,
+  onSelectionChange,
   projectId,
   selection,
 }: CanvasInspectorProps) {
   const selectedNode =
     selection.kind === "business-node"
       ? nodes.find((node) => node.id === selection.nodeId)
+      : undefined;
+  const selectedEdge =
+    selection.kind === "business-edge"
+      ? edges.find((edge) => edge.id === selection.edgeId)
       : undefined;
 
   return (
@@ -36,11 +48,21 @@ export function CanvasInspector({
         {selection.kind === "unsupported" ? (
           <InspectorState title="Canvas object" value={selection.shapeType} />
         ) : null}
-        {selection.kind === "business-edge" ? (
-          <InspectorState title="Semantic edge" value={selection.edgeId} />
+        {selection.kind === "business-edge" && !selectedEdge ? (
+          <InspectorState title="Edge unavailable" value={selection.edgeId} />
         ) : null}
         {selection.kind === "business-node" && !selectedNode ? (
           <InspectorState title="Node unavailable" value={selection.nodeId} />
+        ) : null}
+        {selectedEdge ? (
+          <CanvasEdgeInspector
+            edge={selectedEdge}
+            edges={edges}
+            nodes={nodes}
+            projectId={projectId}
+            onGraphUpdated={onGraphUpdated}
+            onSelectionChange={onSelectionChange}
+          />
         ) : null}
         {selectedNode ? (
           <BusinessNodeForm

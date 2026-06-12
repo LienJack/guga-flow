@@ -544,6 +544,40 @@ select {
   gap: 12px;
 }
 
+.canvas-edge-inspector {
+  display: grid;
+  gap: 12px;
+}
+
+.edge-detail-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.edge-detail-list div {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-strong);
+  padding: 8px 9px;
+}
+
+.edge-detail-list dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.edge-detail-list dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .business-node-field-grid {
   display: grid;
   gap: 10px;

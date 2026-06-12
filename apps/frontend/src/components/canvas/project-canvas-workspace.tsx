@@ -31,6 +31,14 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
     );
   }, []);
 
+  const handleGraphUpdated = useCallback(
+    (graph: { nodes: CanvasNodeRecord[]; edges: CanvasEdgeRecord[] }) => {
+      setCanvasNodes(graph.nodes);
+      setCanvasEdges(graph.edges);
+    },
+    [],
+  );
+
   return (
     <WorkbenchShell
       projectId={projectId}
@@ -49,10 +57,13 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
       }
       inspectorSlot={
         <CanvasInspector
+          edges={canvasEdges}
           projectId={projectId}
           nodes={canvasNodes}
           selection={selection}
+          onGraphUpdated={handleGraphUpdated}
           onNodeUpdated={handleNodeUpdated}
+          onSelectionChange={setSelection}
         />
       }
     />
