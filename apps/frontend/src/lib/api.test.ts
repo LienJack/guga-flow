@@ -3,13 +3,16 @@ import type { StoryboardResult } from "@guga-flow/shared-types";
 
 import {
   composeShotPrompt,
+  createGenerationJob,
   createCanvasEdge,
   createNovelDocument,
   generateStoryboardDraft,
   getActiveStoryboardDraft,
   importStoryboardToCanvas,
   importNovelSource,
+  listGenerationJobs,
   markStoryboardDraftReady,
+  retryGenerationJob,
   updateStoryboardDraft,
 } from "./api";
 
@@ -104,6 +107,79 @@ describe("frontend api client", () => {
         }),
         headers: { "Content-Type": "application/json" },
       }),
+    );
+  });
+
+  it("calls project-scoped generation job endpoints", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        job: {
+          id: "job_1",
+          projectId: "project_1",
+          operation: "shot_to_image",
+          status: "queued",
+          provider: "mock-image",
+          sourceNodeId: "shot_1",
+          inputJson: {},
+          createdAt: "2026-06-12T00:00:00.000Z",
+          updatedAt: "2026-06-12T00:00:00.000Z",
+        },
+        jobs: [],
+        retryJob: {
+          id: "job_retry",
+          projectId: "project_1",
+          operation: "shot_to_image",
+          status: "queued",
+          provider: "mock-image",
+          sourceNodeId: "shot_1",
+          inputJson: {},
+          createdAt: "2026-06-12T00:00:00.000Z",
+          updatedAt: "2026-06-12T00:00:00.000Z",
+        },
+        queueSummary: {
+          queued: 1,
+          running: 0,
+          failed: 0,
+          counts: {
+            queued: 1,
+            running: 0,
+            provider_waiting: 0,
+            succeeded: 0,
+            failed: 0,
+            cancelled: 0,
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createGenerationJob("project_1", {
+      operation: "shot_to_image",
+      sourceNodeId: "shot_1",
+    });
+    await listGenerationJobs("project_1");
+    await retryGenerationJob("project_1", "job_1");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:3002/api/v1/projects/project_1/generation/jobs",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          operation: "shot_to_image",
+          sourceNodeId: "shot_1",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:3002/api/v1/projects/project_1/generation/jobs",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:3002/api/v1/projects/project_1/generation/jobs/job_1/retry",
+      expect.objectContaining({ method: "POST" }),
     );
   });
 

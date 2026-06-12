@@ -7,6 +7,8 @@ import type {
   CreateCanvasEdgeResult,
   CreateCanvasNodeInput,
   CreateCanvasNodeResult,
+  CreateGenerationJobInput,
+  CreateGenerationJobResult,
   CreateNovelDocumentInput,
   CreateNovelDocumentResult,
   CreateProjectInput,
@@ -15,6 +17,7 @@ import type {
   DeleteNovelDocumentResult,
   ComposeShotPromptInput,
   GenerateStoryboardResult,
+  GenerationJobListResult,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
   ImportStoryboardToCanvasInput,
@@ -23,6 +26,7 @@ import type {
   NovelDocumentRecord,
   ProjectDetail,
   ProjectListItem,
+  RetryGenerationJobResult,
   SaveCanvasSnapshotInput,
   SaveCanvasSnapshotResult,
   ShotPromptCompositionResult,
@@ -340,5 +344,29 @@ export function composeShotPrompt(
       method: "POST",
       body: JSON.stringify(input),
     },
+  );
+}
+
+export function createGenerationJob(
+  projectId: string,
+  input: CreateGenerationJobInput,
+): Promise<CreateGenerationJobResult> {
+  return requestJson<CreateGenerationJobResult>(`/projects/${projectId}/generation/jobs`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function listGenerationJobs(projectId: string): Promise<GenerationJobListResult> {
+  return requestJson<GenerationJobListResult>(`/projects/${projectId}/generation/jobs`);
+}
+
+export function retryGenerationJob(
+  projectId: string,
+  jobId: string,
+): Promise<RetryGenerationJobResult> {
+  return requestJson<RetryGenerationJobResult>(
+    `/projects/${projectId}/generation/jobs/${jobId}/retry`,
+    { method: "POST" },
   );
 }

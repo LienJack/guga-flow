@@ -566,6 +566,43 @@ select {
   padding-top: 2px;
 }
 
+.generation-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 2px;
+}
+
+.generation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.generation-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.section-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.status-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .canvas-edge-inspector {
   display: grid;
   gap: 12px;

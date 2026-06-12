@@ -1,4 +1,5 @@
 import { CANVAS_NODE_TYPES } from "@guga-flow/shared-types";
+import type { GenerationQueueSummary } from "@guga-flow/shared-types";
 import React, { type ReactNode } from "react";
 
 const sidebarItems = [
@@ -17,12 +18,14 @@ interface WorkbenchShellProps {
   sidebarSlot?: ReactNode;
   canvasSlot?: ReactNode;
   saveStateSlot?: ReactNode;
+  queueSummary?: Pick<GenerationQueueSummary, "queued" | "running" | "failed">;
   storyboardEnabled?: boolean;
 }
 
 export function WorkbenchShell({
   projectId,
   projectTitle = "Untitled project",
+  queueSummary = { queued: 0, running: 0, failed: 0 },
   inspectorSlot,
   sidebarSlot,
   canvasSlot,
@@ -132,9 +135,9 @@ export function WorkbenchShell({
       <footer className="bottom-queue" aria-label="Generation queue">
         <strong>Queue</strong>
         <div className="queue-summary">
-          <span className="queue-pill">0 queued</span>
-          <span className="queue-pill">0 running</span>
-          <span className="queue-pill warning">0 failed</span>
+          <span className="queue-pill">{queueSummary.queued} queued</span>
+          <span className="queue-pill">{queueSummary.running} running</span>
+          <span className="queue-pill warning">{queueSummary.failed} failed</span>
         </div>
       </footer>
     </main>

@@ -1,4 +1,10 @@
-import type { CanvasEdgeRecord, CanvasNodeRecord, UpdateCanvasNodeInput } from "@guga-flow/shared-types";
+import type {
+  CanvasEdgeRecord,
+  CanvasNodeRecord,
+  GenerationJobRecord,
+  GenerationQueueSummary,
+  UpdateCanvasNodeInput,
+} from "@guga-flow/shared-types";
 import React from "react";
 
 import { updateCanvasNode } from "../../lib/api";
@@ -7,6 +13,7 @@ import { type CanvasGraphState } from "./canvas-edge-data";
 import { CanvasEdgeInspector } from "./canvas-edge-inspector";
 import type { CanvasSelectionState } from "./canvas-selection";
 import { BusinessNodeForm } from "./business-node-form";
+import { GenerationActions } from "./generation-actions";
 import { NodeReferenceAssets } from "./node-reference-assets";
 import { buildPromptPreviewRefreshKey, ShotPromptPreview } from "./shot-prompt-preview";
 
@@ -14,15 +21,19 @@ interface CanvasInspectorProps {
   edges: CanvasEdgeRecord[];
   projectId: string;
   nodes: CanvasNodeRecord[];
+  generationJobs?: GenerationJobRecord[];
   selection: CanvasSelectionState;
   onGraphUpdated(graph: CanvasGraphState): void;
+  onGenerationChanged?(queueSummary?: GenerationQueueSummary): void;
   onNodeUpdated(node: CanvasNodeRecord): void;
   onSelectionChange(selection: CanvasSelectionState): void;
 }
 
 export function CanvasInspector({
   edges,
+  generationJobs = [],
   nodes,
+  onGenerationChanged,
   onGraphUpdated,
   onNodeUpdated,
   onSelectionChange,
@@ -81,6 +92,14 @@ export function CanvasInspector({
             projectId={projectId}
             node={selectedNode}
             onNodeUpdated={onNodeUpdated}
+          />
+        ) : null}
+        {selectedNode ? (
+          <GenerationActions
+            generationJobs={generationJobs}
+            projectId={projectId}
+            node={selectedNode}
+            onGenerationChanged={onGenerationChanged}
           />
         ) : null}
         {selectedNode ? (

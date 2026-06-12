@@ -9,10 +9,12 @@ import { deleteCanvasEdgeSelection } from "./canvas-edge-inspector";
 vi.mock("../../lib/api", () => ({
   assetPreviewUrl: vi.fn((projectId: string, assetId: string) => `/assets/${projectId}/${assetId}`),
   composeShotPrompt: vi.fn(),
+  createGenerationJob: vi.fn(),
   deleteAsset: vi.fn(),
   deleteCanvasEdge: vi.fn(),
   getAsset: vi.fn(),
   listAssets: vi.fn(async () => []),
+  retryGenerationJob: vi.fn(),
   updateCanvasNode: vi.fn(),
   uploadAsset: vi.fn(),
 }));
@@ -100,6 +102,7 @@ describe("CanvasInspector", () => {
     expect(html).toContain("Visual Description");
     expect(html).toContain("Wide shot of the launch platform.");
     expect(html).toContain("Prompt preview");
+    expect(html).toContain("Generate Image");
     expect(html).toContain("Assets");
   });
 
