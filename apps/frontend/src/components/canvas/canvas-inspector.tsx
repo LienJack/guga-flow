@@ -8,6 +8,7 @@ import { CanvasEdgeInspector } from "./canvas-edge-inspector";
 import type { CanvasSelectionState } from "./canvas-selection";
 import { BusinessNodeForm } from "./business-node-form";
 import { NodeReferenceAssets } from "./node-reference-assets";
+import { buildPromptPreviewRefreshKey, ShotPromptPreview } from "./shot-prompt-preview";
 
 interface CanvasInspectorProps {
   edges: CanvasEdgeRecord[];
@@ -36,6 +37,7 @@ export function CanvasInspector({
     selection.kind === "business-edge"
       ? edges.find((edge) => edge.id === selection.edgeId)
       : undefined;
+  const promptRefreshKey = selectedNode ? buildPromptPreviewRefreshKey(nodes, edges) : "";
 
   return (
     <div className="canvas-inspector">
@@ -80,6 +82,9 @@ export function CanvasInspector({
             node={selectedNode}
             onNodeUpdated={onNodeUpdated}
           />
+        ) : null}
+        {selectedNode ? (
+          <ShotPromptPreview projectId={projectId} node={selectedNode} refreshKey={promptRefreshKey} />
         ) : null}
       </section>
 

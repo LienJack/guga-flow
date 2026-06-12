@@ -558,6 +558,14 @@ select {
   padding-top: 2px;
 }
 
+.shot-prompt-preview {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 2px;
+}
+
 .canvas-edge-inspector {
   display: grid;
   gap: 12px;
@@ -1029,6 +1037,91 @@ select {
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.prompt-channel {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 9px;
+}
+
+.prompt-channel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.prompt-channel-heading strong {
+  font-size: 13px;
+}
+
+.prompt-channel-heading span,
+.prompt-context-status {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.prompt-preview-text,
+.prompt-negative pre,
+.prompt-debug-parts pre {
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.prompt-negative {
+  display: grid;
+  gap: 5px;
+}
+
+.prompt-negative strong,
+.prompt-debug-parts summary {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.prompt-debug-parts ul {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prompt-debug-parts li {
+  display: grid;
+  gap: 6px;
+}
+
+.prompt-debug-parts li div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.prompt-debug-parts li strong {
+  font-size: 12px;
+}
+
+.prompt-debug-parts li span,
+.prompt-debug-parts li small {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .asset-row {
