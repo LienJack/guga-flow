@@ -7,6 +7,7 @@ import { readAppConfig } from "./config/app-config";
 import { GenerationModule } from "./generation/generation.module";
 import { HealthController } from "./health/health.controller";
 import { NovelsModule } from "./novels/novels.module";
+import { ProvidersModule } from "./providers/providers.module";
 import { PromptModule } from "./prompt/prompt.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { ProjectsModule } from "./projects/projects.module";
@@ -24,6 +25,7 @@ import { ProjectsModule } from "./projects/projects.module";
     NovelsModule,
     PromptModule,
     GenerationModule,
+    ProvidersModule,
   ],
   controllers: [HealthController],
 })

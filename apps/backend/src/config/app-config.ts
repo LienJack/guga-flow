@@ -17,6 +17,10 @@ export interface AppConfig {
     image: boolean;
     video: boolean;
   };
+  imageProviderKeysConfigured: {
+    image2: boolean;
+    banana: boolean;
+  };
 }
 
 const DEFAULT_DATABASE_URL = "postgresql://admin:admin@localhost:5432/guga_flow";
@@ -46,6 +50,9 @@ function readList(value: string | undefined, fallback: string[]): string[] {
 }
 
 export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const image2KeyConfigured = Boolean(env.OPENAI_API_KEY || env.IMAGE2_API_KEY);
+  const bananaKeyConfigured = Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY || env.BANANA_API_KEY);
+
   return {
     port: readNumber("PORT", env.PORT, 3002),
     corsAllowedOrigins: readList(env.CORS_ALLOWED_ORIGINS, [
@@ -65,8 +72,12 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     workerConcurrency: readNumber("WORKER_CONCURRENCY", env.WORKER_CONCURRENCY, 2),
     realProviderKeysConfigured: {
       llm: Boolean(env.LLM_API_KEY),
-      image: Boolean(env.IMAGE_API_KEY),
+      image: Boolean(env.IMAGE_API_KEY || image2KeyConfigured || bananaKeyConfigured),
       video: Boolean(env.VIDEO_API_KEY),
+    },
+    imageProviderKeysConfigured: {
+      image2: image2KeyConfigured,
+      banana: bananaKeyConfigured,
     },
   };
 }

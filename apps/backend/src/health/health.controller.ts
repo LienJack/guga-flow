@@ -21,6 +21,10 @@ export class HealthController {
           selected: config.imageProvider,
           mockAvailable: true,
           realKeyConfigured: config.realProviderKeysConfigured.image,
+          configuredProviders: {
+            image2: config.imageProviderKeysConfigured.image2,
+            banana: config.imageProviderKeysConfigured.banana,
+          },
         },
         video: {
           selected: config.videoProvider,
