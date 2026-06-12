@@ -1,7 +1,7 @@
 ---
 title: "feat: Add storyboard import and auto layout"
 type: feat
-status: active
+status: completed
 date: 2026-06-12
 origin: docs/brainstorms/2026-06-12-007-phase-6-storyboard-import-layout-requirements.md
 ---
@@ -387,6 +387,50 @@ flowchart TB
 - `docs/development.md` should document the Canvas import route, duplicate policy, provenance shape at a conceptual level, and smoke workflow.
 - The Phase 6 plan should be updated to `status: completed` only after implementation and verification.
 - No production rollout flag is required for the mock-first MVP; the feature is project-scoped and gated by ready storyboard drafts.
+
+---
+
+## Implementation Notes
+
+- U1 completed in `29c1a01`: shared import contracts, provenance helpers, deterministic layout helper, and non-overlap tests.
+- U2 completed in `4d5b846`: backend Canvas import route, ready draft validation, transactionally created/reused nodes, Character/Location/Scene semantic edges, API e2e, and mock provider 2-scene/6-shot output.
+- U3 completed in `bee0391`: frontend import API wrapper and pure helpers for importable state, duplicate-import detection, summaries, and graph merge.
+- U4 completed in `12ccf6a`: Novel/Storyboard panel Import action, new-version confirmation, workspace graph merge, and CanvasEditor fit request.
+- U5 completed in this verification pass: worker mock workflow expectations were updated for the 2-scene/6-shot mock storyboard, backend body parsing was raised to support imported-board tldraw snapshot autosave, and Phase 6 docs/solution guidance were recorded.
+
+## Verification Evidence
+
+- `pnpm --filter @guga-flow/shared-types run lint`
+- `pnpm --filter @guga-flow/shared-types run test`
+- `pnpm --filter @guga-flow/shared-types run build`
+- `pnpm --filter @guga-flow/provider-contracts run lint`
+- `pnpm --filter @guga-flow/provider-contracts run test`
+- `pnpm --filter @guga-flow/provider-contracts run build`
+- `pnpm --filter @guga-flow/backend run lint`
+- `pnpm --filter @guga-flow/backend run test`
+- `pnpm --filter @guga-flow/frontend run lint`
+- `pnpm --filter @guga-flow/frontend run test`
+- `pnpm --filter @guga-flow/frontend run build`
+- `pnpm --filter @guga-flow/worker run test`
+- `pnpm run format:check`
+- `pnpm run test`
+- `pnpm run build`
+- `pnpm run mock:workflow`
+- `pnpm --filter @guga-flow/backend run prisma:migrate -- --name smoke_verify_phase_6`
+- Real API smoke against local Postgres/backend:
+  - created project `cmqb4znxp0018v9svr20o86ht` and novel `cmqb4znyc0019v9svj916zxym`;
+  - generated ready draft `cmqb4znyk001av9sv4qco6tje` with 2 scenes, 6 shots, 2 characters, and 1 location;
+  - first import returned version 1, 14 created nodes, 0 reused nodes, and 24 semantic edges;
+  - second import returned version 2, 11 created nodes, 3 reused asset nodes, and 24 semantic edges;
+  - `GET /canvas` persisted imported provenance, Shot prompts, Shot character/location refs, and semantic edges.
+- Browser smoke at `http://localhost:3001/projects/cmqb4znxp0018v9svr20o86ht/canvas`:
+  - loaded Novel/Storyboard panel with ready draft and Import action;
+  - rendered imported Novel, Character, Location, SceneFrame, Scene, and Shot business shapes in tldraw;
+  - panel Import -> Confirm new version returned `POST /canvas/import-storyboard` 201 and displayed `Imported 2 scenes / 6 shots / 2 characters / 1 locations / 11 nodes, 3 reused / 24 edges`;
+  - caught a 413 snapshot autosave failure on a larger imported board, fixed backend body parser limit, reloaded, and verified `PATCH /canvas/snapshot` 200 with topbar `Saved`;
+  - browser console had no application errors; only the known tldraw zh-cn missing-message warning appeared.
+
+Node note: the local shell still reports Node `v22.22.2`, so pnpm emits the expected engine warning for the project target `>=26.3.0`. The project architecture and engine target were not downgraded.
 
 ---
 

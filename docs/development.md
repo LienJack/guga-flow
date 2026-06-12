@@ -227,6 +227,44 @@ Phase 5 browser/API smoke checklist:
 - Open `/projects/:projectId/canvas` and confirm the Novel/Storyboard panel, canvas, and Inspector/Asset Library surfaces still render.
 - Check browser console errors. The tldraw zh-cn missing-message warning is acceptable if no application error is logged.
 
+## Storyboard Import And Layout Workflow
+
+Phase 6 imports a ready storyboard draft into the canvas as normalized business graph state.
+
+Backend Canvas import API:
+
+- `POST /api/v1/projects/:projectId/canvas/import-storyboard` consumes a project-scoped ready `StoryboardDraft`, revalidates the stored JSON, creates or reuses canvas nodes, creates semantic edges, and returns imported graph records plus an import summary.
+
+Import behavior:
+
+- The mock LLM storyboard now generates 2 scenes, 6 shots, 2 characters, and 1 location so the mock-first flow can satisfy the PRD import acceptance.
+- Import creates Novel, SceneFrame, Scene, Shot, Character, and Location business nodes with deterministic non-overlapping layout.
+- Import creates `references_character`, `references_location`, and `belongs_to_scene` semantic edges.
+- Character and Location nodes are deduplicated inside the import plan and can reuse existing project Character/Location nodes when name and role/type semantics match.
+- Shot node data preserves image prompt, video prompt, duration, visual/action/camera fields, temp references, and synced `characterAssetIds` / `locationAssetId`.
+- Imported nodes and edges carry `storyboardImport` provenance in `dataJson` so repeated import batches can be distinguished without a separate import-batch table.
+- Repeated import defaults to a new version. The frontend shows a new-version confirmation when prior storyboard import provenance exists; overwrite/update-in-place is intentionally deferred.
+
+Frontend behavior:
+
+- The Novel/Storyboard panel exposes Import when the selected draft is valid, ready, and not dirty.
+- Successful import merges returned CanvasNode/CanvasEdge records into the workspace state, reconciles tldraw business shapes and semantic arrows, and fits the canvas to content.
+- Import errors surface in the panel without clearing unsaved storyboard edits.
+- Backend JSON/urlencoded body parsing allows larger tldraw snapshots so imported storyboard boards can autosave after graph reconciliation.
+
+Phase 6 browser/API smoke checklist:
+
+- Apply pending migrations to local Postgres before using the real backend API.
+- Create a project and pasted novel source.
+- Generate the mock storyboard and confirm it contains 2 scenes and 6 shots.
+- Mark the draft ready, then import it into the canvas.
+- Confirm the import summary reports 2 scenes, 6 shots, 2 characters, 1 location, 14 created nodes, and semantic edges.
+- Query the project canvas and confirm imported nodes, node positions, `storyboardImport` provenance, Shot prompts, Shot character/location references, and semantic edges persist.
+- Import the same ready draft again and confirm the summary reports a later version while earlier imported nodes remain.
+- Open `/projects/:projectId/canvas`, use the panel Import action, and confirm the imported board becomes visible and the viewport fits content.
+- Confirm the post-import canvas snapshot autosave returns 200 and the topbar returns to `Saved`.
+- Check browser console errors. The tldraw zh-cn missing-message warning is acceptable if no application error is logged.
+
 ## Mock Workflow Verification
 
 Run the worker-owned mock media workflow:
@@ -269,7 +307,10 @@ Included:
 - project-scoped novel source create/list/read/update/delete and text/markdown import
 - shared Zod validation for `StoryboardResult`
 - mock LLM storyboard draft generation, edit, reload, and ready-for-import state
+- mock LLM 2-scene/6-shot storyboard output for import acceptance
 - workbench Novel/Storyboard panel and compact storyboard editor
+- storyboard draft import into normalized CanvasNode and CanvasEdge graph state
+- deterministic storyboard import layout, new-version duplicate policy, import provenance, and canvas fit after import
 - selection-aware Inspector with type-specific business forms
 - worker mock workflow
 - shared types and provider contracts
@@ -277,7 +318,6 @@ Included:
 
 Deferred:
 
-- storyboard import and auto layout
 - persistent generation queue
 - real provider adapters
 - editor package zip export
