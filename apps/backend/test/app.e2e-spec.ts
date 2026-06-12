@@ -56,8 +56,10 @@ type StoredProject = {
 function createPrismaE2eMock() {
   const projects = new Map<string, StoredProject>();
   const assets = new Map<string, Record<string, unknown>>();
+  const canvasDocuments = new Map<string, Record<string, unknown>>();
   let projectSequence = 1;
   let assetSequence = 1;
+  let canvasSequence = 1;
 
   function nextDate() {
     return new Date(`2026-06-12T00:${String(projectSequence).padStart(2, "0")}:00.000Z`);
@@ -114,8 +116,40 @@ function createPrismaE2eMock() {
           throw new Error("Project not found");
         }
         projects.delete(where.id);
+        canvasDocuments.delete(where.id);
         return existing;
       }),
+    },
+    canvasDocument: {
+      upsert: vi.fn(async ({ where, update, create }) => {
+        const existing = canvasDocuments.get(where.projectId);
+        if (existing) {
+          const updated = {
+            ...existing,
+            ...update,
+            updatedAt: new Date("2026-06-12T00:45:00.000Z"),
+          };
+          canvasDocuments.set(where.projectId, updated);
+          return updated;
+        }
+
+        const canvasDocument = {
+          id: `canvas_${canvasSequence}`,
+          projectId: create.projectId,
+          snapshotJson: create.snapshotJson ?? {},
+          createdAt: new Date("2026-06-12T00:40:00.000Z"),
+          updatedAt: new Date("2026-06-12T00:40:00.000Z"),
+        };
+        canvasSequence += 1;
+        canvasDocuments.set(create.projectId, canvasDocument);
+        return canvasDocument;
+      }),
+    },
+    canvasNode: {
+      findMany: vi.fn(async () => []),
+    },
+    canvasEdge: {
+      findMany: vi.fn(async () => []),
     },
     asset: {
       findMany: vi.fn(async ({ where }) =>
@@ -333,5 +367,52 @@ describe("project api e2e", () => {
         contentType: "application/octet-stream",
       })
       .expect(400);
+  });
+
+  it("creates, saves, and reloads project canvas snapshots", async () => {
+    const createdProject = await request(app.getHttpServer())
+      .post("/api/v1/projects")
+      .send({ title: "Canvas Project" })
+      .expect(201);
+    const projectId = createdProject.body.id;
+
+    const firstLoad = await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/canvas`)
+      .expect(200);
+
+    expect(firstLoad.body).toMatchObject({
+      canvasDocument: {
+        projectId,
+        snapshotJson: {},
+      },
+      nodes: [],
+      edges: [],
+      assets: [],
+    });
+
+    const snapshotJson = {
+      document: {
+        records: [{ id: "shape:box", typeName: "shape", type: "geo" }],
+      },
+      session: {
+        camera: { x: 12, y: 24, z: 1 },
+      },
+    };
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/projects/${projectId}/canvas/snapshot`)
+      .send({ snapshotJson })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.canvasDocument.projectId).toBe(projectId);
+        expect(body.canvasDocument.snapshotJson).toEqual(snapshotJson);
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/canvas`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.canvasDocument.snapshotJson).toEqual(snapshotJson);
+      });
   });
 });
