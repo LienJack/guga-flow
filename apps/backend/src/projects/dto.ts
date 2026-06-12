@@ -1,0 +1,35 @@
+import { PROJECT_ASPECT_RATIOS, type ProjectAspectRatio } from "@guga-flow/shared-types";
+import { IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+
+export class CreateProjectDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  title!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  description?: string;
+
+  @IsOptional()
+  @IsIn(PROJECT_ASPECT_RATIOS)
+  defaultAspectRatio?: ProjectAspectRatio;
+}
+
+export class UpdateProjectDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  description?: string;
+
+  @IsOptional()
+  @IsIn(PROJECT_ASPECT_RATIOS)
+  defaultAspectRatio?: ProjectAspectRatio;
+}
