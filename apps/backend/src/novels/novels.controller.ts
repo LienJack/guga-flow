@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Inject, Param, Patch, Post } from "@nestjs/common";
 
 import {
+  CreateCreativeStoryboardDto,
   CreateNovelDocumentDto,
   ImportNovelSourceDto,
   UpdateNovelDocumentDto,
@@ -25,6 +26,14 @@ export class NovelsController {
   @Post("import")
   importSource(@Param("projectId") projectId: string, @Body() body: ImportNovelSourceDto) {
     return this.novelsService.importSource(projectId, body);
+  }
+
+  @Post("creative-brief")
+  createCreativeStoryboard(
+    @Param("projectId") projectId: string,
+    @Body() body: CreateCreativeStoryboardDto,
+  ) {
+    return this.novelsService.createCreativeStoryboard(projectId, body);
   }
 
   @Get(":novelId")

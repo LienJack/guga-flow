@@ -18,7 +18,7 @@ export const BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE = {
 export type BusinessNodeShapeType =
   (typeof BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE)[Phase3CanvasNodeType];
 
-export interface BusinessNodeShapeProps extends BusinessNodeCardModel {
+export interface BusinessNodeShapeProps extends Omit<BusinessNodeCardModel, "collapsed"> {
   status: NodeStatus;
 }
 
@@ -64,5 +64,6 @@ export function isBusinessNodeShape(shape: TLShape | undefined): shape is Busine
 }
 
 export function buildBusinessNodeShapeProps(node: CanvasNodeRecord): BusinessNodeShapeProps {
-  return buildBusinessNodeCardModel(node);
+  const { collapsed: _collapsed, ...props } = buildBusinessNodeCardModel(node);
+  return props;
 }

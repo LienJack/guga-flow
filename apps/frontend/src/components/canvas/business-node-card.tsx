@@ -3,6 +3,8 @@ import React from "react";
 import { getBusinessNodeDefinition } from "./business-node-data";
 import type { BusinessNodeShapeProps } from "./business-node-shape";
 
+type BusinessNodeCardProps = BusinessNodeShapeProps & { collapsed?: boolean };
+
 const STATUS_LABELS: Record<BusinessNodeShapeProps["status"], string> = {
   draft: "Draft",
   queued: "Queued",
@@ -16,12 +18,14 @@ const STATUS_LABELS: Record<BusinessNodeShapeProps["status"], string> = {
 export function BusinessNodeCard({
   detail,
   collapsed,
+  h,
   nodeType,
   status,
   summary,
   title,
-}: BusinessNodeShapeProps) {
+}: BusinessNodeCardProps) {
   const definition = getBusinessNodeDefinition(nodeType);
+  const isCollapsed = collapsed ?? (nodeType === "scene_frame" && h <= 112);
   const semanticRoleClass =
     nodeType === "character_asset" || nodeType === "location_asset"
       ? "semantic-source"
@@ -31,7 +35,7 @@ export function BusinessNodeCard({
 
   return (
     <article
-      className={`business-node-card tone-${definition.tone} type-${nodeType} status-${status} ${semanticRoleClass}${collapsed ? " collapsed" : ""}`}
+      className={`business-node-card tone-${definition.tone} type-${nodeType} status-${status} ${semanticRoleClass}${isCollapsed ? " collapsed" : ""}`}
       aria-label={`${definition.label}: ${title}`}
     >
       <header className="business-node-card-header">
@@ -40,7 +44,7 @@ export function BusinessNodeCard({
       </header>
       <h3>{title}</h3>
       <p>{summary}</p>
-      {collapsed ? null : <footer>{detail}</footer>}
+      {isCollapsed ? null : <footer>{detail}</footer>}
     </article>
   );
 }

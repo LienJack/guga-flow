@@ -42,6 +42,26 @@ function storyboardDraft(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function generationJob(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "job_1",
+    projectId: "project_1",
+    operation: "novel_to_storyboard",
+    status: "running",
+    provider: "mock-llm",
+    model: "mock-storyboard",
+    sourceNodeId: null,
+    targetNodeId: null,
+    providerTaskId: null,
+    inputJson: {},
+    outputJson: null,
+    errorMessage: null,
+    createdAt,
+    updatedAt,
+    ...overrides,
+  };
+}
+
 function createPrismaMock() {
   return {
     project: {
@@ -58,6 +78,10 @@ function createPrismaMock() {
       create: vi.fn(async ({ data }) => storyboardDraft(data)),
       findFirst: vi.fn(),
       update: vi.fn(async ({ data }) => storyboardDraft(data)),
+    },
+    generationJob: {
+      create: vi.fn(async ({ data }) => generationJob(data)),
+      update: vi.fn(async ({ data }) => generationJob(data)),
     },
     canvasNode: {
       deleteMany: vi.fn(),
@@ -233,6 +257,187 @@ describe("NovelsService", () => {
       }),
     );
     expect(result.draft?.storyboard?.scenes[0]?.shots[0]?.imagePrompt).toContain("rooftop");
+  });
+
+  it("creates a ready storyboard draft from a creative brief with a succeeded audit job", async () => {
+    prisma.novelDocument.create.mockResolvedValue(
+      novel({
+        id: "novel_creative",
+        title: "A courier finds a glowing signal...",
+        content:
+          "Creative idea: A courier finds a glowing signal under a rainy overpass.\nAudience: short drama viewers\nStyle: rainy neon thriller\nTarget duration: 45 seconds\nInteraction layer: advanced",
+        wordCount: 26,
+        language: "en",
+      }),
+    );
+    prisma.storyboardDraft.create.mockResolvedValue(
+      storyboardDraft({
+        id: "draft_creative",
+        novelDocumentId: "novel_creative",
+        status: "ready",
+        readyForImport: true,
+      }),
+    );
+    prisma.generationJob.update.mockResolvedValue(
+      generationJob({
+        status: "succeeded",
+        inputJson: {
+          operation: "novel_to_storyboard",
+          projectId: "project_1",
+          idea: "A courier finds a glowing signal under a rainy overpass.",
+          mode: "advanced",
+          audience: "short drama viewers",
+          stylePrompt: "rainy neon thriller",
+          targetDurationSeconds: 45,
+          provider: "mock-llm",
+          model: "mock-storyboard",
+        },
+        outputJson: {
+          operation: "novel_to_storyboard",
+          novelDocumentId: "novel_creative",
+          storyboardDraftId: "draft_creative",
+          provider: "mock-llm",
+          model: "mock-storyboard",
+          completedAt: "2026-06-12T00:10:00.000Z",
+        },
+      }),
+    );
+
+    const result = await service.createCreativeStoryboard("project_1", {
+      idea: " A courier finds a glowing signal under a rainy overpass. ",
+      mode: "advanced",
+      audience: " short drama viewers ",
+      stylePrompt: " rainy neon thriller ",
+      targetDurationSeconds: 45,
+    });
+
+    expect(prisma.novelDocument.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          projectId: "project_1",
+          sourceType: "paste",
+          content: expect.stringContaining("Creative idea: A courier finds a glowing signal"),
+        }),
+      }),
+    );
+    expect(prisma.generationJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          operation: "novel_to_storyboard",
+          status: "running",
+          provider: "mock-llm",
+          inputJson: expect.objectContaining({
+            mode: "advanced",
+            audience: "short drama viewers",
+            stylePrompt: "rainy neon thriller",
+            targetDurationSeconds: 45,
+          }),
+        }),
+      }),
+    );
+    expect(prisma.storyboardDraft.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          novelDocumentId: "novel_creative",
+          status: "ready",
+          readyForImport: true,
+        }),
+      }),
+    );
+    expect(prisma.generationJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "job_1" },
+        data: expect.objectContaining({
+          status: "succeeded",
+          outputJson: expect.objectContaining({
+            novelDocumentId: "novel_creative",
+            storyboardDraftId: "draft_creative",
+          }),
+        }),
+      }),
+    );
+    expect(result.novel.id).toBe("novel_creative");
+    expect(result.draft.readyForImport).toBe(true);
+    expect(result.job.status).toBe("succeeded");
+  });
+
+  it("rejects blank creative briefs before creating jobs or drafts", async () => {
+    await expect(
+      service.createCreativeStoryboard("project_1", { idea: "   " }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.novelDocument.create).not.toHaveBeenCalled();
+    expect(prisma.generationJob.create).not.toHaveBeenCalled();
+    expect(prisma.storyboardDraft.create).not.toHaveBeenCalled();
+  });
+
+  it("marks creative brief jobs failed when storyboard generation fails", async () => {
+    prisma.novelDocument.create.mockResolvedValue(
+      novel({
+        id: "novel_creative",
+        content: "Creative idea: Failure path\nInteraction layer: novice",
+      }),
+    );
+
+    await expect(
+      service.createCreativeStoryboard("project_1", {
+        idea: "Failure path",
+        forceFailure: true,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.generationJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "running",
+          inputJson: expect.objectContaining({
+            operation: "novel_to_storyboard",
+            forceFailure: true,
+          }),
+        }),
+      }),
+    );
+    expect(prisma.storyboardDraft.create).not.toHaveBeenCalled();
+    expect(prisma.generationJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "job_1" },
+        data: expect.objectContaining({
+          status: "failed",
+          errorMessage: expect.stringContaining("mock failure requested"),
+        }),
+      }),
+    );
+  });
+
+  it("marks creative brief jobs failed when generated source persistence fails", async () => {
+    prisma.novelDocument.create.mockRejectedValue(new Error("database unavailable"));
+
+    await expect(
+      service.createCreativeStoryboard("project_1", {
+        idea: "A generated source write fails",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.generationJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "running",
+          inputJson: expect.objectContaining({
+            operation: "novel_to_storyboard",
+          }),
+        }),
+      }),
+    );
+    expect(prisma.storyboardDraft.create).not.toHaveBeenCalled();
+    expect(prisma.generationJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "job_1" },
+        data: expect.objectContaining({
+          status: "failed",
+          errorMessage: "database unavailable",
+        }),
+      }),
+    );
   });
 
   it("updates storyboard drafts and marks valid drafts ready for import", async () => {

@@ -106,6 +106,9 @@ type CanvasEdgeModel = {
   createdAt: Date | string;
 };
 
+type WorkerGenerationJobInput = ShotToImageJobInput | ImageToVideoJobInput | EditorExportJobInput;
+type GeneratedMediaJobInput = ShotToImageJobInput | ImageToVideoJobInput;
+
 const CANCELLABLE_JOB_STATUSES: GenerationJobStatus[] = ["queued", "running", "provider_waiting"];
 const WORKER_ACTIVE_JOB_STATUSES: GenerationJobStatus[] = ["running", "provider_waiting"];
 const WORKER_GENERATION_OPERATIONS = [
@@ -189,14 +192,14 @@ function jsonValue<T>(value: T): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
-function assertJobInput(value: unknown): GenerationJobInput {
+function assertJobInput(value: unknown): WorkerGenerationJobInput {
   const input = dataObject(value);
   if (
     input.operation === "shot_to_image" ||
     input.operation === "image_to_video" ||
     input.operation === "editor_export"
   ) {
-    return value as GenerationJobInput;
+    return value as WorkerGenerationJobInput;
   }
   throw new BadRequestException("Generation job input is invalid");
 }
@@ -1054,7 +1057,7 @@ export class GenerationService {
 
   private validateProviderOutput(
     job: GenerationJobModel,
-    input: GenerationJobInput,
+    input: GeneratedMediaJobInput,
     output: GeneratedMediaProviderOutput,
   ): void {
     if (output.provider !== job.provider) {
@@ -1069,7 +1072,7 @@ export class GenerationService {
   }
 
   private normalizeCompletionOutputs(
-    input: GenerationJobInput,
+    input: GeneratedMediaJobInput,
     providerOutput: GeneratedMediaProviderOutput,
     providerOutputs: GeneratedMediaProviderOutput[] | undefined,
   ): GeneratedMediaProviderOutput[] {
@@ -1256,7 +1259,7 @@ export class GenerationService {
   private async createGeneratedNode(
     tx: GenerationPrismaClient,
     job: GenerationJobModel,
-    input: GenerationJobInput,
+    input: GeneratedMediaJobInput,
     providerOutput: GeneratedMediaProviderOutput,
     asset: AssetDetail,
     sourceNode: CanvasNodeModel,
@@ -1354,7 +1357,7 @@ export class GenerationService {
   private async createGeneratedEdge(
     tx: GenerationPrismaClient,
     job: GenerationJobModel,
-    input: GenerationJobInput,
+    input: GeneratedMediaJobInput,
     sourceNode: CanvasNodeModel,
     targetNode: CanvasNodeModel,
     asset: AssetDetail,
@@ -1380,7 +1383,7 @@ export class GenerationService {
 
   private generatedNodeData(
     jobId: string,
-    input: GenerationJobInput,
+    input: GeneratedMediaJobInput,
     providerOutput: GeneratedMediaProviderOutput,
     asset: AssetDetail,
     output: GeneratedMediaJobOutput,
@@ -1413,7 +1416,7 @@ export class GenerationService {
     return outputOrdinal === 1 ? `${sourceTitle} ${suffix}` : `${sourceTitle} ${suffix} ${outputOrdinal}`;
   }
 
-  private sourceNodeIdsForInput(input: GenerationJobInput): string[] {
+  private sourceNodeIdsForInput(input: GeneratedMediaJobInput): string[] {
     if (input.operation === "shot_to_image") {
       return uniqueStrings([
         input.sourceNodeId,
@@ -1423,10 +1426,6 @@ export class GenerationService {
         input.sourceNodeIds.locationNodeId,
       ]);
     }
-    if (input.operation === "editor_export") {
-      return uniqueStrings(input.videoNodeIds);
-    }
-
     return uniqueStrings(input.sourceNodeIds);
   }
 

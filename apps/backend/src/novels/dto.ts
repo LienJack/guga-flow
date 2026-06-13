@@ -1,13 +1,26 @@
 import type {
+  CreateCreativeStoryboardInput,
   CreateNovelDocumentInput,
+  CreativeAgentMode,
   ImportNovelSourceInput,
   NovelLanguage,
   NovelSourceType,
   UpdateStoryboardDraftInput,
   UpdateNovelDocumentInput,
 } from "@guga-flow/shared-types";
-import { NOVEL_LANGUAGES, NOVEL_SOURCE_TYPES } from "@guga-flow/shared-types";
-import { IsDefined, IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { CREATIVE_AGENT_MODES, NOVEL_LANGUAGES, NOVEL_SOURCE_TYPES } from "@guga-flow/shared-types";
+import {
+  IsBoolean,
+  IsDefined,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from "class-validator";
 
 const IMPORT_SOURCE_TYPES = NOVEL_SOURCE_TYPES.filter(
   (sourceType): sourceType is Exclude<NovelSourceType, "paste"> => sourceType !== "paste",
@@ -48,6 +61,37 @@ export class ImportNovelSourceDto implements ImportNovelSourceInput {
   @IsOptional()
   @IsIn(NOVEL_LANGUAGES)
   language?: NovelLanguage;
+}
+
+export class CreateCreativeStoryboardDto implements CreateCreativeStoryboardInput {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(800)
+  idea!: string;
+
+  @IsOptional()
+  @IsIn(CREATIVE_AGENT_MODES)
+  mode?: CreativeAgentMode;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  audience?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  stylePrompt?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(15)
+  @Max(180)
+  targetDurationSeconds?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  forceFailure?: boolean;
 }
 
 export class UpdateNovelDocumentDto implements UpdateNovelDocumentInput {

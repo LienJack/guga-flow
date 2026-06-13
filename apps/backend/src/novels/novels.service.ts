@@ -1,13 +1,19 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type {
+  CreateCreativeStoryboardInput,
+  CreateCreativeStoryboardResult,
   CreateNovelDocumentInput,
   CreateNovelDocumentResult,
   DeleteNovelDocumentResult,
   GenerateStoryboardResult,
+  GenerationJobRecord,
+  GenerationJobStatus,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
   MarkStoryboardDraftReadyResult,
   NovelDocumentRecord,
+  NovelToStoryboardJobInput,
+  NovelToStoryboardJobOutput,
   NovelLanguage,
   NovelSourceType,
   StoryboardDraftRecord,
@@ -20,6 +26,7 @@ import type {
   UpdateNovelDocumentResult,
 } from "@guga-flow/shared-types";
 import {
+  CREATIVE_AGENT_MODES,
   NOVEL_LANGUAGES,
   NOVEL_SOURCE_TYPES,
   STORYBOARD_DRAFT_STATUSES,
@@ -28,6 +35,7 @@ import {
 import { createMockProviderRegistry } from "@guga-flow/provider-contracts";
 
 import { readAppConfig } from "../config/app-config";
+import { Prisma } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
 type NovelDocumentModel = {
@@ -53,6 +61,23 @@ type StoryboardDraftModel = {
   model: string | null;
   errorMessage: string | null;
   readyForImport: boolean;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+type GenerationJobModel = {
+  id: string;
+  projectId: string;
+  operation: string;
+  status: string;
+  provider: string;
+  model: string | null;
+  sourceNodeId: string | null;
+  targetNodeId: string | null;
+  providerTaskId: string | null;
+  inputJson: unknown;
+  outputJson: unknown | null;
+  errorMessage: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
 };
@@ -100,11 +125,57 @@ function normalizeLanguage(value: NovelLanguage | undefined, content: string): N
   return "other";
 }
 
+function normalizeCreativeMode(value: CreateCreativeStoryboardInput["mode"]): NovelToStoryboardJobInput["mode"] {
+  if (value && CREATIVE_AGENT_MODES.includes(value)) {
+    return value;
+  }
+  return "novice";
+}
+
+function normalizeOptionalText(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeTargetDurationSeconds(value: number | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Number.isInteger(value) || value < 15 || value > 180) {
+    throw new BadRequestException("Target duration must be between 15 and 180 seconds");
+  }
+  return value;
+}
+
+function creativeBriefTitle(idea: string): string {
+  const normalized = idea.replace(/\s+/g, " ").trim();
+  return normalized.length > 42 ? `${normalized.slice(0, 42).trim()}...` : normalized;
+}
+
+function creativeBriefSource(input: NovelToStoryboardJobInput): string {
+  const lines = [`Creative idea: ${input.idea}`];
+  if (input.audience) {
+    lines.push(`Audience: ${input.audience}`);
+  }
+  if (input.stylePrompt) {
+    lines.push(`Style: ${input.stylePrompt}`);
+  }
+  if (input.targetDurationSeconds) {
+    lines.push(`Target duration: ${input.targetDurationSeconds} seconds`);
+  }
+  lines.push(`Interaction layer: ${input.mode}`);
+  return lines.join("\n");
+}
+
 function countWords(content: string): number {
   const cjkMatches = content.match(/[\u3040-\u30ff\u3400-\u9fff]/gu) ?? [];
   const latinText = content.replace(/[\u3040-\u30ff\u3400-\u9fff]/gu, " ");
   const wordMatches = latinText.match(/[A-Za-z0-9]+(?:['-][A-Za-z0-9]+)*/g) ?? [];
   return cjkMatches.length + wordMatches.length;
+}
+
+function jsonValue<T>(value: T): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
 @Injectable()
@@ -151,6 +222,131 @@ export class NovelsService {
       sourceType: normalizeImportSourceType(input.sourceType),
       language: input.language,
     });
+  }
+
+  async createCreativeStoryboard(
+    projectId: string,
+    input: CreateCreativeStoryboardInput,
+  ): Promise<CreateCreativeStoryboardResult> {
+    await this.ensureProjectExists(projectId);
+    const idea = normalizeText(input.idea, "Creative idea");
+    const mode = normalizeCreativeMode(input.mode);
+    const config = readAppConfig();
+    const provider = createMockProviderRegistry().llm;
+    const jobInput: NovelToStoryboardJobInput = {
+      operation: "novel_to_storyboard",
+      projectId,
+      idea,
+      mode,
+      audience: normalizeOptionalText(input.audience),
+      stylePrompt: normalizeOptionalText(input.stylePrompt),
+      targetDurationSeconds: normalizeTargetDurationSeconds(input.targetDurationSeconds),
+      provider: provider.capability.id,
+      model: config.llmModel,
+      forceFailure: input.forceFailure,
+    };
+    const sourceContent = creativeBriefSource(jobInput);
+
+    const job = (await this.prisma.generationJob.create({
+      data: {
+        projectId,
+        operation: "novel_to_storyboard",
+        status: "running",
+        provider: provider.capability.id,
+        model: config.llmModel,
+        inputJson: jsonValue(jobInput),
+      },
+    })) as GenerationJobModel;
+
+    try {
+      const novel = await this.prisma.novelDocument.create({
+        data: {
+          projectId,
+          title: creativeBriefTitle(idea),
+          content: sourceContent,
+          sourceType: "paste",
+          wordCount: countWords(sourceContent),
+          language: normalizeLanguage(undefined, sourceContent),
+        },
+      });
+      const candidate = await provider.generateStoryboard({
+        projectId,
+        title: novel.title,
+        novelText: novel.content,
+        forceFailure: input.forceFailure,
+      });
+      const validation = validateStoryboardResult(candidate);
+      if (!validation.success) {
+        await this.prisma.generationJob.update({
+          where: { id: job.id },
+          data: {
+            status: "failed",
+            outputJson: jsonValue({ validation }),
+            errorMessage: this.validationMessage(validation.issues),
+          },
+        });
+        throw new BadRequestException(this.validationMessage(validation.issues));
+      }
+
+      const draft = await this.prisma.storyboardDraft.create({
+        data: {
+          projectId,
+          novelDocumentId: novel.id,
+          status: "ready",
+          storyboardJson: validation.data,
+          validationIssuesJson: [],
+          provider: provider.capability.id,
+          model: config.llmModel,
+          errorMessage: null,
+          readyForImport: true,
+        },
+      });
+      const output: NovelToStoryboardJobOutput = {
+        operation: "novel_to_storyboard",
+        novelDocumentId: novel.id,
+        storyboardDraftId: draft.id,
+        provider: provider.capability.id,
+        model: config.llmModel,
+        completedAt: new Date().toISOString(),
+      };
+      const completedJob = (await this.prisma.generationJob.update({
+        where: { id: job.id },
+        data: {
+          status: "succeeded",
+          outputJson: jsonValue(output),
+          errorMessage: null,
+        },
+      })) as GenerationJobModel;
+
+      return {
+        novel: this.toNovelRecord(novel),
+        draft: this.toStoryboardDraftRecord(draft),
+        validation,
+        job: this.toGenerationJobRecord<NovelToStoryboardJobInput, NovelToStoryboardJobOutput>(
+          completedJob,
+        ),
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : "Creative storyboard generation failed";
+      await this.prisma.generationJob.update({
+        where: { id: job.id },
+        data: {
+          status: "failed",
+          outputJson: jsonValue({
+            error: {
+              provider: provider.capability.id,
+              message,
+              retryable: true,
+            },
+          }),
+          errorMessage: message,
+        },
+      });
+      throw new BadRequestException(message);
+    }
   }
 
   async getNovel(projectId: string, novelId: string): Promise<NovelDocumentRecord> {
@@ -373,6 +569,27 @@ export class NovelsService {
       readyForImport: draft.readyForImport,
       createdAt: toIsoString(draft.createdAt),
       updatedAt: toIsoString(draft.updatedAt),
+    };
+  }
+
+  private toGenerationJobRecord<TInput, TOutput>(
+    job: GenerationJobModel,
+  ): GenerationJobRecord<TInput, TOutput> {
+    return {
+      id: job.id,
+      projectId: job.projectId,
+      operation: "novel_to_storyboard",
+      status: job.status as GenerationJobStatus,
+      provider: job.provider,
+      model: job.model ?? undefined,
+      sourceNodeId: job.sourceNodeId ?? undefined,
+      targetNodeId: job.targetNodeId ?? undefined,
+      providerTaskId: job.providerTaskId ?? undefined,
+      inputJson: job.inputJson as TInput,
+      outputJson: job.outputJson === null ? undefined : (job.outputJson as TOutput),
+      errorMessage: job.errorMessage ?? undefined,
+      createdAt: toIsoString(job.createdAt),
+      updatedAt: toIsoString(job.updatedAt),
     };
   }
 

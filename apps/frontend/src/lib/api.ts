@@ -11,6 +11,8 @@ import type {
   CreateBatchImagesToVideosJobResult,
   CreateBatchShotsToImagesJobInput,
   CreateBatchShotsToImagesJobResult,
+  CreateCreativeStoryboardInput,
+  CreateCreativeStoryboardResult,
   CreateEditorExportInput,
   CreateEditorExportResult,
   CreateGenerationJobInput,
@@ -181,6 +183,19 @@ export function importNovelSource(
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function createCreativeStoryboard(
+  projectId: string,
+  input: CreateCreativeStoryboardInput,
+): Promise<CreateCreativeStoryboardResult> {
+  return requestJson<CreateCreativeStoryboardResult>(
+    `/projects/${projectId}/novels/creative-brief`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 export function getNovelDocument(

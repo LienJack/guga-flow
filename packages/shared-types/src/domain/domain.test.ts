@@ -5,6 +5,7 @@ import {
   CANVAS_EDGE_RELATIONS,
   CANVAS_NODE_TYPES,
   CANVAS_SAVE_STATUSES,
+  CREATIVE_AGENT_MODES,
   EDITOR_EXPORT_SORT_MODES,
   EDITOR_EXPORT_STATUSES,
   EDITOR_PACKAGE_MIME_TYPE,
@@ -42,6 +43,8 @@ import {
   type CreateBatchShotsToImagesJobResult,
   type CreateCanvasEdgeInput,
   type CreateCanvasEdgeResult,
+  type CreateCreativeStoryboardInput,
+  type CreateCreativeStoryboardResult,
   type CreateEditorExportInput,
   type CreateEditorExportResult,
   type CreateGenerationJobInput,
@@ -66,6 +69,8 @@ import {
   type ImportStoryboardToCanvasInput,
   type ImportNovelSourceInput,
   type LocationAssetNodeData,
+  type NovelToStoryboardJobInput,
+  type NovelToStoryboardJobOutput,
   type Phase3CanvasNodeRecord,
   type SaveCanvasSnapshotInput,
   type SceneFrameNodeData,
@@ -301,6 +306,7 @@ describe("shared domain constants", () => {
 
   it("exports Phase 5 novel source and storyboard draft contracts", () => {
     expect(STORYBOARD_DRAFT_STATUSES).toEqual(["draft", "valid", "invalid", "ready"]);
+    expect(CREATIVE_AGENT_MODES).toEqual(["novice", "advanced", "professional"]);
 
     const createNovelInput: CreateNovelDocumentInput = {
       title: "Rooftop Signal",
@@ -350,9 +356,64 @@ describe("shared domain constants", () => {
     const updateDraftInput: UpdateStoryboardDraftInput = {
       storyboard: validation.data,
     };
+    const creativeInput: CreateCreativeStoryboardInput = {
+      idea: "A courier finds a glowing signal under a rainy overpass.",
+      mode: "advanced",
+      audience: "short drama viewers",
+      stylePrompt: "rainy neon thriller",
+      targetDurationSeconds: 45,
+    };
+    const jobInput: NovelToStoryboardJobInput = {
+      operation: "novel_to_storyboard",
+      projectId: "project_1",
+      idea: creativeInput.idea,
+      mode: "advanced",
+      audience: creativeInput.audience,
+      stylePrompt: creativeInput.stylePrompt,
+      targetDurationSeconds: creativeInput.targetDurationSeconds,
+      provider: "mock-llm",
+      model: "mock-storyboard",
+    };
+    const jobOutput: NovelToStoryboardJobOutput = {
+      operation: "novel_to_storyboard",
+      novelDocumentId: "novel_1",
+      storyboardDraftId: "draft_1",
+      provider: "mock-llm",
+      model: "mock-storyboard",
+      completedAt: "2026-06-12T00:01:00.000Z",
+    };
+    const creativeResult: CreateCreativeStoryboardResult = {
+      novel: {
+        id: "novel_1",
+        projectId: "project_1",
+        title: createNovelInput.title,
+        content: createNovelInput.content,
+        sourceType: createNovelInput.sourceType ?? "paste",
+        wordCount: 11,
+        language: createNovelInput.language ?? "other",
+        createdAt: "2026-06-12T00:00:00.000Z",
+        updatedAt: "2026-06-12T00:00:00.000Z",
+      },
+      draft,
+      validation,
+      job: {
+        id: "job_1",
+        projectId: "project_1",
+        operation: "novel_to_storyboard",
+        status: "succeeded",
+        provider: "mock-llm",
+        model: "mock-storyboard",
+        inputJson: jobInput,
+        outputJson: jobOutput,
+        createdAt: "2026-06-12T00:00:00.000Z",
+        updatedAt: "2026-06-12T00:01:00.000Z",
+      },
+    };
 
     expect(draft.storyboard?.scenes[0]?.shots[0]?.imagePrompt).toContain("rooftop");
     expect(updateDraftInput.storyboard.characters[0]?.tempId).toBe("char_hero");
+    expect(creativeResult.job.inputJson.mode).toBe("advanced");
+    expect(creativeResult.job.outputJson?.storyboardDraftId).toBe("draft_1");
   });
 
   it("rejects malformed Phase 5 storyboard drafts", () => {

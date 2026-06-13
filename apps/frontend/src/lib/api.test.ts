@@ -8,6 +8,7 @@ import {
   createEditorExport,
   createGenerationJob,
   createCanvasEdge,
+  createCreativeStoryboard,
   createNovelDocument,
   editorExportDownloadUrl,
   generateStoryboardDraft,
@@ -410,6 +411,13 @@ describe("frontend api client", () => {
       content: "# Scene\nHero watches the city.",
       sourceType: "md",
     });
+    await createCreativeStoryboard("project_1", {
+      idea: "A courier finds a glowing signal under a rainy overpass.",
+      mode: "advanced",
+      audience: "short drama viewers",
+      stylePrompt: "rainy neon thriller",
+      targetDurationSeconds: 45,
+    });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -431,6 +439,20 @@ describe("frontend api client", () => {
           title: "Markdown story",
           content: "# Scene\nHero watches the city.",
           sourceType: "md",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:3002/api/v1/projects/project_1/novels/creative-brief",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          idea: "A courier finds a glowing signal under a rainy overpass.",
+          mode: "advanced",
+          audience: "short drama viewers",
+          stylePrompt: "rainy neon thriller",
+          targetDurationSeconds: 45,
         }),
       }),
     );

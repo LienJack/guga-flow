@@ -2,6 +2,7 @@
 
 import type {
   CanvasNodeRecord,
+  CreateCreativeStoryboardResult,
   ImportNovelSourceInput,
   ImportStoryboardToCanvasResult,
   NovelDocumentRecord,
@@ -23,6 +24,7 @@ import {
   updateNovelDocument,
   updateStoryboardDraft,
 } from "../../lib/api";
+import { CreativeAgentEntry } from "./creative-agent-entry";
 import {
   buildStoryboardDraftUiState,
   formatStoryboardValidationIssues,
@@ -323,7 +325,11 @@ export function NovelStoryboardPanel({
   }
 
   function replaceNovel(novel: NovelDocumentRecord) {
-    setNovels((current) => current.map((item) => (item.id === novel.id ? novel : item)));
+    setNovels((current) =>
+      current.some((item) => item.id === novel.id)
+        ? current.map((item) => (item.id === novel.id ? novel : item))
+        : [novel, ...current],
+    );
   }
 
   function applyDraft(nextDraft: StoryboardDraftRecord) {
@@ -332,12 +338,26 @@ export function NovelStoryboardPanel({
     setDraftDirty(false);
   }
 
+  function handleCreativeStoryboardCreated(result: CreateCreativeStoryboardResult) {
+    replaceNovel(result.novel);
+    setSelectedNovelId(result.novel.id);
+    applyDraft(result.draft);
+    setConfirmNewVersion(false);
+  }
+
   return (
     <section className="novel-storyboard-panel" aria-label="Novel storyboard workflow">
       <div className="panel-heading compact">
         <h2>Novel</h2>
         <span>{novels.length}</span>
       </div>
+
+      <CreativeAgentEntry
+        projectId={projectId}
+        hasPriorStoryboardImport={hasPriorStoryboardImport}
+        onCreativeStoryboardCreated={handleCreativeStoryboardCreated}
+        onStoryboardImported={onStoryboardImported}
+      />
 
       <form className="novel-source-form" onSubmit={handleCreateNovel}>
         <label className="field-label">

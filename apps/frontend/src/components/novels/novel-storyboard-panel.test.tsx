@@ -99,6 +99,8 @@ describe("NovelStoryboardPanel", () => {
       />,
     );
 
+    expect(html).toContain("Creative brief");
+    expect(html).toContain("Create draft");
     expect(html).toContain("Save novel");
     expect(html).toContain("Import file");
     expect(html).toContain("Rooftop story");

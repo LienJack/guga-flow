@@ -41,6 +41,7 @@ describe("BusinessNodeCard", () => {
     expect(shapeTypes).not.toContain("video");
     expect(BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE.shot).toBe("business_shot");
     expect(new Set(shapeTypes).size).toBe(PHASE_3_CANVAS_NODE_TYPES.length);
+    expect(businessNodeShapeUtils[0].props).not.toHaveProperty("collapsed");
   });
 
   it("builds shape props from normalized canvas nodes", () => {
@@ -74,6 +75,7 @@ describe("BusinessNodeCard", () => {
       w: 360,
       h: 220,
     });
+    expect(props).not.toHaveProperty("collapsed");
   });
 
   it("renders collapsed SceneFrame cards without the detail footer", () => {
@@ -93,6 +95,24 @@ describe("BusinessNodeCard", () => {
 
     expect(html).toContain("collapsed");
     expect(html).toContain("Opening sequence");
+    expect(html).not.toContain("Location ref");
+  });
+
+  it("infers collapsed SceneFrame cards from compact shape height", () => {
+    const html = renderToStaticMarkup(
+      <BusinessNodeCard
+        nodeId="frame_1"
+        nodeType="scene_frame"
+        title="Frame 1"
+        status="draft"
+        summary="Opening sequence"
+        detail="Location ref"
+        w={360}
+        h={112}
+      />,
+    );
+
+    expect(html).toContain("collapsed");
     expect(html).not.toContain("Location ref");
   });
 });

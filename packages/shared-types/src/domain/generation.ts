@@ -295,7 +295,24 @@ export interface WorkerGenerationJobCancelInput {
   rawJson?: CanvasSnapshotJson;
 }
 
-export type GenerationJobInput = ShotToImageJobInput | ImageToVideoJobInput | EditorExportJobInput;
+export type GenerationJobInput =
+  | NovelToStoryboardJobInput
+  | ShotToImageJobInput
+  | ImageToVideoJobInput
+  | EditorExportJobInput;
+
+export interface NovelToStoryboardJobInput {
+  operation: "novel_to_storyboard";
+  projectId: string;
+  idea: string;
+  mode: "novice" | "advanced" | "professional";
+  audience?: string;
+  stylePrompt?: string;
+  targetDurationSeconds?: number;
+  provider: string;
+  model?: string;
+  forceFailure?: boolean;
+}
 
 export interface ShotToImageJobInput {
   operation: "shot_to_image";
@@ -482,6 +499,15 @@ export interface EditorExportJobOutput {
   clips: EditorExportClipOutput[];
   completedAt: string;
   localEditor?: EditorExportLocalEditorResult;
+}
+
+export interface NovelToStoryboardJobOutput {
+  operation: "novel_to_storyboard";
+  novelDocumentId: string;
+  storyboardDraftId: string;
+  provider: string;
+  model?: string;
+  completedAt: string;
 }
 
 export interface EditorExportLocalEditorResult {

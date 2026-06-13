@@ -1,7 +1,6 @@
 import { ProviderError, type ImageProvider, type VideoProvider } from "@guga-flow/provider-contracts";
 import type {
   EditorExportJobInput,
-  GenerationJobInput,
   GenerationJobRecord,
   ImageToVideoJobInput,
   ShotToImageJobInput,
@@ -11,6 +10,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GenerationWorkerClient } from "./generation-client";
 import type { GenerationExecutorRegistry } from "./generation-executors";
 import { runOneGenerationJob } from "./generation-runner";
+
+type WorkerGenerationJobInput = ShotToImageJobInput | ImageToVideoJobInput | EditorExportJobInput;
 
 function createClientMock(): GenerationWorkerClient {
   return {
@@ -442,9 +443,9 @@ function editorExportInput(): EditorExportJobInput {
 
 function jobRecord(
   id: string,
-  inputJson: GenerationJobInput,
-  overrides: Partial<GenerationJobRecord<GenerationJobInput>> = {},
-): GenerationJobRecord<GenerationJobInput> {
+  inputJson: WorkerGenerationJobInput,
+  overrides: Partial<GenerationJobRecord<WorkerGenerationJobInput>> = {},
+): GenerationJobRecord<WorkerGenerationJobInput> {
   return {
     id,
     projectId: "project_1",
