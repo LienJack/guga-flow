@@ -1,0 +1,129 @@
+import type {
+  ClearAgentMemoriesInput,
+  CreateAgentCanvasActionInput,
+  CreateAgentMemoryInput,
+  RecallAgentMemoriesInput,
+  UpdateAgentMemoryInput,
+} from "@guga-flow/shared-types";
+import { AGENT_MEMORY_SCOPES, AGENT_MEMORY_SOURCES } from "@guga-flow/shared-types";
+import {
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  IsNumber,
+} from "class-validator";
+import { Type } from "class-transformer";
+
+export class CreateAgentCanvasActionDto implements CreateAgentCanvasActionInput {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(1000)
+  message!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  selectedNodeId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  sourceNodeId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  targetNodeId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  canvasX?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  canvasY?: number;
+}
+
+export class CreateAgentMemoryDto implements CreateAgentMemoryInput {
+  @IsOptional()
+  @IsIn(AGENT_MEMORY_SCOPES)
+  scope?: CreateAgentMemoryInput["scope"];
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  title!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4000)
+  content!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  tags?: string[];
+
+  @IsOptional()
+  @IsIn(AGENT_MEMORY_SOURCES)
+  source?: CreateAgentMemoryInput["source"];
+
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+}
+
+export class UpdateAgentMemoryDto implements UpdateAgentMemoryInput {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4000)
+  content?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  tags?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+}
+
+export class RecallAgentMemoriesDto implements RecallAgentMemoriesInput {
+  @IsString()
+  @MaxLength(1000)
+  query!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  @Min(1)
+  @Max(20)
+  limit?: number;
+}
+
+export class ClearAgentMemoriesDto implements ClearAgentMemoriesInput {
+  @IsOptional()
+  @IsBoolean()
+  includeDisabled?: boolean;
+}

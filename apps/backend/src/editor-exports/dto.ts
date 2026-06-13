@@ -1,5 +1,5 @@
-import type { CreateEditorExportInput, EditorExportSortMode } from "@guga-flow/shared-types";
-import { EDITOR_EXPORT_SORT_MODES } from "@guga-flow/shared-types";
+import type { CreateEditorExportInput, EditorExportPreset, EditorExportSortMode } from "@guga-flow/shared-types";
+import { EDITOR_EXPORT_PRESETS, EDITOR_EXPORT_SORT_MODES } from "@guga-flow/shared-types";
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -25,12 +25,22 @@ export class CreateEditorExportDto implements CreateEditorExportInput {
   sortMode!: EditorExportSortMode;
 
   @IsOptional()
+  @IsIn(EDITOR_EXPORT_PRESETS)
+  exportPreset?: EditorExportPreset;
+
+  @IsOptional()
   @IsBoolean()
   includeStoryboardCsv?: boolean;
 
   @IsOptional()
   @IsBoolean()
   includeSubtitles?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  sourceEditorExportId?: string;
 
   @IsOptional()
   @IsBoolean()

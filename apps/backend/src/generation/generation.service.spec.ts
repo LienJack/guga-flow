@@ -3,12 +3,17 @@ import type {
   CanvasEdgeRecord,
   CanvasLoadResult,
   CanvasNodeRecord,
+  CharacterAssetNodeData,
+  CharacterToImageJobInput,
   EditorExportJobInput,
   EditorExportPackageOutput,
   ImageProviderCatalogResult,
+  ImageRefinementJobInput,
   ImageNodeData,
   ImageToVideoJobInput,
+  LocationAssetNodeData,
   ProviderFailure,
+  ResolvedGenerationSettings,
   ShotPromptCompositionResult,
   ShotNodeData,
   ShotToImageJobInput,
@@ -175,15 +180,49 @@ function createProvidersServiceMock() {
   return {
     getImageProviders: vi.fn(() => imageProviderCatalogFixture(false)),
     getVideoProviders: vi.fn(() => videoProviderCatalogFixture(false)),
+    getProjectImageProviders: vi.fn(async () => imageProviderCatalogFixture(false)),
+    getProjectVideoProviders: vi.fn(async () => videoProviderCatalogFixture(false)),
+    getRuntimeProviderConfig: vi.fn(async () => ({
+      kind: "image",
+      provider: "mock-image",
+      env: {},
+    })),
   };
 }
 
 function enableImage2(providersService: ReturnType<typeof createProvidersServiceMock>) {
   providersService.getImageProviders.mockReturnValue(imageProviderCatalogFixture(true));
+  providersService.getProjectImageProviders.mockResolvedValue(imageProviderCatalogFixture(true));
 }
 
 function enableSeedance(providersService: ReturnType<typeof createProvidersServiceMock>) {
   providersService.getVideoProviders.mockReturnValue(videoProviderCatalogFixture(true));
+  providersService.getProjectVideoProviders.mockResolvedValue(videoProviderCatalogFixture(true));
+}
+
+function enableProgrammableImage(providersService: ReturnType<typeof createProvidersServiceMock>) {
+  providersService.getProjectImageProviders.mockResolvedValue({
+    providers: [
+      ...imageProviderCatalogFixture(false).providers,
+      {
+        id: "custom:atlas-cloud",
+        providerVersionId: "programmable_version_1",
+        displayName: "Atlas Cloud",
+        enabled: true,
+        requiresApiKey: true,
+        defaultModel: "atlas-image-v1",
+        models: [{ id: "atlas-image-v1", displayName: "Atlas Image v1", default: true }],
+        supportedModes: ["text_to_image"],
+        supportsReferenceImages: false,
+        maxReferenceImages: 0,
+        supportsMultipleOutputs: false,
+        maxOutputs: 1,
+        defaultAspectRatio: "16:9",
+        supportedAspectRatios: ["16:9"],
+        parameters: [],
+      },
+    ],
+  });
 }
 
 function imageProviderCatalogFixture(image2Enabled: boolean): ImageProviderCatalogResult {
@@ -196,7 +235,7 @@ function imageProviderCatalogFixture(image2Enabled: boolean): ImageProviderCatal
         requiresApiKey: false,
         defaultModel: "mock-image-v1",
         models: [{ id: "mock-image-v1", displayName: "Mock Image v1", default: true }],
-        supportedModes: ["text_to_image", "multi_reference"],
+        supportedModes: ["text_to_image", "image_to_image", "multi_reference"],
         supportsReferenceImages: true,
         maxReferenceImages: 99,
         supportsMultipleOutputs: false,
@@ -213,7 +252,7 @@ function imageProviderCatalogFixture(image2Enabled: boolean): ImageProviderCatal
         requiresApiKey: true,
         defaultModel: "gpt-image-2",
         models: [{ id: "gpt-image-2", displayName: "GPT Image 2", default: true }],
-        supportedModes: ["text_to_image", "multi_reference"],
+        supportedModes: ["text_to_image", "image_to_image", "multi_reference"],
         supportsReferenceImages: true,
         maxReferenceImages: 4,
         supportsMultipleOutputs: true,
@@ -337,6 +376,14 @@ describe("GenerationService", () => {
         inputJson: expect.objectContaining({
           prompt: "Image prompt: hero at console",
           negativePrompt: "no text",
+          generationSettings: expect.objectContaining({
+            sources: expect.objectContaining({
+              visualStyle: "project",
+              aspectRatio: "shot",
+              visualManual: "shot",
+              directorManual: "shot",
+            }),
+          }),
           forceFailure: true,
         }),
       }),
@@ -348,6 +395,20 @@ describe("GenerationService", () => {
     expect(result.job.inputJson).toMatchObject({
       operation: "shot_to_image",
       referenceAssetIds: ["asset_ref_1"],
+      generationSettings: {
+        effective: expect.objectContaining({
+          visualStyle: "project cinematic noir",
+          aspectRatio: "16:9",
+          visualManual: expect.objectContaining({
+            artStyle: "project rainy noir",
+            lens: "shot long lens",
+          }),
+          directorManual: expect.objectContaining({
+            pacing: "project slow-burn",
+            cameraLanguage: "shot surveillance angle",
+          }),
+        }),
+      },
     });
     expect(result.queueSummary).toMatchObject({ queued: 1, running: 1, failed: 1 });
   });
@@ -393,6 +454,100 @@ describe("GenerationService", () => {
     });
   });
 
+  it("stores programmable image provider version metadata without credentials in job input", async () => {
+    enableProgrammableImage(providersService);
+
+    await service.createJob("project_1", {
+      operation: "shot_to_image",
+      sourceNodeId: "shot_1",
+      provider: "custom:atlas-cloud",
+      model: "atlas-image-v1",
+    });
+
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        provider: "custom:atlas-cloud",
+        model: "atlas-image-v1",
+        inputJson: expect.objectContaining({
+          provider: "custom:atlas-cloud",
+          providerVersionId: "programmable_version_1",
+          model: "atlas-image-v1",
+          referenceAssetIds: [],
+        }),
+      }),
+    });
+    expect(JSON.stringify(vi.mocked(prisma.generationJob.create).mock.calls)).not.toContain("sk-secret");
+  });
+
+  it("creates a character reference image job from Character node data", async () => {
+    const result = await service.createJob("project_1", {
+      operation: "character_to_image",
+      sourceNodeId: "character_1",
+      provider: "mock-image",
+      aspectRatio: "1:1",
+    });
+
+    expect(canvasService.getCanvas).toHaveBeenCalledWith("project_1");
+    expect(promptService.composeShotPrompt).not.toHaveBeenCalled();
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        operation: "character_to_image",
+        provider: "mock-image",
+        model: "mock-image-v1",
+        sourceNodeId: "character_1",
+        inputJson: expect.objectContaining({
+          operation: "character_to_image",
+          characterNodeId: "character_1",
+          prompt: expect.stringContaining("consistent hero character reference"),
+          referenceAssetIds: ["asset_character_ref"],
+          assetPurpose: "character_reference",
+        }),
+      }),
+    });
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "character_1" },
+      data: { status: "queued" },
+    });
+    expect(result.job.operation).toBe("character_to_image");
+  });
+
+  it("creates a location reference image job from Location node data", async () => {
+    const result = await service.createJob("project_1", {
+      operation: "location_to_image",
+      sourceNodeId: "location_1",
+      provider: "mock-image",
+      aspectRatio: "16:9",
+    });
+
+    expect(canvasService.getCanvas).toHaveBeenCalledWith("project_1");
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        operation: "location_to_image",
+        provider: "mock-image",
+        model: "mock-image-v1",
+        sourceNodeId: "location_1",
+        inputJson: expect.objectContaining({
+          operation: "location_to_image",
+          locationNodeId: "location_1",
+          prompt: expect.stringContaining("rooftop control room with glowing signal screens"),
+          referenceAssetIds: ["asset_location_ref"],
+          assetPurpose: "location_reference",
+        }),
+      }),
+    });
+    expect(result.job.operation).toBe("location_to_image");
+  });
+
+  it("rejects character reference generation from the wrong node type", async () => {
+    await expect(
+      service.createJob("project_1", {
+        operation: "character_to_image",
+        sourceNodeId: "location_1",
+      }),
+    ).rejects.toThrow("Character reference generation requires a Character node");
+    expect(prisma.generationJob.create).not.toHaveBeenCalled();
+  });
+
   it("creates an image-to-video job from an ImageNode and parent Shot context", async () => {
     const result = await service.createJob("project_1", {
       operation: "image_to_video",
@@ -414,10 +569,62 @@ describe("GenerationService", () => {
           durationSeconds: 5,
           aspectRatio: "16:9",
           resolution: "720p",
+          generationSettings: expect.objectContaining({
+            effective: expect.objectContaining({
+              visualStyle: "project cinematic noir",
+              aspectRatio: "16:9",
+            }),
+          }),
         }),
       }),
     });
     expect(result.job.operation).toBe("image_to_video");
+  });
+
+  it("creates an image refinement job from an ImageNode asset and prompt", async () => {
+    const result = await service.createJob("project_1", {
+      operation: "image_refinement",
+      sourceNodeId: "image_1",
+      refinementPrompt: "make the lighting warmer",
+      provider: "mock-image",
+      aspectRatio: "16:9",
+      providerParams: {},
+    });
+
+    expect(canvasService.getCanvas).toHaveBeenCalledWith("project_1");
+    expect(promptService.composeShotPrompt).toHaveBeenCalledWith("project_1", "shot_1");
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        operation: "image_refinement",
+        provider: "mock-image",
+        model: "mock-image-v1",
+        sourceNodeId: "image_1",
+        inputJson: expect.objectContaining({
+          operation: "image_refinement",
+          imageNodeId: "image_1",
+          sourceImageAssetId: "asset_image_1",
+          prompt: "make the lighting warmer",
+          sourceNodeIds: ["image_1", "shot_1", "scene_1", "character_1", "location_1"],
+          generationSettings: expect.objectContaining({
+            effective: expect.objectContaining({
+              visualStyle: "project cinematic noir",
+              visualManual: expect.objectContaining({
+                artStyle: "project rainy noir",
+                lens: "shot long lens",
+              }),
+              directorManual: expect.objectContaining({
+                cameraLanguage: "shot surveillance angle",
+              }),
+            }),
+          }),
+        }),
+      }),
+    });
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "image_1" },
+      data: { status: "queued" },
+    });
+    expect(result.job.operation).toBe("image_refinement");
   });
 
   it("creates an image-to-video job with enabled real video provider settings", async () => {
@@ -485,6 +692,23 @@ describe("GenerationService", () => {
     await expect(
       service.createJob("project_1", { operation: "image_to_video", sourceNodeId: "missing" }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("rejects image refinement before the source ImageNode has an asset", async () => {
+    canvasService.getCanvas.mockResolvedValue(
+      canvasLoadResult({
+        nodes: [canvasNode<ImageNodeData>("image_1", "image", "Generated Image", {})],
+      }),
+    );
+
+    await expect(
+      service.createJob("project_1", {
+        operation: "image_refinement",
+        sourceNodeId: "image_1",
+        refinementPrompt: "make it warmer",
+      }),
+    ).rejects.toThrow("Image node must have an image asset before refinement");
+    expect(prisma.generationJob.create).not.toHaveBeenCalled();
   });
 
   it("creates batch image-to-video child jobs and reports skipped nodes", async () => {
@@ -606,7 +830,16 @@ describe("GenerationService", () => {
     expect(prisma.generationJob.findFirst).toHaveBeenCalledWith({
       where: {
         status: { in: ["queued", "provider_waiting"] },
-        operation: { in: ["shot_to_image", "image_to_video", "editor_export"] },
+        operation: {
+          in: [
+            "shot_to_image",
+            "character_to_image",
+            "location_to_image",
+            "image_refinement",
+            "image_to_video",
+            "editor_export",
+          ],
+        },
       },
       orderBy: { createdAt: "asc" },
     });
@@ -982,6 +1215,11 @@ describe("GenerationService", () => {
           generationJobId: "job_1",
           generationOperation: "shot_to_image",
           generatedFromNodeId: "shot_1",
+          generationSettings: expect.objectContaining({
+            effective: expect.objectContaining({
+              visualStyle: "project cinematic noir",
+            }),
+          }),
         }),
       }),
     });
@@ -1007,11 +1245,210 @@ describe("GenerationService", () => {
           targetNodeId: "image_1",
           assetId: "asset_generated_1",
           edgeId: "edge_generated_image_1",
+          generationSettings: expect.objectContaining({
+            sources: expect.objectContaining({
+              visualStyle: "project",
+              visualManual: "shot",
+              directorManual: "shot",
+            }),
+          }),
         }),
       }),
     });
     expect(result.status).toBe("succeeded");
     expect(result.targetNodeId).toBe("image_1");
+  });
+
+  it("completes character reference image jobs by binding the generated Asset to the source node", async () => {
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "character_to_image",
+        status: "running",
+        provider: "mock-image",
+        model: "mock-image-v1",
+        sourceNodeId: "character_1",
+        inputJson: characterInput(),
+      }),
+    );
+    prisma.canvasNode.findFirst.mockResolvedValue(
+      canvasNode<CharacterAssetNodeData>("character_1", "character_asset", "Hero", {
+        appearance: "rain-damp hair and a dark utility coat",
+        locked: true,
+        lockedFields: ["appearance"],
+        referenceAssetIds: ["asset_character_ref"],
+      }),
+    );
+    prisma.generationJob.update.mockResolvedValue(
+      generationJob({
+        operation: "character_to_image",
+        status: "succeeded",
+        sourceNodeId: "character_1",
+        outputJson: {
+          operation: "character_to_image",
+          assetId: "asset_generated_1",
+        },
+      }),
+    );
+
+    const result = await service.succeedJob("job_1", {
+      assetId: "provider_character_ref_1",
+      storageKey: "mock/images/provider_character_ref_1.png",
+      mimeType: "image/png",
+      provider: "mock-image",
+      model: "mock-image-v1",
+      prompt: "Character reference prompt",
+      referenceAssetIds: ["asset_character_ref"],
+    });
+
+    expect(assetsService.createGeneratedAsset).toHaveBeenCalledWith(
+      "project_1",
+      expect.objectContaining({
+        purpose: "character_reference",
+        providerOutput: expect.objectContaining({
+          storageKey: "mock/images/provider_character_ref_1.png",
+        }),
+        metadataJson: expect.objectContaining({
+          generationJobId: "job_1",
+          operation: "character_to_image",
+          sourceNodeId: "character_1",
+        }),
+      }),
+      expect.any(Object),
+    );
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "character_1" },
+      data: {
+        status: "succeeded",
+        dataJson: expect.objectContaining({
+          appearance: "rain-damp hair and a dark utility coat",
+          locked: true,
+          lockedFields: ["appearance"],
+          referenceAssetIds: ["asset_character_ref", "asset_generated_1"],
+        }),
+      },
+    });
+    expect(prisma.canvasNode.create).not.toHaveBeenCalled();
+    expect(prisma.canvasEdge.create).not.toHaveBeenCalled();
+    expect(prisma.generationJob.update).toHaveBeenCalledWith({
+      where: { id: "job_1" },
+      data: expect.objectContaining({
+        status: "succeeded",
+        outputJson: expect.objectContaining({
+          operation: "character_to_image",
+          sourceNodeId: "character_1",
+          assetId: "asset_generated_1",
+          referenceAssetIds: ["asset_character_ref"],
+        }),
+      }),
+    });
+    expect(result.status).toBe("succeeded");
+    expect(result.targetNodeId).toBeUndefined();
+  });
+
+  it("completes image refinement jobs with a refined ImageNode and derived_from edge", async () => {
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "image_refinement",
+        status: "running",
+        provider: "mock-image",
+        model: "mock-image-v1",
+        sourceNodeId: "image_1",
+        inputJson: imageRefinementInput(),
+      }),
+    );
+    prisma.canvasNode.findFirst.mockResolvedValue(
+      canvasNode<ImageNodeData>("image_1", "image", "Generated Image", {
+        assetId: "asset_image_1",
+        prompt: "Image prompt: hero at console",
+      }),
+    );
+    prisma.canvasNode.create.mockResolvedValue(
+      canvasNode<ImageNodeData>("image_refined_1", "image", "Generated Image Refined Image", {
+        assetId: "asset_generated_1",
+      }),
+    );
+    prisma.canvasEdge.create.mockResolvedValue(
+      canvasEdge("edge_refined_image_1", "image_1", "image_refined_1", "derived_from"),
+    );
+    prisma.generationJob.update.mockResolvedValue(
+      generationJob({
+        operation: "image_refinement",
+        status: "succeeded",
+        targetNodeId: "image_refined_1",
+        outputJson: {
+          operation: "image_refinement",
+          assetId: "asset_generated_1",
+          targetNodeId: "image_refined_1",
+          edgeId: "edge_refined_image_1",
+        },
+      }),
+    );
+
+    const result = await service.succeedJob("job_1", {
+      assetId: "provider_asset_refined_1",
+      storageKey: "mock/images/provider_asset_refined_1.png",
+      mimeType: "image/png",
+      provider: "mock-image",
+      model: "mock-image-v1",
+      prompt: "make the lighting warmer",
+      referenceAssetIds: ["asset_image_1", "asset_ref_1"],
+    });
+
+    expect(assetsService.createGeneratedAsset).toHaveBeenCalledWith(
+      "project_1",
+      expect.objectContaining({
+        purpose: "shot_keyframe",
+        providerOutput: expect.objectContaining({
+          storageKey: "mock/images/provider_asset_refined_1.png",
+        }),
+        metadataJson: expect.objectContaining({
+          generationJobId: "job_1",
+          operation: "image_refinement",
+          sourceNodeId: "image_1",
+        }),
+      }),
+      expect.any(Object),
+    );
+    expect(prisma.canvasNode.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "image",
+        title: "Generated Image Refined Image",
+        dataJson: expect.objectContaining({
+          assetId: "asset_generated_1",
+          generationOperation: "image_refinement",
+          generatedFromNodeId: "image_1",
+          sourceNodeIds: ["image_1", "shot_1"],
+          referenceAssetIds: ["asset_image_1", "asset_ref_1"],
+        }),
+      }),
+    });
+    expect(prisma.canvasEdge.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sourceNodeId: "image_1",
+        targetNodeId: "image_refined_1",
+        relation: "derived_from",
+        dataJson: expect.objectContaining({
+          generationJobId: "job_1",
+          assetId: "asset_generated_1",
+        }),
+      }),
+    });
+    expect(prisma.generationJob.update).toHaveBeenCalledWith({
+      where: { id: "job_1" },
+      data: expect.objectContaining({
+        status: "succeeded",
+        targetNodeId: "image_refined_1",
+        outputJson: expect.objectContaining({
+          operation: "image_refinement",
+          sourceNodeId: "image_1",
+          targetNodeId: "image_refined_1",
+          assetId: "asset_generated_1",
+          edgeId: "edge_refined_image_1",
+        }),
+      }),
+    });
+    expect(result.status).toBe("succeeded");
+    expect(result.targetNodeId).toBe("image_refined_1");
   });
 
   it("completes editor export jobs with package asset, package node, and editor edges", async () => {
@@ -1082,6 +1519,15 @@ describe("GenerationService", () => {
           editorExportId: "export_1",
           selectedVideoNodeIds: ["video_1", "video_2"],
           sortMode: "manual",
+          exportPreset: "standard_zip",
+          generationSettings: expect.objectContaining({
+            effective: expect.objectContaining({
+              visualStyle: "project cinematic noir",
+            }),
+          }),
+          packagingReferences: expect.objectContaining({
+            bgm: expect.objectContaining({ assetId: "asset_bgm_1" }),
+          }),
         }),
       }),
       expect.any(Object),
@@ -1096,7 +1542,16 @@ describe("GenerationService", () => {
           editorExportId: "export_1",
           packageAssetId: "asset_package_1",
           selectedVideoNodeIds: ["video_1", "video_2"],
+          exportPreset: "standard_zip",
           clipCount: 2,
+          generationSettings: expect.objectContaining({
+            sources: expect.objectContaining({
+              visualStyle: "project",
+            }),
+          }),
+          packagingReferences: expect.objectContaining({
+            bgm: expect.objectContaining({ status: "available" }),
+          }),
         }),
       }),
     });
@@ -1433,6 +1888,24 @@ describe("GenerationService", () => {
     });
     expect(result.retryJob.id).toBe("retry_export_job");
   });
+
+  it("rejects editor export completion when the package preset differs from the job", async () => {
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "editor_export",
+        status: "running",
+        provider: "mock-editor",
+        model: "zip-v1",
+        sourceNodeId: null,
+        inputJson: editorExportInput({ exportPreset: "hd_1080p" }),
+      }),
+    );
+
+    await expect(
+      service.succeedJob("job_1", undefined, undefined, editorExportPackageOutput()),
+    ).rejects.toThrow("Editor export package preset does not match the claimed job");
+    expect(prisma.generationJob.updateMany).not.toHaveBeenCalled();
+  });
 });
 
 function shotToImageInput(overrides: Partial<ShotToImageJobInput> = {}): ShotToImageJobInput {
@@ -1456,6 +1929,25 @@ function shotToImageInput(overrides: Partial<ShotToImageJobInput> = {}): ShotToI
     provider: "mock-image",
     model: "mock-image-v1",
     providerParams: {},
+    generationSettings: resolvedGenerationSettings(),
+    ...overrides,
+  };
+}
+
+function characterInput(overrides: Partial<CharacterToImageJobInput> = {}): CharacterToImageJobInput {
+  return {
+    operation: "character_to_image",
+    projectId: "project_1",
+    sourceNodeId: "character_1",
+    characterNodeId: "character_1",
+    prompt: "Character reference prompt",
+    referenceAssetIds: ["asset_character_ref"],
+    sourceNodeIds: ["character_1"],
+    provider: "mock-image",
+    model: "mock-image-v1",
+    aspectRatio: "1:1",
+    providerParams: {},
+    assetPurpose: "character_reference",
     ...overrides,
   };
 }
@@ -1477,7 +1969,94 @@ function videoInput(overrides: Partial<ImageToVideoJobInput> = {}): ImageToVideo
     provider: "mock-video",
     model: "mock-video-v1",
     providerParams: {},
+    generationSettings: resolvedGenerationSettings(),
     ...overrides,
+  };
+}
+
+function imageRefinementInput(overrides: Partial<ImageRefinementJobInput> = {}): ImageRefinementJobInput {
+  return {
+    operation: "image_refinement",
+    projectId: "project_1",
+    sourceNodeId: "image_1",
+    imageNodeId: "image_1",
+    sourceImageAssetId: "asset_image_1",
+    prompt: "make the lighting warmer",
+    referenceAssetIds: ["asset_ref_1"],
+    sourceNodeIds: ["image_1", "shot_1"],
+    parentShotNodeId: "shot_1",
+    provider: "mock-image",
+    model: "mock-image-v1",
+    aspectRatio: "16:9",
+    providerParams: {},
+    generationSettings: resolvedGenerationSettings(),
+    ...overrides,
+  };
+}
+
+function resolvedGenerationSettings(): ResolvedGenerationSettings {
+  return {
+    project: {
+      visualStyle: "project cinematic noir",
+      aspectRatio: "9:16",
+      visualManual: {
+        artStyle: "project rainy noir",
+        palette: "cyan shadows and amber signals",
+        lighting: "practical console light",
+      },
+      directorManual: {
+        pacing: "project slow-burn",
+        cameraLanguage: "project controlled push-ins",
+        performance: "quiet urgency",
+      },
+      subtitle: { status: "requested_unresolved", label: "Project captions" },
+    },
+    shot: {
+      aspectRatio: "16:9",
+      narrationAccent: "warm narration",
+      visualManual: {
+        lens: "shot long lens",
+      },
+      directorManual: {
+        cameraLanguage: "shot surveillance angle",
+      },
+    },
+    effective: {
+      visualStyle: "project cinematic noir",
+      aspectRatio: "16:9",
+      narrationAccent: "warm narration",
+      visualManual: {
+        artStyle: "project rainy noir",
+        palette: "cyan shadows and amber signals",
+        lighting: "practical console light",
+        lens: "shot long lens",
+      },
+      directorManual: {
+        pacing: "project slow-burn",
+        cameraLanguage: "shot surveillance angle",
+        performance: "quiet urgency",
+      },
+      subtitle: { status: "requested_unresolved", label: "Project captions" },
+    },
+    sources: {
+      visualStyle: "project",
+      aspectRatio: "shot",
+      narrationAccent: "shot",
+      visualManual: "shot",
+      visualManualFields: {
+        artStyle: "project",
+        palette: "project",
+        lighting: "project",
+        lens: "shot",
+      },
+      directorManual: "shot",
+      directorManualFields: {
+        pacing: "project",
+        cameraLanguage: "shot",
+        performance: "project",
+      },
+      subtitle: "project",
+    },
   };
 }
 
@@ -1488,10 +2067,17 @@ function editorExportInput(overrides: Partial<EditorExportJobInput> = {}): Edito
     editorExportId: "export_1",
     videoNodeIds: ["video_1", "video_2"],
     sortMode: "manual",
+    exportPreset: "standard_zip",
     includeStoryboardCsv: true,
     includeSubtitles: false,
     fps: 24,
     aspectRatio: "16:9",
+    generationSettings: resolvedGenerationSettings(),
+    packagingReferences: {
+      project: resolvedGenerationSettings(),
+      bgm: { status: "available", assetId: "asset_bgm_1", label: "Main cue" },
+      subtitle: { status: "requested_unresolved", label: "Project captions" },
+    },
     clips: [
       {
         videoNodeId: "video_1",
@@ -1540,6 +2126,7 @@ function editorExportPackageOutput(
       aspectRatio: "16:9",
       fps: 24,
       sortMode: "manual",
+      exportPreset: "standard_zip",
       tracks: [
         {
           id: "track_video_1",
@@ -1615,6 +2202,7 @@ function composedShotPrompt(): ShotPromptCompositionResult {
     },
     referenceAssetIds: ["asset_ref_1"],
     negativePrompt: "no text",
+    resolvedGenerationSettings: resolvedGenerationSettings(),
     image: {
       channel: "image",
       prompt: "Image prompt: hero at console",
@@ -1645,6 +2233,26 @@ function generationCanvas(): CanvasLoadResult {
       canvasNode<ImageNodeData>("image_1", "image", "Generated Image", {
         assetId: "asset_image_1",
         prompt: "Image prompt: hero at console",
+      }),
+      canvasNode<CharacterAssetNodeData>("character_1", "character_asset", "Hero", {
+        name: "Hero",
+        role: "protagonist",
+        appearance: "rain-damp hair and a dark utility coat",
+        personality: "determined and observant",
+        wardrobe: "dark utility coat",
+        identityPrompt: "consistent hero character reference",
+        consistencyPrompt: "preserve face, coat, and silhouette",
+        locked: true,
+        lockedFields: ["appearance", "wardrobe"],
+        referenceAssetIds: ["asset_character_ref"],
+      }),
+      canvasNode<LocationAssetNodeData>("location_1", "location_asset", "Control Room", {
+        name: "Control Room",
+        environment: "near-future rooftop control room",
+        mood: "tense and rainy",
+        visualStyle: "cinematic neon noir",
+        locationPrompt: "rooftop control room with glowing signal screens",
+        referenceAssetIds: ["asset_location_ref"],
       }),
     ],
     edges: [canvasEdge("edge_generated_image", "shot_1", "image_1", "generated_image")],

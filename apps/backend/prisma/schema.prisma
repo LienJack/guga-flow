@@ -26,6 +26,7 @@ enum CanvasNodeType {
 
 enum CanvasEdgeRelation {
   derived_from
+  story_seed
   belongs_to_scene
   references_character
   references_location
@@ -52,6 +53,7 @@ enum NodeStatus {
 enum AssetType {
   image
   video
+  audio
   document
   package
 }
@@ -59,9 +61,12 @@ enum AssetType {
 enum AssetPurpose {
   uploaded
   shot_keyframe
+  shot_audio
   character_reference
+  voice_reference
   location_reference
   style_reference
+  background_music
   shot_clip
   editor_package
 }
@@ -80,11 +85,13 @@ enum GenerationOperation {
   shot_to_image
   character_to_image
   location_to_image
+  image_refinement
   image_to_video
   shot_to_video
   batch_shots_to_images
   batch_images_to_videos
   editor_export
+  agent_canvas_action
 }
 
 enum EditorExportStatus {
@@ -123,6 +130,7 @@ model Project {
   title              String
   description        String?
   defaultAspectRatio String              @default("9:16")
+  generationSettingsJson Json?
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   owner              User                @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
@@ -135,6 +143,11 @@ model Project {
   generationJobs     GenerationJob[]
   editorExports      EditorExport[]
   providerConfigs    ProviderConfig[]
+  programmableProviders ProgrammableProvider[]
+  agentMemories      AgentMemory[]
+  skillTemplates     SkillTemplate[]
+  novelEventGraphs   NovelEventGraph[]
+  scriptDrafts       ScriptDraft[]
 
   @@index([ownerUserId])
 }
@@ -151,8 +164,43 @@ model NovelDocument {
   updatedAt  DateTime @updatedAt
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   drafts     StoryboardDraft[]
+  eventGraphs NovelEventGraph[]
+  scriptDrafts ScriptDraft[]
 
   @@index([projectId])
+}
+
+model NovelEventGraph {
+  id              String        @id @default(cuid())
+  projectId       String
+  novelDocumentId String
+  chaptersJson    Json          @default("[]")
+  eventsJson      Json          @default("[]")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  novelDocument   NovelDocument @relation(fields: [novelDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, novelDocumentId])
+  @@index([novelDocumentId, createdAt])
+}
+
+model ScriptDraft {
+  id              String        @id @default(cuid())
+  projectId       String
+  novelDocumentId String
+  version         Int
+  title           String
+  strategy        String
+  status          String        @default("draft")
+  scriptJson      Json          @default("{}")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  novelDocument   NovelDocument @relation(fields: [novelDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([novelDocumentId, version])
+  @@index([projectId, novelDocumentId])
 }
 
 model StoryboardDraft {
@@ -320,10 +368,105 @@ model ProviderConfig {
   displayName  String?
   defaultModel String?
   paramsJson   Json?
+  secretJson   Json?
+  lastTestStatus String?
+  lastTestedAt DateTime?
+  lastTestModel String?
+  lastTestMessage String?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, kind, provider])
   @@index([kind, provider])
+}
+
+model AgentMemory {
+  id        String   @id @default(cuid())
+  projectId String
+  scope     String   @default("project")
+  title     String
+  content   String
+  summary   String
+  tagsJson  Json     @default("[]")
+  source    String   @default("manual")
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, enabled])
+  @@index([projectId, scope])
+}
+
+model SkillTemplate {
+  id              String                 @id @default(cuid())
+  projectId       String
+  kind            String
+  slug            String
+  displayName     String
+  description     String?
+  enabled         Boolean                @default(true)
+  activeVersionId String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  project         Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions        SkillTemplateVersion[] @relation("SkillTemplateVersions")
+  activeVersion   SkillTemplateVersion?  @relation("ActiveSkillTemplateVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, kind, slug])
+  @@index([projectId, kind])
+  @@index([activeVersionId])
+}
+
+model SkillTemplateVersion {
+  id              String          @id @default(cuid())
+  skillTemplateId String
+  version         Int
+  sourceText      String
+  status          String
+  diagnosticsJson Json            @default("[]")
+  createdAt       DateTime        @default(now())
+  skillTemplate   SkillTemplate   @relation("SkillTemplateVersions", fields: [skillTemplateId], references: [id], onDelete: Cascade)
+  activeFor       SkillTemplate[] @relation("ActiveSkillTemplateVersion")
+
+  @@unique([skillTemplateId, version])
+  @@index([skillTemplateId])
+  @@index([status])
+}
+
+model ProgrammableProvider {
+  id              String                        @id @default(cuid())
+  projectId       String
+  kind            ProviderKind
+  provider        String
+  displayName     String
+  description     String?
+  activeVersionId String?
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+  project         Project                       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions        ProgrammableProviderVersion[] @relation("ProgrammableProviderVersions")
+  activeVersion   ProgrammableProviderVersion?  @relation("ActiveProgrammableProviderVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, kind, provider])
+  @@index([projectId, kind])
+  @@index([activeVersionId])
+}
+
+model ProgrammableProviderVersion {
+  id                   String                 @id @default(cuid())
+  programmableProviderId String
+  version              Int
+  sourceCode           String
+  manifestJson         Json?
+  status               String
+  diagnosticsJson      Json                   @default("[]")
+  createdAt            DateTime               @default(now())
+  programmableProvider ProgrammableProvider   @relation("ProgrammableProviderVersions", fields: [programmableProviderId], references: [id], onDelete: Cascade)
+  activeFor            ProgrammableProvider[] @relation("ActiveProgrammableProviderVersion")
+
+  @@unique([programmableProviderId, version])
+  @@index([programmableProviderId])
+  @@index([status])
 }

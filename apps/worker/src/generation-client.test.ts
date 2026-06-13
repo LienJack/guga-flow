@@ -23,6 +23,7 @@ describe("generation worker client configuration", () => {
     const client = new HttpGenerationWorkerClient(
       "http://localhost:3002/api/v1",
       fetchImpl as unknown as typeof fetch,
+      "worker-secret",
     );
 
     const result = await client.getAssetBytes("project_1", "asset_video_1");
@@ -39,6 +40,7 @@ describe("generation worker client configuration", () => {
     const client = new HttpGenerationWorkerClient(
       "http://localhost:3002/api/v1",
       fetchImpl as unknown as typeof fetch,
+      "worker-secret",
     );
 
     await client.succeedEditorExportJob("job_export_1", {
@@ -53,6 +55,7 @@ describe("generation worker client configuration", () => {
         aspectRatio: "16:9",
         fps: 24,
         sortMode: "manual",
+        exportPreset: "standard_zip",
         tracks: [],
         assets: [],
       },
@@ -67,5 +70,40 @@ describe("generation worker client configuration", () => {
         body: expect.stringContaining("packageOutput"),
       }),
     );
+  });
+
+  it("posts provider runtime config requests without putting credentials in job payloads", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          kind: "image",
+          provider: "image2",
+          env: { OPENAI_API_KEY: "sk-runtime" },
+        }),
+      ),
+    );
+    const client = new HttpGenerationWorkerClient(
+      "http://localhost:3002/api/v1",
+      fetchImpl as unknown as typeof fetch,
+      "worker-secret",
+    );
+
+    const result = await client.getProviderRuntimeConfig("project_1", "image", "image2");
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:3002/api/v1/worker/generation/providers/runtime",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "x-worker-token": "worker-secret",
+        }),
+        body: JSON.stringify({
+          projectId: "project_1",
+          kind: "image",
+          provider: "image2",
+        }),
+      }),
+    );
+    expect(result.env.OPENAI_API_KEY).toBe("sk-runtime");
   });
 });

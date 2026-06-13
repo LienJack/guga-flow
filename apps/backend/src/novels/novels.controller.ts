@@ -3,6 +3,7 @@ import { Body, Controller, Delete, Get, Inject, Param, Patch, Post } from "@nest
 import {
   CreateCreativeStoryboardDto,
   CreateNovelDocumentDto,
+  CreateScriptDraftDto,
   ImportNovelSourceDto,
   UpdateNovelDocumentDto,
   UpdateStoryboardDraftDto,
@@ -58,6 +59,48 @@ export class NovelsController {
   @Post(":novelId/generate-storyboard")
   generateStoryboard(@Param("projectId") projectId: string, @Param("novelId") novelId: string) {
     return this.novelsService.generateStoryboard(projectId, novelId);
+  }
+
+  @Post(":novelId/extract-events")
+  extractChapterEvents(@Param("projectId") projectId: string, @Param("novelId") novelId: string) {
+    return this.novelsService.extractChapterEvents(projectId, novelId);
+  }
+
+  @Get(":novelId/event-graph")
+  getLatestEventGraph(@Param("projectId") projectId: string, @Param("novelId") novelId: string) {
+    return this.novelsService.getLatestEventGraph(projectId, novelId);
+  }
+
+  @Get(":novelId/script-drafts")
+  listScriptDrafts(@Param("projectId") projectId: string, @Param("novelId") novelId: string) {
+    return this.novelsService.listScriptDrafts(projectId, novelId);
+  }
+
+  @Post(":novelId/script-drafts")
+  createScriptDraft(
+    @Param("projectId") projectId: string,
+    @Param("novelId") novelId: string,
+    @Body() body: CreateScriptDraftDto,
+  ) {
+    return this.novelsService.createScriptDraft(projectId, novelId, body ?? {});
+  }
+
+  @Get(":novelId/script-drafts/:scriptDraftId/export")
+  exportScriptDraft(
+    @Param("projectId") projectId: string,
+    @Param("novelId") novelId: string,
+    @Param("scriptDraftId") scriptDraftId: string,
+  ) {
+    return this.novelsService.exportScriptDraft(projectId, novelId, scriptDraftId);
+  }
+
+  @Post(":novelId/script-drafts/:scriptDraftId/generate-storyboard")
+  generateStoryboardFromScriptDraft(
+    @Param("projectId") projectId: string,
+    @Param("novelId") novelId: string,
+    @Param("scriptDraftId") scriptDraftId: string,
+  ) {
+    return this.novelsService.generateStoryboardFromScriptDraft(projectId, novelId, scriptDraftId);
   }
 
   @Get(":novelId/storyboard-draft")

@@ -30,11 +30,14 @@ export async function buildEditorExportPackage(
   if (!input.clips.length) {
     throw new Error("Editor export requires at least one clip");
   }
+  const exportPreset = input.exportPreset ?? "standard_zip";
 
   const clipOutputs: EditorExportClipOutput[] = [];
   const zipEntries: Array<{ name: string; data: Buffer }> = [];
   const timelineItems: TimelineItem[] = [];
+  const audioTimelineItems: TimelineItem[] = [];
   const timelineAssets: TimelineAsset[] = [];
+  const timelineAssetIds = new Set<string>();
   const storyboardRows: EditorExportStoryboardRow[] = [];
   let startMs = 0;
 
@@ -43,6 +46,7 @@ export async function buildEditorExportPackage(
     const clipBytes = await options.readClip(clip);
     const durationMs = clip.durationMs ?? durationMsFromSeconds(clip.durationSeconds) ?? DEFAULT_CLIP_DURATION_MS;
     const filename = normalizeZipPath(clip.filename || `clips/shot_${String(index + 1).padStart(3, "0")}.mp4`);
+    const audioReferences = clip.audioReferences ?? [];
 
     zipEntries.push({ name: filename, data: clipBytes.body });
     clipOutputs.push({
@@ -51,8 +55,11 @@ export async function buildEditorExportPackage(
       videoNodeId: clip.videoNodeId,
       videoAssetId: clip.videoAssetId,
       durationMs,
+      generationSettings: clip.generationSettings,
+      packagingSettings: clip.packagingSettings,
+      audioReferences: audioReferences.length ? audioReferences : undefined,
     });
-    timelineAssets.push({
+    addTimelineAsset(timelineAssets, timelineAssetIds, {
       id: clip.videoAssetId,
       type: "video",
       url: filename,
@@ -60,6 +67,39 @@ export async function buildEditorExportPackage(
       mimeType: clip.mimeType ?? clipBytes.mimeType ?? "video/mp4",
       durationMs,
     });
+    for (let audioIndex = 0; audioIndex < audioReferences.length; audioIndex += 1) {
+      const audioReference = audioReferences[audioIndex];
+      if (!audioReference) {
+        continue;
+      }
+      const timelineAudioAsset: TimelineAsset = {
+        id: audioReference.assetId,
+        type: "audio",
+        url: `asset://${audioReference.assetId}`,
+      };
+      if (audioReference.mimeType) {
+        timelineAudioAsset.mimeType = audioReference.mimeType;
+      }
+      if (typeof audioReference.durationMs === "number" && Number.isFinite(audioReference.durationMs)) {
+        timelineAudioAsset.durationMs = audioReference.durationMs;
+      }
+      addTimelineAsset(timelineAssets, timelineAssetIds, timelineAudioAsset);
+      audioTimelineItems.push({
+        id: `audio_${String(index + 1).padStart(3, "0")}_${String(audioIndex + 1).padStart(2, "0")}`,
+        assetId: audioReference.assetId,
+        sourceNodeId: audioReference.sourceNodeId,
+        startMs,
+        durationMs: audioItemDurationMs(audioReference.durationMs, durationMs),
+        metadata: {
+          videoNodeId: clip.videoNodeId,
+          shotNodeId: clip.shotNodeId ?? null,
+          sourceNodeType: audioReference.sourceNodeType ?? null,
+          role: audioReference.role ?? null,
+          label: audioReference.label ?? null,
+          mimeType: audioReference.mimeType ?? null,
+        },
+      });
+    }
     timelineItems.push({
       id: `item_${String(index + 1).padStart(3, "0")}`,
       assetId: clip.videoAssetId,
@@ -70,6 +110,10 @@ export async function buildEditorExportPackage(
         shotNodeId: clip.shotNodeId ?? null,
         shotNumber: clip.shotNumber ?? null,
         sortMode: input.sortMode,
+        exportPreset,
+        generationSettings: clip.generationSettings ?? null,
+        packagingSettings: clip.packagingSettings ?? null,
+        audioReferences: audioReferences.length ? audioReferences : null,
       },
     });
     storyboardRows.push({
@@ -94,18 +138,33 @@ export async function buildEditorExportPackage(
     aspectRatio: input.aspectRatio,
     fps: input.fps,
     sortMode: input.sortMode,
+    exportPreset,
     tracks: [
       {
         id: "track_video_1",
         type: "video",
         items: timelineItems,
       },
+      ...(audioTimelineItems.length
+        ? [
+            {
+              id: "track_audio_1",
+              type: "audio" as const,
+              items: audioTimelineItems,
+            },
+          ]
+        : []),
     ],
     assets: timelineAssets,
     metadata: {
       selectedVideoNodeIds: input.videoNodeIds,
+      sourceEditorExportId: input.sourceEditorExportId ?? null,
+      exportPreset,
+      presetOutputs: presetOutputsFor(exportPreset),
       includeStoryboardCsv: input.includeStoryboardCsv,
       includeSubtitles: input.includeSubtitles,
+      generationSettings: input.generationSettings ?? null,
+      packagingReferences: input.packagingReferences ?? null,
       totalDurationMs: startMs,
     },
   };
@@ -131,6 +190,39 @@ export async function buildEditorExportPackage(
     storyboardCsv,
     clips: clipOutputs,
   };
+}
+
+function presetOutputsFor(preset: EditorExportJobInput["exportPreset"]): string[] {
+  switch (preset) {
+    case "gif_preview":
+      return ["timeline", "storyboard_csv", "gif_preview_request"];
+    case "image_sequence":
+      return ["timeline", "storyboard_csv", "image_sequence_request"];
+    case "hd_1080p":
+      return ["timeline", "storyboard_csv", "hd_1080p_request"];
+    case "standard_zip":
+    default:
+      return ["timeline", "storyboard_csv", "clip_zip"];
+  }
+}
+
+function addTimelineAsset(
+  assets: TimelineAsset[],
+  seenIds: Set<string>,
+  asset: TimelineAsset,
+): void {
+  if (seenIds.has(asset.id)) {
+    return;
+  }
+  seenIds.add(asset.id);
+  assets.push(asset);
+}
+
+function audioItemDurationMs(audioDurationMs: number | undefined, clipDurationMs: number): number {
+  if (typeof audioDurationMs === "number" && Number.isFinite(audioDurationMs) && audioDurationMs > 0) {
+    return Math.min(audioDurationMs, clipDurationMs);
+  }
+  return clipDurationMs;
 }
 
 export function storyboardRowsToCsv(rows: EditorExportStoryboardRow[]): string {

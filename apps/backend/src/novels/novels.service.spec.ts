@@ -62,6 +62,77 @@ function generationJob(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function novelEventGraph(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "event_graph_1",
+    projectId: "project_1",
+    novelDocumentId: "novel_1",
+    chaptersJson: [
+      {
+        chapterIndex: 1,
+        title: "Chapter 1",
+        startOffset: 0,
+        endOffset: 80,
+        wordCount: 12,
+        summary: "The hero finds the signal.",
+      },
+    ],
+    eventsJson: [
+      {
+        eventId: "chapter_1_event_1",
+        title: "Chapter 1 Event 1",
+        orderIndex: 1,
+        chapterIndex: 1,
+        sourceExcerpt: "The hero finds the signal under the rain.",
+        summary: "The hero finds the signal under the rain.",
+      },
+    ],
+    createdAt,
+    updatedAt,
+    ...overrides,
+  };
+}
+
+function scriptDraft(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "script_1",
+    projectId: "project_1",
+    novelDocumentId: "novel_1",
+    version: 1,
+    title: "Rooftop Signal Script v1",
+    strategy: "short_drama",
+    status: "draft",
+    scriptJson: {
+      title: "Rooftop Signal Script v1",
+      logline: "Short-drama adaptation of Rooftop Signal across 1 scene.",
+      strategy: "short_drama",
+      scenes: [
+        {
+          sceneId: "script_scene_1",
+          orderIndex: 1,
+          title: "Scene 1: Chapter 1 Event 1",
+          summary: "The hero finds the signal under the rain.",
+          beats: [
+            {
+              beatId: "beat_1",
+              orderIndex: 1,
+              title: "Chapter 1 Event 1",
+              summary: "The hero finds the signal under the rain.",
+              sourceExcerpt: "The hero finds the signal under the rain.",
+              eventIds: ["chapter_1_event_1"],
+            },
+          ],
+          dialogue: "Narration: The hero finds the signal under the rain.",
+          shotHint: "Convert each beat into one clear visual shot.",
+        },
+      ],
+    },
+    createdAt,
+    updatedAt,
+    ...overrides,
+  };
+}
+
 function createPrismaMock() {
   return {
     project: {
@@ -83,13 +154,27 @@ function createPrismaMock() {
       create: vi.fn(async ({ data }) => generationJob(data)),
       update: vi.fn(async ({ data }) => generationJob(data)),
     },
+    novelEventGraph: {
+      create: vi.fn(async ({ data }) => novelEventGraph(data)),
+      findFirst: vi.fn(
+        async (): Promise<ReturnType<typeof novelEventGraph> | null> => null,
+      ),
+    },
+    scriptDraft: {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(async ({ data }) => scriptDraft(data)),
+      update: vi.fn(async ({ data }) => scriptDraft(data)),
+    },
     canvasNode: {
+      findMany: vi.fn(),
       deleteMany: vi.fn(),
     },
     canvasEdge: {
       deleteMany: vi.fn(),
     },
     asset: {
+      findMany: vi.fn(),
       deleteMany: vi.fn(),
     },
   };
@@ -168,6 +253,125 @@ describe("NovelsService", () => {
     expect(result.novel.sourceType).toBe("md");
   });
 
+  it("extracts deterministic chapter event graphs from long novel sources", async () => {
+    prisma.novelDocument.findFirst.mockResolvedValue(
+      novel({
+        content:
+          "Chapter 1 Signal\nThe courier finds a blue signal under the rainy overpass.\n\nThe rival arrives with a warning.\n\nChapter 2 Choice\nThe courier chooses to follow the signal.",
+        wordCount: 27,
+      }),
+    );
+    prisma.novelEventGraph.create.mockImplementation(async ({ data }) =>
+      novelEventGraph({
+        chaptersJson: data.chaptersJson,
+        eventsJson: data.eventsJson,
+      }),
+    );
+
+    const result = await service.extractChapterEvents("project_1", "novel_1");
+
+    expect(prisma.novelEventGraph.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          projectId: "project_1",
+          novelDocumentId: "novel_1",
+        }),
+      }),
+    );
+    expect(result.eventGraph.chapters.map((chapter) => chapter.title)).toEqual([
+      "Chapter 1 Signal",
+      "Chapter 2 Choice",
+    ]);
+    expect(result.eventGraph.events[0]).toMatchObject({
+      eventId: "chapter_1_event_1",
+      chapterIndex: 1,
+      sourceExcerpt: expect.stringContaining("blue signal"),
+    });
+  });
+
+  it("creates script drafts from the latest chapter event graph", async () => {
+    prisma.novelDocument.findFirst.mockResolvedValue(novel());
+    prisma.novelEventGraph.findFirst.mockResolvedValue(novelEventGraph());
+    prisma.scriptDraft.findMany.mockResolvedValue([]);
+    prisma.scriptDraft.create.mockImplementation(async ({ data }) =>
+      scriptDraft({
+        ...data,
+        id: "script_1",
+        scriptJson: data.scriptJson,
+      }),
+    );
+
+    const result = await service.createScriptDraft("project_1", "novel_1", {
+      strategy: "short_drama",
+    });
+
+    expect(prisma.scriptDraft.findMany).toHaveBeenCalledWith({
+      where: { projectId: "project_1", novelDocumentId: "novel_1" },
+      orderBy: { version: "desc" },
+      take: 1,
+    });
+    expect(prisma.scriptDraft.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          projectId: "project_1",
+          novelDocumentId: "novel_1",
+          version: 1,
+          strategy: "short_drama",
+          status: "draft",
+        }),
+      }),
+    );
+    expect(result.scriptDraft.script.scenes[0]?.beats[0]?.eventIds).toEqual([
+      "chapter_1_event_1",
+    ]);
+  });
+
+  it("exports script drafts as plain text and marks them exported", async () => {
+    prisma.novelDocument.findFirst.mockResolvedValue(novel());
+    prisma.scriptDraft.findFirst.mockResolvedValue(scriptDraft());
+
+    const result = await service.exportScriptDraft("project_1", "novel_1", "script_1");
+
+    expect(result.filename).toBe("rooftop-signal-script-v1-v1.txt");
+    expect(result.content).toContain("# Rooftop Signal Script v1");
+    expect(result.content).toContain("Chapter 1 Event 1");
+    expect(prisma.scriptDraft.update).toHaveBeenCalledWith({
+      where: { id: "script_1" },
+      data: { status: "exported" },
+    });
+  });
+
+  it("creates a storyboard draft from a selected script draft", async () => {
+    prisma.novelDocument.findFirst.mockResolvedValue(novel());
+    prisma.scriptDraft.findFirst.mockResolvedValue(scriptDraft());
+    prisma.storyboardDraft.create.mockImplementation(async ({ data }) =>
+      storyboardDraft({
+        ...data,
+        id: "draft_from_script",
+        storyboardJson: data.storyboardJson,
+      }),
+    );
+
+    const result = await service.generateStoryboardFromScriptDraft(
+      "project_1",
+      "novel_1",
+      "script_1",
+    );
+
+    expect(result.validation.success).toBe(true);
+    expect(result.draft?.provider).toBe("local-script-workbench");
+    expect(result.draft?.storyboard?.storyBlueprint?.timelineEvents?.[0]?.eventId).toBe(
+      "chapter_1_event_1",
+    );
+    expect(result.draft?.storyboard?.scenes[0]?.shots[0]?.storyEventIds).toEqual([
+      "chapter_1_event_1",
+    ]);
+    expect(prisma.scriptDraft.update).toHaveBeenCalledWith({
+      where: { id: "script_1" },
+      data: { status: "selected" },
+    });
+  });
+
   it("lists and updates novels inside one project scope", async () => {
     prisma.novelDocument.findMany.mockResolvedValue([novel()]);
     prisma.novelDocument.findFirst.mockResolvedValue(novel());
@@ -240,6 +444,7 @@ describe("NovelsService", () => {
 
   it("generates and stores validated mock storyboard drafts", async () => {
     prisma.novelDocument.findFirst.mockResolvedValue(novel());
+    prisma.novelEventGraph.findFirst.mockResolvedValue(novelEventGraph());
 
     const result = await service.generateStoryboard("project_1", "novel_1");
 
@@ -257,6 +462,12 @@ describe("NovelsService", () => {
       }),
     );
     expect(result.draft?.storyboard?.scenes[0]?.shots[0]?.imagePrompt).toContain("rooftop");
+    expect(result.draft?.storyboard?.storyBlueprint?.timelineEvents?.[0]?.eventId).toBe(
+      "chapter_1_event_1",
+    );
+    expect(result.draft?.storyboard?.scenes[0]?.shots[0]?.storyEventIds).toEqual([
+      "chapter_1_event_1",
+    ]);
   });
 
   it("creates a ready storyboard draft from a creative brief with a succeeded audit job", async () => {
@@ -359,6 +570,103 @@ describe("NovelsService", () => {
     expect(result.novel.id).toBe("novel_creative");
     expect(result.draft.readyForImport).toBe(true);
     expect(result.job.status).toBe("succeeded");
+  });
+
+  it("resolves reference ImageNodes into story seed assets for creative storyboard drafts", async () => {
+    prisma.canvasNode.findMany.mockResolvedValue([
+      {
+        id: "image_seed_1",
+        title: "Raincoat reference",
+        type: "image",
+        dataJson: { assetId: "asset_seed_1" },
+      },
+    ]);
+    prisma.asset.findMany.mockResolvedValue([
+      {
+        id: "asset_seed_1",
+        type: "image",
+        mimeType: "image/png",
+        originalFilename: "raincoat.png",
+      },
+    ]);
+    prisma.novelDocument.create.mockResolvedValue(
+      novel({
+        id: "novel_creative",
+        content:
+          "Creative idea: Build around the raincoat subject\nReference image assets: asset_seed_1\nReference image nodes: image_seed_1\nReference instruction: preserve the yellow raincoat\nInteraction layer: novice",
+      }),
+    );
+    prisma.storyboardDraft.create.mockImplementation(async ({ data }) =>
+      storyboardDraft({
+        ...data,
+        id: "draft_creative",
+        novelDocumentId: "novel_creative",
+      }),
+    );
+    prisma.generationJob.update.mockImplementation(async ({ data }) =>
+      generationJob({
+        ...data,
+        status: "succeeded",
+        inputJson: {
+          operation: "novel_to_storyboard",
+          projectId: "project_1",
+          idea: "Build around the raincoat subject",
+          mode: "novice",
+          referenceAssetIds: ["asset_seed_1"],
+          referenceImageNodeIds: ["image_seed_1"],
+          referencePrompt: "preserve the yellow raincoat",
+          provider: "mock-llm",
+          model: "mock-storyboard",
+        },
+      }),
+    );
+
+    const result = await service.createCreativeStoryboard("project_1", {
+      idea: "Build around the raincoat subject",
+      referenceImageNodeIds: ["image_seed_1"],
+      referencePrompt: "preserve the yellow raincoat",
+    });
+
+    expect(prisma.generationJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sourceNodeId: "image_seed_1",
+          inputJson: expect.objectContaining({
+            referenceAssetIds: ["asset_seed_1"],
+            referenceImageNodeIds: ["image_seed_1"],
+            referencePrompt: "preserve the yellow raincoat",
+          }),
+        }),
+      }),
+    );
+    const createdDraftData = prisma.storyboardDraft.create.mock.calls[0]?.[0].data;
+    expect(createdDraftData).toMatchObject({
+      storyboardJson: expect.objectContaining({
+        storySeedReferences: [
+          expect.objectContaining({
+            assetId: "asset_seed_1",
+            imageNodeId: "image_seed_1",
+          }),
+        ],
+      }),
+    });
+    expect(result.draft.storyboard?.characters[0]?.referenceAssetIds).toEqual(["asset_seed_1"]);
+    expect(result.job.inputJson.referenceAssetIds).toEqual(["asset_seed_1"]);
+    expect(result.job.outputJson?.referenceImageNodeIds).toEqual(["image_seed_1"]);
+  });
+
+  it("rejects missing reference ImageNodes before creating creative jobs", async () => {
+    prisma.canvasNode.findMany.mockResolvedValue([]);
+
+    await expect(
+      service.createCreativeStoryboard("project_1", {
+        idea: "Build around a missing reference",
+        referenceImageNodeIds: ["image_missing"],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.generationJob.create).not.toHaveBeenCalled();
+    expect(prisma.novelDocument.create).not.toHaveBeenCalled();
   });
 
   it("rejects blank creative briefs before creating jobs or drafts", async () => {

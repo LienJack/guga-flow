@@ -1,6 +1,5 @@
 import { runMockMediaWorkflow } from "./mock-workflow";
 import { HttpGenerationWorkerClient, backendWorkerBaseUrlFromEnv } from "./generation-client";
-import { createGenerationExecutorRegistry } from "./generation-executors";
 import { runGenerationWorkerLoop, runOneGenerationJob } from "./generation-runner";
 
 async function main() {
@@ -8,9 +7,8 @@ async function main() {
 
   if (args.has("--once") || args.has("--queue")) {
     const client = new HttpGenerationWorkerClient(backendWorkerBaseUrlFromEnv());
-    const registry = createGenerationExecutorRegistry();
     if (args.has("--once")) {
-      const result = await runOneGenerationJob({ client, registry, logger: console });
+      const result = await runOneGenerationJob({ client, logger: console });
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       if (result.status === "failed") {
         process.exitCode = 1;
@@ -20,7 +18,6 @@ async function main() {
 
     await runGenerationWorkerLoop({
       client,
-      registry,
       logger: console,
       pollIntervalMs: Number(process.env.WORKER_POLL_INTERVAL_MS ?? 2000),
     });

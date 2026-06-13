@@ -12,6 +12,8 @@ import type {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CanvasService } from "../canvas/canvas.service";
+import { PrismaService } from "../prisma/prisma.service";
+import { SkillTemplatesService } from "../skill-templates/skill-templates.service";
 import { PromptService } from "./prompt.service";
 
 const createdAt = "2026-06-12T00:00:00.000Z";
@@ -23,13 +25,61 @@ function createCanvasServiceMock() {
   };
 }
 
+function createPrismaMock() {
+  return {
+    project: {
+      findUnique: vi.fn(async () => ({
+        generationSettingsJson: {
+          visualStyle: "project cinematic noir",
+          aspectRatio: "9:16",
+          visualManual: {
+            artStyle: "project rainy noir",
+            palette: "cyan shadows and amber signals",
+            lighting: "practical console light",
+          },
+          directorManual: {
+            pacing: "slow-burn opening",
+            cameraLanguage: "project controlled push-ins",
+            performance: "quiet urgency",
+          },
+          subtitle: { label: "Project captions" },
+        },
+      })),
+    },
+  };
+}
+
+function createSkillTemplatesServiceMock() {
+  return {
+    activePromptContexts: vi.fn(async () => [
+      {
+        id: "skill_art",
+        kind: "art" as const,
+        slug: "art-default",
+        displayName: "Art Skill",
+        sourceText: "Use controlled cyan contrast from the active art skill.",
+        versionId: "skill_version_1",
+        version: 1,
+      },
+    ]),
+  };
+}
+
 describe("PromptService", () => {
   let canvasService: ReturnType<typeof createCanvasServiceMock>;
+  let prisma: ReturnType<typeof createPrismaMock>;
+  let skillTemplatesService: ReturnType<typeof createSkillTemplatesServiceMock>;
   let service: PromptService;
 
   beforeEach(() => {
     canvasService = createCanvasServiceMock();
-    service = new PromptService(canvasService as unknown as CanvasService);
+    prisma = createPrismaMock();
+    skillTemplatesService = createSkillTemplatesServiceMock();
+    service = new PromptService(
+      canvasService as unknown as CanvasService,
+      prisma as unknown as PrismaService,
+      skillTemplatesService as unknown as SkillTemplatesService,
+    );
   });
 
   it("composes a project-scoped Shot prompt from persisted graph and assets", async () => {
@@ -39,6 +89,15 @@ describe("PromptService", () => {
     });
 
     expect(canvasService.getCanvas).toHaveBeenCalledWith("project_1");
+    expect(prisma.project.findUnique).toHaveBeenCalledWith({
+      where: { id: "project_1" },
+      select: { generationSettingsJson: true },
+    });
+    expect(skillTemplatesService.activePromptContexts).toHaveBeenCalledWith("project_1", [
+      "story",
+      "art",
+      "production",
+    ]);
     expect(result.sourceNodeIds).toMatchObject({
       shotNodeId: "shot_1",
       sceneNodeId: "scene_1",
@@ -47,10 +106,47 @@ describe("PromptService", () => {
     });
     expect(result.image.prompt).toContain("Hero identity prompt");
     expect(result.image.prompt).toContain("Location prompt text");
+    expect(result.image.prompt).toContain("Visual style: project cinematic noir");
+    expect(result.image.prompt).toContain("Aspect ratio: 16:9");
+    expect(result.image.prompt).toContain("Art style: project rainy noir (project)");
+    expect(result.image.prompt).toContain("Palette: cyan shadows and amber signals (project)");
+    expect(result.image.prompt).toContain("Lens: long-lens compression (shot)");
+    expect(result.image.prompt).toContain("Pacing: slow-burn opening (project)");
+    expect(result.image.prompt).toContain("Camera language: shot surveillance angle (shot)");
+    expect(result.image.prompt).toContain("Use controlled cyan contrast from the active art skill.");
+    expect(result.image.prompt).toContain("Subtitle: requested_unresolved");
     expect(result.video.prompt).toContain("Video prompt: slow push through the room");
+    expect(result.resolvedGenerationSettings.sources).toMatchObject({
+      visualStyle: "project",
+      aspectRatio: "shot",
+      visualManual: "shot",
+      visualManualFields: {
+        artStyle: "project",
+        palette: "project",
+        lighting: "project",
+        lens: "shot",
+      },
+      directorManual: "shot",
+      directorManualFields: {
+        pacing: "project",
+        cameraLanguage: "shot",
+        performance: "project",
+      },
+      subtitle: "project",
+    });
     expect(result.referenceAssetIds).toEqual(["asset_character_ref", "asset_location_ref"]);
     expect(result.debugParts.map((part) => part.kind)).toEqual(
-      expect.arrayContaining(["global_style", "scene", "character", "location", "shot", "model_suffix"]),
+      expect.arrayContaining([
+        "global_style",
+        "generation_settings",
+        "visual_manual",
+        "director_manual",
+        "scene",
+        "character",
+        "location",
+        "shot",
+        "model_suffix",
+      ]),
     );
   });
 
@@ -149,6 +245,16 @@ function promptCanvas(): CanvasLoadResult {
       durationSeconds: 5,
       characterAssetIds: ["character_1"],
       locationAssetId: "location_1",
+      generationSettings: {
+        aspectRatio: "16:9",
+        narrationAccent: "warm narration",
+        visualManual: {
+          lens: "long-lens compression",
+        },
+        directorManual: {
+          cameraLanguage: "shot surveillance angle",
+        },
+      },
     }),
   ];
 

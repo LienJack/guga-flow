@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 
+import { AgentsModule } from "./agents/agents.module";
 import { AssetsModule } from "./assets/assets.module";
 import { CanvasModule } from "./canvas/canvas.module";
 import { readAppConfig } from "./config/app-config";
@@ -10,8 +11,10 @@ import { HealthController } from "./health/health.controller";
 import { NovelsModule } from "./novels/novels.module";
 import { ProvidersModule } from "./providers/providers.module";
 import { PromptModule } from "./prompt/prompt.module";
+import { ProjectSettingsModule } from "./project-settings/project-settings.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { ProjectsModule } from "./projects/projects.module";
+import { SkillTemplatesModule } from "./skill-templates/skill-templates.module";
 
 @Module({
   imports: [
@@ -27,7 +30,10 @@ import { ProjectsModule } from "./projects/projects.module";
     PromptModule,
     GenerationModule,
     ProvidersModule,
+    ProjectSettingsModule,
     EditorExportsModule,
+    AgentsModule,
+    SkillTemplatesModule,
   ],
   controllers: [HealthController],
 })

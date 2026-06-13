@@ -12,6 +12,8 @@ export interface AppConfig {
   videoProvider: string;
   localEditorUrl?: string;
   workerConcurrency: number;
+  providerConfigEncryptionKey?: string;
+  workerApiToken?: string;
   realProviderKeysConfigured: {
     llm: boolean;
     image: boolean;
@@ -80,6 +82,8 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     videoProvider: env.VIDEO_PROVIDER || "mock-video",
     localEditorUrl: env.LOCAL_EDITOR_URL || undefined,
     workerConcurrency: readNumber("WORKER_CONCURRENCY", env.WORKER_CONCURRENCY, 2),
+    providerConfigEncryptionKey: env.PROVIDER_CONFIG_ENCRYPTION_KEY || undefined,
+    workerApiToken: env.WORKER_API_TOKEN || undefined,
     realProviderKeysConfigured: {
       llm: Boolean(env.LLM_API_KEY),
       image: Boolean(env.IMAGE_API_KEY || image2KeyConfigured || bananaKeyConfigured),

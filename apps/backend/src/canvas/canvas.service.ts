@@ -430,6 +430,26 @@ export class CanvasService {
       where: { projectId, canvasDocumentId: canvasDocument.id },
       orderBy: [{ zIndex: "asc" }, { createdAt: "asc" }],
     });
+    const existingNodeById = new Map(existingNodes.map((node) => [node.id, node]));
+    const seedReferences = validation.data.storySeedReferences ?? [];
+    const seedReferencesByImageNode = Array.from(
+      new Map(
+        seedReferences.flatMap((reference) =>
+          reference.imageNodeId ? [[reference.imageNodeId, reference] as const] : [],
+        ),
+      ).values(),
+    );
+    const seedImageNodeIds = uniqueStrings(
+      seedReferencesByImageNode.flatMap((reference) =>
+        reference.imageNodeId ? [reference.imageNodeId] : [],
+      ),
+    );
+    const missingSeedImageNodeIds = seedImageNodeIds.filter(
+      (nodeId) => existingNodeById.get(nodeId)?.type !== "image",
+    );
+    if (missingSeedImageNodeIds.length > 0) {
+      throw new BadRequestException("Storyboard seed ImageNodes must still exist on this canvas");
+    }
     const existingImportVersions = existingNodes.flatMap((node) => {
       const provenance = storyboardImportProvenance(node.dataJson);
       return provenance ? [provenance.version] : [];
@@ -439,12 +459,13 @@ export class CanvasService {
     const importBatchId = `storyboard-import-${draft.id}-v${version}-${Date.now().toString(36)}-${Math.random()
       .toString(36)
       .slice(2, 8)}`;
+    const importedAt = new Date().toISOString();
     const plan = buildStoryboardImportPlan({
       storyboard: validation.data,
       draftId: draft.id,
       novelDocumentId: draft.novelDocumentId,
       importBatchId,
-      importedAt: new Date().toISOString(),
+      importedAt,
       version,
       duplicatePolicy,
     });
@@ -531,6 +552,44 @@ export class CanvasService {
             targetNode.id,
             await this.applyLocationToShot(tx, updatedNodeById.get(targetNode.id) ?? targetNode, sourceNode.id),
           );
+        }
+      }
+
+      const novelNode = nodeByPlanKey.get("novel");
+      if (novelNode) {
+        for (const [seedIndex, seedReference] of seedReferencesByImageNode.entries()) {
+          if (!seedReference.imageNodeId) {
+            continue;
+          }
+          const seedNode = existingNodeById.get(seedReference.imageNodeId);
+          if (!seedNode) {
+            throw new BadRequestException("Storyboard seed ImageNodes must still exist on this canvas");
+          }
+          const edge = await this.findOrCreateCanvasEdge(tx, projectId, canvasDocument.id, {
+            sourceNodeId: seedNode.id,
+            targetNodeId: novelNode.id,
+            relation: "story_seed",
+            sourceShapeId: seedNode.tldrawShapeId,
+            targetShapeId: novelNode.tldrawShapeId,
+            visualArrowShapeId: this.importShapeId(importBatchId, `story-seed-edge-${seedIndex}`),
+            dataJson: {
+              storySeed: {
+                ...(seedReference.assetId ? { assetId: seedReference.assetId } : {}),
+                imageNodeId: seedReference.imageNodeId,
+                ...(seedReference.label ? { label: seedReference.label } : {}),
+                ...(seedReference.prompt ? { prompt: seedReference.prompt } : {}),
+              },
+              storyboardImport: {
+                batchId: importBatchId,
+                draftId: draft.id,
+                novelDocumentId: draft.novelDocumentId,
+                entityKind: "edge",
+                version,
+                importedAt,
+              },
+            },
+          });
+          resultEdges.push(edge);
         }
       }
 
@@ -679,6 +738,13 @@ export class CanvasService {
       }
       if (sourceNode.type !== targetNode.type) {
         throw new BadRequestException("Variant edges must connect nodes of the same type");
+      }
+      return;
+    }
+
+    if (relation === "story_seed") {
+      if (sourceNode.type !== "image" || targetNode.type !== "novel") {
+        throw new BadRequestException("Story seed edges must connect an Image node to a Novel node");
       }
       return;
     }

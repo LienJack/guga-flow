@@ -1,6 +1,8 @@
 import {
   ProviderError,
   createImageProviderRegistry,
+  createProgrammableImageProvider,
+  createProgrammableVideoProvider,
   createVideoProviderRegistry,
   type ImageProviderOutput,
   type ImageProviderRegistry,
@@ -12,12 +14,21 @@ import type {
   GeneratedMediaProviderOutput,
   GenerationJobInput,
   GenerationJobRecord,
+  ProgrammableProviderRuntimeConfig,
   ProviderFailure,
 } from "@guga-flow/shared-types";
 
 export interface GenerationExecutorRegistry {
   imageProviders: ImageProviderRegistry;
   videoProviders: VideoProviderRegistry;
+}
+
+type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
+
+export interface GenerationExecutorRegistryOptions {
+  env?: Record<string, string | undefined>;
+  fetchImpl?: FetchLike;
+  programmableProvider?: ProgrammableProviderRuntimeConfig;
 }
 
 export type GenerationExecutorResult =
@@ -35,11 +46,36 @@ export type GenerationExecutorResult =
     };
 
 export function createGenerationExecutorRegistry(
-  env: Record<string, string | undefined> = process.env,
+  options: Record<string, string | undefined> | GenerationExecutorRegistryOptions = process.env,
 ): GenerationExecutorRegistry {
+  const normalized = isGenerationExecutorRegistryOptions(options)
+    ? options
+    : { env: options };
+  const env = normalized.env ?? {};
+  const programmable = normalized.programmableProvider;
+  const programmableImageProviders = programmable?.manifest.kind === "image"
+    ? [createProgrammableImageProvider(programmable.manifest, {
+        credentials: programmable.credentials,
+        fetchImpl: normalized.fetchImpl,
+      })]
+    : [];
+  const programmableVideoProviders = programmable?.manifest.kind === "video"
+    ? [createProgrammableVideoProvider(programmable.manifest, {
+        credentials: programmable.credentials,
+        fetchImpl: normalized.fetchImpl,
+      })]
+    : [];
   return {
-    imageProviders: createImageProviderRegistry({ env }),
-    videoProviders: createVideoProviderRegistry({ env }),
+    imageProviders: createImageProviderRegistry({
+      env,
+      fetchImpl: normalized.fetchImpl,
+      additionalProviders: programmableImageProviders,
+    }),
+    videoProviders: createVideoProviderRegistry({
+      env,
+      fetchImpl: normalized.fetchImpl,
+      additionalProviders: programmableVideoProviders,
+    }),
   };
 }
 
@@ -75,6 +111,50 @@ export async function executeGenerationJob(
       status: "succeeded",
       providerOutput,
       providerOutputs: providerOutputs.length > 1 ? providerOutputs : undefined,
+    };
+  }
+
+  if (input.operation === "character_to_image" || input.operation === "location_to_image") {
+    const provider = registry.imageProviders.get(input.provider);
+    const result = await provider.generateImage({
+      projectId: input.projectId,
+      prompt: input.prompt,
+      mode: "text_to_image",
+      model: input.model,
+      aspectRatio: input.aspectRatio,
+      count: 1,
+      referenceAssetIds: input.referenceAssetIds,
+      providerParams: input.providerParams,
+      forceFailure: input.forceFailure,
+    });
+    const providerOutputs = result.outputs.map((output) => toGeneratedMediaProviderOutput(output, input.prompt));
+    const providerOutput = firstProviderOutput(provider.capability.id, providerOutputs);
+    return {
+      status: "succeeded",
+      providerOutput,
+    };
+  }
+
+  if (input.operation === "image_refinement") {
+    const provider = registry.imageProviders.get(input.provider);
+    const result = await provider.generateImage({
+      projectId: input.projectId,
+      prompt: input.prompt,
+      mode: "image_to_image",
+      model: input.model,
+      aspectRatio: input.aspectRatio,
+      count: 1,
+      sourceImageAssetId: input.sourceImageAssetId,
+      sourceImageNodeId: input.imageNodeId,
+      referenceAssetIds: input.referenceAssetIds,
+      providerParams: input.providerParams,
+      forceFailure: input.forceFailure,
+    });
+    const providerOutputs = result.outputs.map((output) => toGeneratedMediaProviderOutput(output, input.prompt));
+    const providerOutput = firstProviderOutput(provider.capability.id, providerOutputs);
+    return {
+      status: "succeeded",
+      providerOutput,
     };
   }
 
@@ -218,4 +298,10 @@ function firstProviderOutput(
     message: `${provider} did not return any generated media outputs.`,
     retryable: false,
   });
+}
+
+function isGenerationExecutorRegistryOptions(
+  value: Record<string, string | undefined> | GenerationExecutorRegistryOptions,
+): value is GenerationExecutorRegistryOptions {
+  return "env" in value || "fetchImpl" in value || "programmableProvider" in value;
 }

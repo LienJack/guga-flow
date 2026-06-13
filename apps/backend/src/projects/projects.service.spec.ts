@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { Prisma } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { LocalStorageService } from "../storage/local-storage.service";
 import { ProjectsService } from "./projects.service";
@@ -15,6 +16,7 @@ function project(overrides: Record<string, unknown> = {}) {
     title: "Demo Project",
     description: null,
     defaultAspectRatio: "9:16",
+    generationSettingsJson: null,
     createdAt,
     updatedAt,
     _count: { assets: 0 },
@@ -61,11 +63,24 @@ describe("ProjectsService", () => {
   });
 
   it("creates projects for the default owner and normalizes output", async () => {
-    prisma.project.create.mockResolvedValue(project());
+    prisma.project.create.mockResolvedValue(
+      project({
+        generationSettingsJson: {
+          visualStyle: "cinematic noir",
+          aspectRatio: "16:9",
+          bgm: { assetId: "asset_bgm_1" },
+        },
+      }),
+    );
 
     const result = await service.createProject({
       title: " Demo Project ",
       defaultAspectRatio: "9:16",
+      generationSettings: {
+        visualStyle: "cinematic noir",
+        aspectRatio: "16:9",
+        bgm: { assetId: "asset_bgm_1" },
+      },
     });
 
     expect(prisma.user.upsert).toHaveBeenCalledWith(
@@ -78,6 +93,11 @@ describe("ProjectsService", () => {
         data: expect.objectContaining({
           ownerUserId: "default-user",
           title: "Demo Project",
+          generationSettingsJson: {
+            visualStyle: "cinematic noir",
+            aspectRatio: "16:9",
+            bgm: { status: "available", assetId: "asset_bgm_1" },
+          },
         }),
       }),
     );
@@ -85,9 +105,54 @@ describe("ProjectsService", () => {
       id: "project_1",
       title: "Demo Project",
       defaultAspectRatio: "9:16",
+      generationSettings: {
+        visualStyle: "cinematic noir",
+        aspectRatio: "16:9",
+        bgm: { status: "available", assetId: "asset_bgm_1" },
+      },
       assetCount: 0,
       createdAt: createdAt.toISOString(),
     });
+  });
+
+  it("updates generation settings and clears empty settings", async () => {
+    prisma.project.findUnique.mockResolvedValue(project());
+    prisma.project.update.mockResolvedValue(
+      project({
+        generationSettingsJson: {
+          visualStyle: "bright fantasy",
+          subtitle: { status: "requested_unresolved", label: "Captions" },
+        },
+      }),
+    );
+
+    const result = await service.updateProject("project_1", {
+      generationSettings: {
+        visualStyle: "bright fantasy",
+        subtitle: { label: "Captions" },
+      },
+    });
+
+    expect(prisma.project.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          generationSettingsJson: {
+            visualStyle: "bright fantasy",
+            subtitle: { status: "requested_unresolved", label: "Captions" },
+          },
+        }),
+      }),
+    );
+    expect(result.generationSettings?.subtitle?.status).toBe("requested_unresolved");
+
+    prisma.project.findUnique.mockResolvedValue(project());
+    prisma.project.update.mockResolvedValue(project());
+    await service.updateProject("project_1", { generationSettings: {} });
+    expect(prisma.project.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ generationSettingsJson: Prisma.JsonNull }),
+      }),
+    );
   });
 
   it("rejects blank project titles", async () => {
@@ -102,6 +167,10 @@ describe("ProjectsService", () => {
         title: "Original",
         description: "A short description",
         defaultAspectRatio: "16:9",
+        generationSettingsJson: {
+          visualStyle: "documentary realism",
+          narrationLanguage: "zh-CN",
+        },
         _count: { assets: 2 },
       }),
     );
@@ -111,6 +180,10 @@ describe("ProjectsService", () => {
         title: "Original Copy",
         description: "A short description",
         defaultAspectRatio: "16:9",
+        generationSettingsJson: {
+          visualStyle: "documentary realism",
+          narrationLanguage: "zh-CN",
+        },
         _count: { assets: 0 },
       }),
     );
@@ -123,6 +196,10 @@ describe("ProjectsService", () => {
           title: "Original Copy",
           description: "A short description",
           defaultAspectRatio: "16:9",
+          generationSettingsJson: {
+            visualStyle: "documentary realism",
+            narrationLanguage: "zh-CN",
+          },
         }),
       }),
     );

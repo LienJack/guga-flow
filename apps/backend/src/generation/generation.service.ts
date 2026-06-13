@@ -6,6 +6,8 @@ import type {
   CanvasLoadResult,
   CanvasNodeRecord,
   CanvasNodeType,
+  CharacterAssetNodeData,
+  CharacterToImageJobInput,
   CreateBatchImagesToVideosJobInput,
   CreateBatchImagesToVideosJobResult,
   CreateBatchShotsToImagesJobInput,
@@ -24,24 +26,33 @@ import type {
   GenerationJobStatusCounts,
   GenerationOperation,
   GenerationQueueSummary,
+  ImageRefinementJobInput,
   ImageProviderCatalogItem,
   ImageNodeData,
   ImageToVideoJobInput,
+  LocationAssetNodeData,
+  LocationToImageJobInput,
   NodeStatus,
   Phase8GenerationOperation,
   ProviderFailure,
+  ProviderRuntimeConfig,
+  ReferenceAssetJobOutput,
   ProjectAspectRatio,
+  ResolvedGenerationSettings,
   RetryGenerationJobResult,
   ShotNodeData,
   ShotToImageJobInput,
   VideoProviderCatalogItem,
   VideoProviderResolution,
   WorkerGenerationJobWaitInput,
+  WorkerProviderRuntimeConfigInput,
 } from "@guga-flow/shared-types";
 import {
+  EDITOR_EXPORT_PRESETS,
   EDITOR_PACKAGE_MIME_TYPE,
   GENERATION_JOB_STATUSES,
   PHASE_8_GENERATION_OPERATIONS,
+  resolveGenerationSettings,
 } from "@guga-flow/shared-types";
 import type { GenerationOperation as PrismaGenerationOperation } from "../generated/prisma/client";
 import { Prisma } from "../generated/prisma/client";
@@ -106,8 +117,19 @@ type CanvasEdgeModel = {
   createdAt: Date | string;
 };
 
-type WorkerGenerationJobInput = ShotToImageJobInput | ImageToVideoJobInput | EditorExportJobInput;
-type GeneratedMediaJobInput = ShotToImageJobInput | ImageToVideoJobInput;
+type ProjectGenerationSettingsModel = {
+  generationSettingsJson: unknown | null;
+};
+
+type DirectGenerationJobInput =
+  | ShotToImageJobInput
+  | CharacterToImageJobInput
+  | LocationToImageJobInput
+  | ImageRefinementJobInput
+  | ImageToVideoJobInput;
+type WorkerGenerationJobInput = DirectGenerationJobInput | EditorExportJobInput;
+type GeneratedMediaJobInput = ShotToImageJobInput | ImageRefinementJobInput | ImageToVideoJobInput;
+type ReferenceImageJobInput = CharacterToImageJobInput | LocationToImageJobInput;
 
 const CANCELLABLE_JOB_STATUSES: GenerationJobStatus[] = ["queued", "running", "provider_waiting"];
 const WORKER_ACTIVE_JOB_STATUSES: GenerationJobStatus[] = ["running", "provider_waiting"];
@@ -188,6 +210,13 @@ function uniqueStrings(values: readonly (string | undefined)[]): string[] {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
 }
 
+function compactText(values: readonly (string | undefined)[]): string {
+  return values
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .join("\n");
+}
+
 function jsonValue<T>(value: T): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
@@ -196,12 +225,26 @@ function assertJobInput(value: unknown): WorkerGenerationJobInput {
   const input = dataObject(value);
   if (
     input.operation === "shot_to_image" ||
-    input.operation === "image_to_video" ||
-    input.operation === "editor_export"
+    input.operation === "character_to_image" ||
+    input.operation === "location_to_image" ||
+    input.operation === "image_refinement" ||
+    input.operation === "image_to_video"
   ) {
     return value as WorkerGenerationJobInput;
   }
+  if (input.operation === "editor_export") {
+    return {
+      ...input,
+      exportPreset: EDITOR_EXPORT_PRESETS.includes(input.exportPreset as EditorExportJobInput["exportPreset"])
+        ? input.exportPreset
+        : "standard_zip",
+    } as WorkerGenerationJobInput;
+  }
   throw new BadRequestException("Generation job input is invalid");
+}
+
+function isReferenceImageJobInput(input: WorkerGenerationJobInput): input is ReferenceImageJobInput {
+  return input.operation === "character_to_image" || input.operation === "location_to_image";
 }
 
 @Injectable()
@@ -225,10 +268,7 @@ export class GenerationService {
       throw new BadRequestException("Generation source node id is required");
     }
 
-    const jobInput =
-      input.operation === "shot_to_image"
-        ? await this.buildShotToImageInput(projectId, input.sourceNodeId, input)
-        : await this.buildImageToVideoInput(projectId, input.sourceNodeId, input);
+    const jobInput = await this.buildDirectGenerationInput(projectId, input.sourceNodeId, input);
 
     const job = await this.runTransaction(async (tx) => {
       const created = await tx.generationJob.create({
@@ -386,6 +426,18 @@ export class GenerationService {
   async getJob(projectId: string, jobId: string): Promise<GenerationJobRecord> {
     const job = await this.findProjectJob(projectId, jobId);
     return this.toGenerationJobRecord(job);
+  }
+
+  getProviderRuntimeConfig(
+    input: WorkerProviderRuntimeConfigInput,
+    workerToken?: string,
+  ): Promise<ProviderRuntimeConfig> {
+    return this.providersService.getRuntimeProviderConfig(
+      input.projectId,
+      input.kind,
+      input.provider,
+      workerToken,
+    );
   }
 
   async retryJob(projectId: string, jobId: string): Promise<RetryGenerationJobResult> {
@@ -640,7 +692,12 @@ export class GenerationService {
     providerOutput?: GeneratedMediaProviderOutput,
     providerOutputs?: GeneratedMediaProviderOutput[],
     packageOutput?: EditorExportPackageOutput,
-  ): Promise<GenerationJobRecord<GenerationJobInput, GeneratedMediaJobOutput | EditorExportJobOutput>> {
+  ): Promise<
+    GenerationJobRecord<
+      GenerationJobInput,
+      GeneratedMediaJobOutput | ReferenceAssetJobOutput | EditorExportJobOutput
+    >
+  > {
     const existing = (await this.prisma.generationJob.findUnique({
       where: { id: jobId },
     })) as GenerationJobModel | null;
@@ -660,6 +717,9 @@ export class GenerationService {
     }
     if (!providerOutput) {
       throw new BadRequestException("Generated media completion requires provider output");
+    }
+    if (isReferenceImageJobInput(input)) {
+      return this.succeedReferenceImageJob(existing, input, providerOutput, providerOutputs);
     }
     const completionOutputs = this.normalizeCompletionOutputs(input, providerOutput, providerOutputs);
     completionOutputs.forEach((output) => this.validateProviderOutput(existing, input, output));
@@ -685,7 +745,7 @@ export class GenerationService {
         const asset = await this.assetsService.createGeneratedAsset(
           existing.projectId,
           {
-            purpose: input.operation === "shot_to_image" ? "shot_keyframe" : "shot_clip",
+            purpose: input.operation === "image_to_video" ? "shot_clip" : "shot_keyframe",
             providerOutput: output,
             metadataJson: {
               generationJobId: existing.id,
@@ -729,6 +789,7 @@ export class GenerationService {
         model: firstTarget.providerOutput.model,
         prompt: firstTarget.providerOutput.prompt,
         referenceAssetIds: firstTarget.providerOutput.referenceAssetIds,
+        generationSettings: input.generationSettings,
         providerOutput: firstTarget.providerOutput,
         targets: targetOutputs.length > 1 ? targetOutputs : undefined,
         completedAt: new Date().toISOString(),
@@ -766,6 +827,79 @@ export class GenerationService {
     });
 
     return this.toGenerationJobRecord(completed);
+  }
+
+  private async succeedReferenceImageJob(
+    existing: GenerationJobModel,
+    input: ReferenceImageJobInput,
+    providerOutput: GeneratedMediaProviderOutput,
+    providerOutputs?: GeneratedMediaProviderOutput[],
+  ): Promise<GenerationJobRecord<ReferenceImageJobInput, ReferenceAssetJobOutput>> {
+    if (providerOutputs && providerOutputs.length > 1) {
+      throw new BadRequestException("Reference image generation supports only one provider output");
+    }
+    this.validateReferenceImageProviderOutput(existing, input, providerOutput);
+
+    const completed = await this.runTransaction(async (tx) => {
+      const claimed = await tx.generationJob.updateMany({
+        where: { id: existing.id, status: { in: WORKER_ACTIVE_JOB_STATUSES } },
+        data: { errorMessage: null },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException("Only active generation jobs can succeed");
+      }
+
+      const sourceNode = await this.findSourceNode(tx, existing);
+      this.validateReferenceImageSourceNode(input, sourceNode);
+      const asset = await this.assetsService.createGeneratedAsset(
+        existing.projectId,
+        {
+          purpose: input.assetPurpose,
+          providerOutput,
+          metadataJson: {
+            generationJobId: existing.id,
+            operation: input.operation,
+            sourceNodeId: sourceNode.id,
+          },
+        },
+        tx,
+      );
+      const dataJson = dataObject(sourceNode.dataJson);
+      const referenceAssetIds = uniqueStrings([...stringArray(dataJson.referenceAssetIds), asset.id]);
+      await tx.canvasNode.update({
+        where: { id: sourceNode.id },
+        data: {
+          status: "succeeded",
+          dataJson: jsonValue({
+            ...dataJson,
+            referenceAssetIds,
+          }),
+        },
+      });
+
+      const output: ReferenceAssetJobOutput = {
+        operation: input.operation,
+        sourceNodeId: sourceNode.id,
+        assetId: asset.id,
+        provider: providerOutput.provider,
+        model: providerOutput.model,
+        prompt: providerOutput.prompt,
+        referenceAssetIds: providerOutput.referenceAssetIds,
+        providerOutput,
+        completedAt: new Date().toISOString(),
+      };
+
+      return (await tx.generationJob.update({
+        where: { id: existing.id },
+        data: {
+          status: "succeeded",
+          outputJson: jsonValue(output),
+          errorMessage: null,
+        },
+      })) as GenerationJobModel;
+    });
+
+    return this.toGenerationJobRecord<ReferenceImageJobInput, ReferenceAssetJobOutput>(completed);
   }
 
   private async succeedEditorExportJob(
@@ -821,6 +955,10 @@ export class GenerationService {
             editorExportId: input.editorExportId,
             selectedVideoNodeIds: input.videoNodeIds,
             sortMode: input.sortMode,
+            exportPreset: input.exportPreset,
+            sourceEditorExportId: input.sourceEditorExportId,
+            generationSettings: input.generationSettings,
+            packagingReferences: input.packagingReferences,
           },
         },
         tx,
@@ -863,6 +1001,8 @@ export class GenerationService {
         edgeIds: edges.map((edge) => edge.id),
         selectedVideoNodeIds: input.videoNodeIds,
         sortMode: input.sortMode,
+        exportPreset: input.exportPreset,
+        sourceEditorExportId: input.sourceEditorExportId,
         timeline: packageOutput.timeline,
         storyboardCsv: packageOutput.storyboardCsv,
         clips: packageOutput.clips,
@@ -904,6 +1044,9 @@ export class GenerationService {
     if (packageOutput.timeline.sortMode !== input.sortMode) {
       throw new BadRequestException("Editor export package sort mode does not match the claimed job");
     }
+    if (packageOutput.timeline.exportPreset !== input.exportPreset) {
+      throw new BadRequestException("Editor export package preset does not match the claimed job");
+    }
     if (packageOutput.clips.length !== input.clips.length) {
       throw new BadRequestException("Editor export package clip count does not match the claimed job");
     }
@@ -924,13 +1067,34 @@ export class GenerationService {
     }
   }
 
+  private async buildDirectGenerationInput(
+    projectId: string,
+    sourceNodeId: string,
+    input: CreateGenerationJobInput,
+  ): Promise<DirectGenerationJobInput> {
+    switch (input.operation) {
+      case "shot_to_image":
+        return this.buildShotToImageInput(projectId, sourceNodeId, input);
+      case "character_to_image":
+        return this.buildCharacterToImageInput(projectId, sourceNodeId, input);
+      case "location_to_image":
+        return this.buildLocationToImageInput(projectId, sourceNodeId, input);
+      case "image_refinement":
+        return this.buildImageRefinementInput(projectId, sourceNodeId, input);
+      case "image_to_video":
+        return this.buildImageToVideoInput(projectId, sourceNodeId, input);
+      default:
+        throw new BadRequestException("Generation operation is not supported yet");
+    }
+  }
+
   private async buildShotToImageInput(
     projectId: string,
     shotNodeId: string,
     input: CreateGenerationJobInput,
   ): Promise<ShotToImageJobInput> {
     const composition = await this.promptService.composeShotPrompt(projectId, shotNodeId);
-    const providerSettings = this.resolveImageProviderSettings(input);
+    const providerSettings = await this.resolveImageProviderSettings(projectId, input);
     const referenceLimit = providerSettings.provider.supportsReferenceImages
       ? providerSettings.provider.maxReferenceImages
       : 0;
@@ -949,14 +1113,162 @@ export class GenerationService {
       debugParts: composition.debugParts,
       missingContext: composition.missingContext,
       provider: providerSettings.provider.id,
+      providerVersionId: providerSettings.provider.providerVersionId,
       model: providerSettings.model,
       aspectRatio: providerSettings.aspectRatio,
       count: providerSettings.count,
       providerParams: providerSettings.providerParams,
+      generationSettings: composition.resolvedGenerationSettings,
       omittedReferenceAssetIds: omittedReferenceAssetIds.length ? omittedReferenceAssetIds : undefined,
       referenceOmissionReason: omittedReferenceAssetIds.length
         ? `${providerSettings.provider.displayName} accepts up to ${referenceLimit} reference images.`
         : undefined,
+      forceFailure: input.forceFailure,
+    };
+  }
+
+  private async buildCharacterToImageInput(
+    projectId: string,
+    characterNodeId: string,
+    input: CreateGenerationJobInput,
+  ): Promise<CharacterToImageJobInput> {
+    const canvas = await this.canvasService.getCanvas(projectId);
+    const characterNode = canvas.nodes.find((node) => node.id === characterNodeId);
+    if (!characterNode || characterNode.projectId !== projectId) {
+      throw new NotFoundException("Character node not found");
+    }
+    if (characterNode.type !== "character_asset") {
+      throw new BadRequestException("Character reference generation requires a Character node");
+    }
+
+    const characterData = dataObject(characterNode.dataJson) as CharacterAssetNodeData;
+    const providerSettings = await this.resolveImageProviderSettings(projectId, input);
+    const referenceLimit = providerSettings.provider.supportsReferenceImages
+      ? providerSettings.provider.maxReferenceImages
+      : 0;
+
+    return {
+      operation: "character_to_image",
+      projectId,
+      sourceNodeId: characterNode.id,
+      characterNodeId: characterNode.id,
+      prompt: this.characterReferencePrompt(characterNode, characterData),
+      referenceAssetIds: stringArray(characterData.referenceAssetIds).slice(0, referenceLimit),
+      sourceNodeIds: [characterNode.id],
+      provider: providerSettings.provider.id,
+      providerVersionId: providerSettings.provider.providerVersionId,
+      model: providerSettings.model,
+      aspectRatio: providerSettings.aspectRatio,
+      providerParams: providerSettings.providerParams,
+      assetPurpose: "character_reference",
+      forceFailure: input.forceFailure,
+    };
+  }
+
+  private async buildLocationToImageInput(
+    projectId: string,
+    locationNodeId: string,
+    input: CreateGenerationJobInput,
+  ): Promise<LocationToImageJobInput> {
+    const canvas = await this.canvasService.getCanvas(projectId);
+    const locationNode = canvas.nodes.find((node) => node.id === locationNodeId);
+    if (!locationNode || locationNode.projectId !== projectId) {
+      throw new NotFoundException("Location node not found");
+    }
+    if (locationNode.type !== "location_asset") {
+      throw new BadRequestException("Location reference generation requires a Location node");
+    }
+
+    const locationData = dataObject(locationNode.dataJson) as LocationAssetNodeData;
+    const providerSettings = await this.resolveImageProviderSettings(projectId, input);
+    const referenceLimit = providerSettings.provider.supportsReferenceImages
+      ? providerSettings.provider.maxReferenceImages
+      : 0;
+
+    return {
+      operation: "location_to_image",
+      projectId,
+      sourceNodeId: locationNode.id,
+      locationNodeId: locationNode.id,
+      prompt: this.locationReferencePrompt(locationNode, locationData),
+      referenceAssetIds: stringArray(locationData.referenceAssetIds).slice(0, referenceLimit),
+      sourceNodeIds: [locationNode.id],
+      provider: providerSettings.provider.id,
+      providerVersionId: providerSettings.provider.providerVersionId,
+      model: providerSettings.model,
+      aspectRatio: providerSettings.aspectRatio,
+      providerParams: providerSettings.providerParams,
+      assetPurpose: "location_reference",
+      forceFailure: input.forceFailure,
+    };
+  }
+
+  private async buildImageRefinementInput(
+    projectId: string,
+    imageNodeId: string,
+    input: CreateGenerationJobInput,
+  ): Promise<ImageRefinementJobInput> {
+    const prompt = optionalString(input.refinementPrompt);
+    if (!prompt) {
+      throw new BadRequestException("Image refinement prompt is required");
+    }
+
+    const canvas = await this.canvasService.getCanvas(projectId);
+    const imageNode = canvas.nodes.find((node) => node.id === imageNodeId);
+    if (!imageNode || imageNode.projectId !== projectId) {
+      throw new NotFoundException("Image node not found");
+    }
+    if (imageNode.type !== "image") {
+      throw new BadRequestException("Image refinement requires an Image node");
+    }
+
+    const imageData = dataObject(imageNode.dataJson) as ImageNodeData;
+    const sourceImageAssetId = optionalString(imageData.assetId);
+    if (!sourceImageAssetId) {
+      throw new BadRequestException("Image node must have an image asset before refinement");
+    }
+
+    const parentShot = this.findParentShot(canvas, imageNode);
+    const parentComposition = parentShot
+      ? await this.promptService.composeShotPrompt(projectId, parentShot.id)
+      : undefined;
+    const generationSettings =
+      parentComposition?.resolvedGenerationSettings ??
+      (await this.resolveProjectGenerationSettings(projectId));
+    const providerSettings = await this.resolveImageProviderSettings(projectId, input, "image_to_image");
+    const rawReferenceAssetIds = uniqueStrings([
+      ...stringArray(imageData.referenceAssetIds),
+      ...(parentComposition?.referenceAssetIds ?? []),
+    ]);
+    const referenceLimit = providerSettings.provider.supportsReferenceImages
+      ? providerSettings.provider.maxReferenceImages
+      : 0;
+    const referenceAssetIds = rawReferenceAssetIds.slice(0, referenceLimit);
+    const sourceNodeIds = uniqueStrings([
+      imageNode.id,
+      parentShot?.id,
+      parentComposition?.sourceNodeIds.sceneNodeId,
+      ...(parentComposition?.sourceNodeIds.characterNodeIds ?? []),
+      parentComposition?.sourceNodeIds.locationNodeId,
+    ]);
+
+    return {
+      operation: "image_refinement",
+      projectId,
+      sourceNodeId: imageNode.id,
+      imageNodeId: imageNode.id,
+      sourceImageAssetId,
+      prompt,
+      referenceAssetIds,
+      sourceNodeIds,
+      parentShotNodeId: parentShot?.id,
+      parentShotTitle: parentShot?.title,
+      provider: providerSettings.provider.id,
+      providerVersionId: providerSettings.provider.providerVersionId,
+      model: providerSettings.model,
+      aspectRatio: providerSettings.aspectRatio,
+      providerParams: providerSettings.providerParams,
+      generationSettings,
       forceFailure: input.forceFailure,
     };
   }
@@ -985,6 +1297,9 @@ export class GenerationService {
     const parentComposition = parentShot
       ? await this.promptService.composeShotPrompt(projectId, parentShot.id)
       : undefined;
+    const generationSettings =
+      parentComposition?.resolvedGenerationSettings ??
+      (await this.resolveProjectGenerationSettings(projectId));
     const parentShotData = dataObject(parentShot?.dataJson) as ShotNodeData;
     const prompt =
       parentComposition?.video.prompt ??
@@ -993,7 +1308,7 @@ export class GenerationService {
       "Animate the generated image into a short cinematic video.";
     const sourceDurationSeconds =
       optionalNumber(parentShotData.durationSeconds) ?? optionalNumber(parentShotData.durationSec);
-    const providerSettings = this.resolveVideoProviderSettings(input, sourceDurationSeconds);
+    const providerSettings = await this.resolveVideoProviderSettings(projectId, input, sourceDurationSeconds);
     const rawReferenceAssetIds =
       parentComposition?.referenceAssetIds ?? stringArray(imageData.referenceAssetIds);
     const referenceLimit = providerSettings.provider.supportsReferenceImages
@@ -1023,10 +1338,59 @@ export class GenerationService {
       referenceAssetIds,
       sourceNodeIds,
       provider: providerSettings.provider.id,
+      providerVersionId: providerSettings.provider.providerVersionId,
       model: providerSettings.model,
       providerParams: providerSettings.providerParams,
+      generationSettings,
       forceFailure: input.forceFailure,
     };
+  }
+
+  private async resolveProjectGenerationSettings(projectId: string): Promise<ResolvedGenerationSettings> {
+    const project = (await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { generationSettingsJson: true },
+    })) as ProjectGenerationSettingsModel | null;
+    if (!project) {
+      throw new NotFoundException("Project not found");
+    }
+
+    return resolveGenerationSettings({ projectSettings: project.generationSettingsJson });
+  }
+
+  private characterReferencePrompt(
+    node: CanvasNodeRecord,
+    data: CharacterAssetNodeData,
+  ): string {
+    const lockedFields = stringArray(data.lockedFields);
+    return compactText([
+      "Create a consistent character reference image for storyboard generation.",
+      optionalString(data.identityPrompt),
+      optionalString(data.consistencyPrompt),
+      optionalString(data.appearance),
+      optionalString(data.wardrobe) ? `Wardrobe: ${optionalString(data.wardrobe)}` : undefined,
+      optionalString(data.role) ? `Role: ${optionalString(data.role)}` : undefined,
+      optionalString(data.personality) ? `Personality: ${optionalString(data.personality)}` : undefined,
+      data.locked === true ? "Preserve locked character details exactly." : undefined,
+      lockedFields.length ? `Locked fields: ${lockedFields.join(", ")}` : undefined,
+      `Source node: ${node.title?.trim() || node.id}`,
+    ]);
+  }
+
+  private locationReferencePrompt(
+    node: CanvasNodeRecord,
+    data: LocationAssetNodeData,
+  ): string {
+    return compactText([
+      "Create a consistent location reference image for storyboard generation.",
+      optionalString(data.locationPrompt),
+      optionalString(data.consistencyPrompt),
+      optionalString(data.environment),
+      optionalString(data.visualStyle) ? `Visual style: ${optionalString(data.visualStyle)}` : undefined,
+      optionalString(data.mood) ? `Mood: ${optionalString(data.mood)}` : undefined,
+      optionalString(data.locationType) ? `Location type: ${optionalString(data.locationType)}` : undefined,
+      `Source node: ${node.title?.trim() || node.id}`,
+    ]);
   }
 
   private findParentShot(
@@ -1066,8 +1430,37 @@ export class GenerationService {
     if (input.operation === "shot_to_image" && !output.mimeType.startsWith("image/")) {
       throw new BadRequestException("Shot image generation must produce an image asset");
     }
+    if (input.operation === "image_refinement" && !output.mimeType.startsWith("image/")) {
+      throw new BadRequestException("Image refinement must produce an image asset");
+    }
     if (input.operation === "image_to_video" && !output.mimeType.startsWith("video/")) {
       throw new BadRequestException("Image video generation must produce a video asset");
+    }
+  }
+
+  private validateReferenceImageProviderOutput(
+    job: GenerationJobModel,
+    input: ReferenceImageJobInput,
+    output: GeneratedMediaProviderOutput,
+  ): void {
+    if (output.provider !== job.provider) {
+      throw new BadRequestException("Provider output does not match the claimed job provider");
+    }
+    if (!output.mimeType.startsWith("image/")) {
+      const label = input.operation === "character_to_image" ? "Character" : "Location";
+      throw new BadRequestException(`${label} reference generation must produce an image asset`);
+    }
+  }
+
+  private validateReferenceImageSourceNode(
+    input: ReferenceImageJobInput,
+    sourceNode: CanvasNodeModel,
+  ): void {
+    if (input.operation === "character_to_image" && sourceNode.type !== "character_asset") {
+      throw new BadRequestException("Character reference completion requires a Character node");
+    }
+    if (input.operation === "location_to_image" && sourceNode.type !== "location_asset") {
+      throw new BadRequestException("Location reference completion requires a Location node");
     }
   }
 
@@ -1079,6 +1472,12 @@ export class GenerationService {
     if (input.operation === "image_to_video") {
       if (providerOutputs && providerOutputs.length > 1) {
         throw new BadRequestException("Image video generation supports only one provider output");
+      }
+      return [providerOutput];
+    }
+    if (input.operation === "image_refinement") {
+      if (providerOutputs && providerOutputs.length > 1) {
+        throw new BadRequestException("Image refinement supports only one provider output");
       }
       return [providerOutput];
     }
@@ -1100,14 +1499,18 @@ export class GenerationService {
     return outputs;
   }
 
-  private resolveImageProviderSettings(input: CreateGenerationJobInput): {
+  private async resolveImageProviderSettings(
+    projectId: string,
+    input: CreateGenerationJobInput,
+    requiredMode: "text_to_image" | "image_to_image" = "text_to_image",
+  ): Promise<{
     provider: ImageProviderCatalogItem;
     model: string;
     aspectRatio: ProjectAspectRatio;
     count: number;
     providerParams: CanvasSnapshotJson;
-  } {
-    const providers = this.providersService.getImageProviders().providers;
+  }> {
+    const providers = (await this.providersService.getProjectImageProviders(projectId)).providers;
     const providerId = input.provider ?? "mock-image";
     const provider = providers.find((candidate) => candidate.id === providerId);
     if (!provider) {
@@ -1115,6 +1518,10 @@ export class GenerationService {
     }
     if (!provider.enabled) {
       throw new BadRequestException(provider.disabledReason ?? `${provider.displayName} is disabled`);
+    }
+    if (!provider.supportedModes.includes(requiredMode)) {
+      const modeLabel = requiredMode === "image_to_image" ? "image refinement" : "image generation";
+      throw new BadRequestException(`${provider.displayName} does not support ${modeLabel}`);
     }
 
     const model = input.model ?? provider.defaultModel;
@@ -1173,18 +1580,19 @@ export class GenerationService {
     return normalized;
   }
 
-  private resolveVideoProviderSettings(
+  private async resolveVideoProviderSettings(
+    projectId: string,
     input: CreateGenerationJobInput,
     fallbackDurationSeconds: number | undefined,
-  ): {
+  ): Promise<{
     provider: VideoProviderCatalogItem;
     model: string;
     aspectRatio: ProjectAspectRatio;
     durationSeconds: number;
     resolution: VideoProviderResolution;
     providerParams: CanvasSnapshotJson;
-  } {
-    const providers = this.providersService.getVideoProviders().providers;
+  }> {
+    const providers = (await this.providersService.getProjectVideoProviders(projectId)).providers;
     const providerId = input.videoProvider ?? "mock-video";
     const provider = providers.find((candidate) => candidate.id === providerId);
     if (!provider) {
@@ -1266,9 +1674,12 @@ export class GenerationService {
     outputIndex = 0,
   ): Promise<CanvasNodeModel> {
     const targetType: Extract<CanvasNodeType, "image" | "video"> =
-      input.operation === "shot_to_image" ? "image" : "video";
+      input.operation === "image_to_video" ? "video" : "image";
     if (input.operation === "shot_to_image" && sourceNode.type !== "shot") {
       throw new BadRequestException("Shot image completion requires a Shot source node");
+    }
+    if (input.operation === "image_refinement" && sourceNode.type !== "image") {
+      throw new BadRequestException("Image refinement completion requires an Image source node");
     }
     if (input.operation === "image_to_video" && sourceNode.type !== "image") {
       throw new BadRequestException("Image video completion requires an Image source node");
@@ -1284,7 +1695,7 @@ export class GenerationService {
             ? `shape:generated-${job.id}-${targetType}`
             : `shape:generated-${job.id}-${targetType}-${outputOrdinal}`,
         type: targetType,
-        title: this.generatedNodeTitle(sourceNode, targetType, outputOrdinal),
+        title: this.generatedNodeTitle(sourceNode, targetType, outputOrdinal, input.operation),
         x: sourceNode.x + sourceNode.width + 120 + outputIndex * 360,
         y: sourceNode.y + outputIndex * 40,
         width: 320,
@@ -1302,6 +1713,7 @@ export class GenerationService {
           sourceNodeIds: this.sourceNodeIdsForInput(input),
           referenceAssetIds: providerOutput.referenceAssetIds,
           outputIndex,
+          generationSettings: input.generationSettings,
           inputJson: input,
         }),
       },
@@ -1345,8 +1757,12 @@ export class GenerationService {
           packageAssetId: packageAsset.id,
           selectedVideoNodeIds: input.videoNodeIds,
           sortMode: input.sortMode,
+          exportPreset: input.exportPreset,
+          sourceEditorExportId: input.sourceEditorExportId,
           clipCount: packageOutput.clips.length,
           exportedAt: new Date().toISOString(),
+          generationSettings: input.generationSettings,
+          packagingReferences: input.packagingReferences,
           inputJson: input,
           timeline: packageOutput.timeline,
         }),
@@ -1362,7 +1778,12 @@ export class GenerationService {
     targetNode: CanvasNodeModel,
     asset: AssetDetail,
   ): Promise<CanvasEdgeModel> {
-    const relation = input.operation === "shot_to_image" ? "generated_image" : "generated_video";
+    const relation =
+      input.operation === "shot_to_image"
+        ? "generated_image"
+        : input.operation === "image_refinement"
+          ? "derived_from"
+          : "generated_video";
 
     return (await tx.canvasEdge.create({
       data: {
@@ -1401,6 +1822,7 @@ export class GenerationService {
       generatedFromNodeId: sourceNode.id,
       sourceNodeIds: this.sourceNodeIdsForInput(input),
       referenceAssetIds: providerOutput.referenceAssetIds,
+      generationSettings: input.generationSettings,
       inputJson: input,
       outputJson: output,
     };
@@ -1410,9 +1832,10 @@ export class GenerationService {
     sourceNode: CanvasNodeModel,
     targetType: "image" | "video",
     outputOrdinal = 1,
+    operation?: GeneratedMediaJobInput["operation"],
   ): string {
     const sourceTitle = sourceNode.title?.trim() || sourceNode.type;
-    const suffix = targetType === "image" ? "Image" : "Video";
+    const suffix = operation === "image_refinement" ? "Refined Image" : targetType === "image" ? "Image" : "Video";
     return outputOrdinal === 1 ? `${sourceTitle} ${suffix}` : `${sourceTitle} ${suffix} ${outputOrdinal}`;
   }
 

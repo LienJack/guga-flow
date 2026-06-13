@@ -1,19 +1,29 @@
 import type {
   CreateCreativeStoryboardInput,
   CreateNovelDocumentInput,
+  CreateScriptDraftInput,
   CreativeAgentMode,
+  ScriptAdaptationStrategy,
   ImportNovelSourceInput,
   NovelLanguage,
   NovelSourceType,
   UpdateStoryboardDraftInput,
   UpdateNovelDocumentInput,
 } from "@guga-flow/shared-types";
-import { CREATIVE_AGENT_MODES, NOVEL_LANGUAGES, NOVEL_SOURCE_TYPES } from "@guga-flow/shared-types";
 import {
+  CREATIVE_AGENT_MODES,
+  NOVEL_LANGUAGES,
+  NOVEL_SOURCE_TYPES,
+  SCRIPT_ADAPTATION_STRATEGIES,
+} from "@guga-flow/shared-types";
+import {
+  ArrayMaxSize,
+  ArrayUnique,
   IsBoolean,
   IsDefined,
   IsIn,
   IsInt,
+  IsArray,
   IsOptional,
   IsString,
   Max,
@@ -90,6 +100,25 @@ export class CreateCreativeStoryboardDto implements CreateCreativeStoryboardInpu
   targetDurationSeconds?: number;
 
   @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @ArrayUnique()
+  @IsString({ each: true })
+  referenceAssetIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @ArrayUnique()
+  @IsString({ each: true })
+  referenceImageNodeIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  referencePrompt?: string;
+
+  @IsOptional()
   @IsBoolean()
   forceFailure?: boolean;
 }
@@ -114,4 +143,15 @@ export class UpdateNovelDocumentDto implements UpdateNovelDocumentInput {
 export class UpdateStoryboardDraftDto implements UpdateStoryboardDraftInput {
   @IsDefined()
   storyboard!: UpdateStoryboardDraftInput["storyboard"];
+}
+
+export class CreateScriptDraftDto implements CreateScriptDraftInput {
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  title?: string;
+
+  @IsOptional()
+  @IsIn(SCRIPT_ADAPTATION_STRATEGIES)
+  strategy?: ScriptAdaptationStrategy;
 }

@@ -594,6 +594,63 @@ describe("CanvasService", () => {
     });
   });
 
+  it("creates story seed edges from existing ImageNodes during storyboard import", async () => {
+    let nodeSequence = 1;
+    let edgeSequence = 1;
+    const seedImageNode = canvasNode({
+      id: "image_seed_1",
+      tldrawShapeId: "shape:image-seed-1",
+      type: "image",
+      title: "Seed image",
+      dataJson: { assetId: "asset_seed_1" },
+    });
+    prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
+    prisma.storyboardDraft.findFirst.mockResolvedValue(
+      storyboardDraft({ storyboardJson: importStoryboardWithStorySeed() }),
+    );
+    prisma.canvasNode.findMany.mockResolvedValue([seedImageNode]);
+    prisma.canvasNode.create.mockImplementation(async ({ data }: MockCreateArgs) =>
+      canvasNode({
+        id: `node_${nodeSequence++}`,
+        ...data,
+      }),
+    );
+    prisma.canvasEdge.findFirst.mockResolvedValue(null);
+    prisma.canvasEdge.create.mockImplementation(async ({ data }: MockCreateArgs) =>
+      canvasEdge({
+        id: `edge_${edgeSequence++}`,
+        ...data,
+      }),
+    );
+    prisma.canvasNode.update.mockImplementation(async ({ where, data }: MockUpdateArgs) =>
+      canvasNode({
+        id: where.id,
+        dataJson: data.dataJson,
+      }),
+    );
+
+    const result = await service.importStoryboard("project_1", {
+      novelDocumentId: "novel_1",
+      storyboardDraftId: "draft_1",
+      duplicatePolicy: "new_version",
+    });
+
+    expect(result.edges).toContainEqual(
+      expect.objectContaining({
+        sourceNodeId: "image_seed_1",
+        targetNodeId: "node_1",
+        relation: "story_seed",
+        dataJson: expect.objectContaining({
+          storySeed: expect.objectContaining({
+            assetId: "asset_seed_1",
+            imageNodeId: "image_seed_1",
+          }),
+        }),
+      }),
+    );
+    expect(result.summary.createdEdgeCount).toBeGreaterThan(importStoryboard().scenes.length);
+  });
+
   it("reuses matching character nodes during storyboard import", async () => {
     let sequence = 1;
     const existingCharacter = canvasNode({
@@ -1069,6 +1126,26 @@ function importStoryboard(): StoryboardResult {
       })),
     })),
   };
+}
+
+function importStoryboardWithStorySeed(): StoryboardResult {
+  const storyboard = importStoryboard();
+  storyboard.storySeedReferences = [
+    {
+      assetId: "asset_seed_1",
+      imageNodeId: "image_seed_1",
+      label: "Seed image",
+      prompt: "keep the same subject silhouette",
+    },
+  ];
+  storyboard.characters[0]!.referenceAssetIds = ["asset_seed_1"];
+  storyboard.locations[0]!.referenceAssetIds = ["asset_seed_1"];
+  storyboard.scenes.forEach((scene) => {
+    scene.shots.forEach((shot) => {
+      shot.referenceAssetIds = ["asset_seed_1"];
+    });
+  });
+  return storyboard;
 }
 
 function importStoryboardWithBlueprint(): StoryboardResult {

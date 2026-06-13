@@ -1,5 +1,9 @@
-import { PROJECT_ASPECT_RATIOS, type ProjectAspectRatio } from "@guga-flow/shared-types";
-import { IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import {
+  PROJECT_ASPECT_RATIOS,
+  type GenerationCreativeSettings,
+  type ProjectAspectRatio,
+} from "@guga-flow/shared-types";
+import { IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 export class CreateProjectDto {
   @IsString()
@@ -15,6 +19,10 @@ export class CreateProjectDto {
   @IsOptional()
   @IsIn(PROJECT_ASPECT_RATIOS)
   defaultAspectRatio?: ProjectAspectRatio;
+
+  @IsOptional()
+  @IsObject()
+  generationSettings?: GenerationCreativeSettings;
 }
 
 export class UpdateProjectDto {
@@ -32,4 +40,8 @@ export class UpdateProjectDto {
   @IsOptional()
   @IsIn(PROJECT_ASPECT_RATIOS)
   defaultAspectRatio?: ProjectAspectRatio;
+
+  @IsOptional()
+  @IsObject()
+  generationSettings?: GenerationCreativeSettings;
 }

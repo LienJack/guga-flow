@@ -4,12 +4,20 @@ import type {
   GeneratedMediaProviderOutput,
   GenerationJobInput,
   GenerationJobRecord,
+  ManagedProviderId,
+  ManagedProviderKind,
   ProviderFailure,
+  ProviderRuntimeConfig,
   WorkerGenerationJobWaitInput,
 } from "@guga-flow/shared-types";
 
 export interface GenerationWorkerClient {
   claimNextJob(): Promise<ClaimGenerationJobResult<GenerationJobInput>>;
+  getProviderRuntimeConfig(
+    projectId: string,
+    kind: ManagedProviderKind,
+    provider: ManagedProviderId,
+  ): Promise<ProviderRuntimeConfig>;
   getAssetBytes(projectId: string, assetId: string): Promise<{ body: Buffer; mimeType: string }>;
   succeedJob(
     jobId: string,
@@ -29,12 +37,28 @@ type FetchLike = typeof fetch;
 export class HttpGenerationWorkerClient implements GenerationWorkerClient {
   private readonly baseUrl: string;
 
-  constructor(baseUrl: string, private readonly fetchImpl: FetchLike = fetch) {
+  constructor(
+    baseUrl: string,
+    private readonly fetchImpl: FetchLike = fetch,
+    private readonly workerApiToken: string | undefined = process.env.WORKER_API_TOKEN,
+  ) {
     this.baseUrl = baseUrl.replace(/\/+$/g, "");
   }
 
   claimNextJob(): Promise<ClaimGenerationJobResult<GenerationJobInput>> {
     return this.post("/worker/generation/jobs/claim");
+  }
+
+  getProviderRuntimeConfig(
+    projectId: string,
+    kind: ManagedProviderKind,
+    provider: ManagedProviderId,
+  ): Promise<ProviderRuntimeConfig> {
+    return this.post("/worker/generation/providers/runtime", {
+      projectId,
+      kind,
+      provider,
+    });
   }
 
   async getAssetBytes(projectId: string, assetId: string): Promise<{ body: Buffer; mimeType: string }> {
@@ -85,6 +109,7 @@ export class HttpGenerationWorkerClient implements GenerationWorkerClient {
       method: "POST",
       headers: {
         "content-type": "application/json",
+        ...(this.workerApiToken ? { "x-worker-token": this.workerApiToken } : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });

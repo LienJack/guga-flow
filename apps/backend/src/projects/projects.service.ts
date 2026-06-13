@@ -2,12 +2,15 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from "@nes
 import {
   PROJECT_ASPECT_RATIOS,
   type CreateProjectInput,
+  type GenerationCreativeSettings,
   type ProjectAspectRatio,
   type ProjectDetail,
   type ProjectListItem,
   type UpdateProjectInput,
+  normalizeGenerationCreativeSettings,
 } from "@guga-flow/shared-types";
 
+import { Prisma } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { LocalStorageService } from "../storage/local-storage.service";
 
@@ -20,6 +23,7 @@ type ProjectModel = {
   title: string;
   description: string | null;
   defaultAspectRatio: string;
+  generationSettingsJson: unknown | null;
   createdAt: Date | string;
   updatedAt: Date | string;
   _count?: {
@@ -52,6 +56,29 @@ function toProjectAspectRatio(value: string | undefined): ProjectAspectRatio {
   return DEFAULT_PROJECT_ASPECT_RATIO;
 }
 
+function normalizeProjectGenerationSettings(value: unknown): GenerationCreativeSettings | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const normalized = normalizeGenerationCreativeSettings(value);
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function toInputJsonValue<T>(value: T): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+function projectGenerationSettingsJson(value: unknown): Prisma.InputJsonValue | undefined {
+  const normalized = normalizeProjectGenerationSettings(value);
+  return normalized ? toInputJsonValue(normalized) : undefined;
+}
+
+function nullableProjectGenerationSettingsJson(
+  value: unknown,
+): Prisma.InputJsonValue | typeof Prisma.JsonNull {
+  return projectGenerationSettingsJson(value) ?? Prisma.JsonNull;
+}
+
 @Injectable()
 export class ProjectsService {
   constructor(
@@ -82,6 +109,7 @@ export class ProjectsService {
         title,
         description: normalizeDescription(input.description),
         defaultAspectRatio: input.defaultAspectRatio ?? DEFAULT_PROJECT_ASPECT_RATIO,
+        generationSettingsJson: projectGenerationSettingsJson(input.generationSettings),
       },
       include: { _count: { select: { assets: true } } },
     });
@@ -109,6 +137,7 @@ export class ProjectsService {
       title?: string;
       description?: string | null;
       defaultAspectRatio?: ProjectAspectRatio;
+      generationSettingsJson?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
     } = {};
 
     if (input.title !== undefined) {
@@ -126,6 +155,10 @@ export class ProjectsService {
 
     if (input.defaultAspectRatio !== undefined) {
       data.defaultAspectRatio = input.defaultAspectRatio;
+    }
+
+    if (input.generationSettings !== undefined) {
+      data.generationSettingsJson = nullableProjectGenerationSettingsJson(input.generationSettings);
     }
 
     const project = await this.prisma.project.update({
@@ -147,6 +180,7 @@ export class ProjectsService {
         title: `${source.title} Copy`,
         description: source.description ?? null,
         defaultAspectRatio: source.defaultAspectRatio,
+        generationSettingsJson: projectGenerationSettingsJson(source.generationSettings),
       },
       include: { _count: { select: { assets: true } } },
     });
@@ -189,6 +223,7 @@ export class ProjectsService {
       title: project.title,
       description: project.description ?? undefined,
       defaultAspectRatio: toProjectAspectRatio(project.defaultAspectRatio),
+      generationSettings: normalizeProjectGenerationSettings(project.generationSettingsJson),
       createdAt: toIsoString(project.createdAt),
       updatedAt: toIsoString(project.updatedAt),
       assetCount: project._count?.assets ?? 0,

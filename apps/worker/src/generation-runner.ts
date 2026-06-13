@@ -1,4 +1,10 @@
-import type { ProviderFailure } from "@guga-flow/shared-types";
+import {
+  managedProviderId,
+  type GenerationJobInput,
+  type ManagedProviderId,
+  type ManagedProviderKind,
+  type ProviderFailure,
+} from "@guga-flow/shared-types";
 
 import { buildEditorExportPackage } from "./editor-export-package";
 import type { GenerationWorkerClient } from "./generation-client";
@@ -30,7 +36,6 @@ export interface GenerationWorkerLoopOptions extends GenerationWorkerRunnerOptio
 export async function runOneGenerationJob(
   options: GenerationWorkerRunnerOptions,
 ): Promise<GenerationWorkerRunResult> {
-  const registry = options.registry ?? createGenerationExecutorRegistry();
   const claim = await options.client.claimNextJob();
   const job = claim.job;
 
@@ -49,6 +54,7 @@ export async function runOneGenerationJob(
       return { status: "succeeded", jobId: job.id };
     }
 
+    const registry = options.registry ?? await createRuntimeRegistry(options.client, job.inputJson);
     const result = job.providerTaskId
       ? await pollGenerationJob(job, registry)
       : await executeGenerationJob(job, registry);
@@ -101,4 +107,59 @@ async function reportFailure(
     const message = error instanceof Error ? error.message : "unknown worker API error";
     options.logger?.error(`Generation job ${jobId} failure report was rejected: ${message}`);
   }
+}
+
+async function createRuntimeRegistry(
+  client: GenerationWorkerClient,
+  input: GenerationJobInput,
+): Promise<GenerationExecutorRegistry> {
+  const runtimeProvider = runtimeProviderForInput(input);
+  if (!runtimeProvider) {
+    return createGenerationExecutorRegistry();
+  }
+
+  const runtimeConfig = await client.getProviderRuntimeConfig(
+    input.projectId,
+    runtimeProvider.kind,
+    runtimeProvider.provider,
+  );
+  return createGenerationExecutorRegistry({
+    env: {
+      ...process.env,
+      ...runtimeConfig.env,
+    },
+    programmableProvider: runtimeConfig.programmableProvider,
+  });
+}
+
+function runtimeProviderForInput(input: GenerationJobInput): {
+  kind: ManagedProviderKind;
+  provider: ManagedProviderId;
+} | undefined {
+  if (
+    input.operation === "shot_to_image" ||
+    input.operation === "character_to_image" ||
+    input.operation === "location_to_image" ||
+    input.operation === "image_refinement"
+  ) {
+    const provider = managedProviderId("image", input.provider);
+    if (!provider) {
+      return undefined;
+    }
+    return {
+      kind: "image",
+      provider,
+    };
+  }
+  if (input.operation === "image_to_video") {
+    const provider = managedProviderId("video", input.provider);
+    if (!provider) {
+      return undefined;
+    }
+    return {
+      kind: "video",
+      provider,
+    };
+  }
+  return undefined;
 }

@@ -2,24 +2,24 @@ import type {
   CreateGenerationJobInput,
   CreateBatchImagesToVideosJobInput,
   CreateBatchShotsToImagesJobInput,
+  AnyImageProviderId,
+  AnyVideoProviderId,
   CanvasSnapshotJson,
   EditorExportPackageOutput,
   GeneratedMediaProviderOutput,
-  ImageProviderId,
   Phase8GenerationOperation,
   ProjectAspectRatio,
   ProviderFailure,
-  VideoProviderId,
   VideoProviderResolution,
+  WorkerProviderRuntimeConfigInput,
   WorkerGenerationJobFailInput,
   WorkerGenerationJobSucceedInput,
   WorkerGenerationJobWaitInput,
 } from "@guga-flow/shared-types";
 import {
-  IMAGE_PROVIDER_IDS,
+  MANAGED_PROVIDER_KINDS,
   PHASE_8_GENERATION_OPERATIONS,
   PROJECT_ASPECT_RATIOS,
-  VIDEO_PROVIDER_IDS,
   VIDEO_PROVIDER_RESOLUTIONS,
 } from "@guga-flow/shared-types";
 import {
@@ -52,9 +52,14 @@ export class CreateGenerationJobDto implements CreateGenerationJobInput {
   forceFailure?: boolean;
 
   @IsOptional()
-  @IsIn(IMAGE_PROVIDER_IDS)
+  @IsString()
+  @MaxLength(1000)
+  refinementPrompt?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(80)
-  provider?: ImageProviderId;
+  provider?: AnyImageProviderId;
 
   @IsOptional()
   @IsString()
@@ -76,9 +81,9 @@ export class CreateGenerationJobDto implements CreateGenerationJobInput {
   providerParams?: CanvasSnapshotJson;
 
   @IsOptional()
-  @IsIn(VIDEO_PROVIDER_IDS)
+  @IsString()
   @MaxLength(80)
-  videoProvider?: VideoProviderId;
+  videoProvider?: AnyVideoProviderId;
 
   @IsOptional()
   @IsString()
@@ -121,9 +126,9 @@ export class CreateBatchImagesToVideosJobDto implements CreateBatchImagesToVideo
   forceFailure?: boolean;
 
   @IsOptional()
-  @IsIn(VIDEO_PROVIDER_IDS)
+  @IsString()
   @MaxLength(80)
-  videoProvider?: VideoProviderId;
+  videoProvider?: AnyVideoProviderId;
 
   @IsOptional()
   @IsString()
@@ -166,9 +171,9 @@ export class CreateBatchShotsToImagesJobDto implements CreateBatchShotsToImagesJ
   forceFailure?: boolean;
 
   @IsOptional()
-  @IsIn(IMAGE_PROVIDER_IDS)
+  @IsString()
   @MaxLength(80)
-  provider?: ImageProviderId;
+  provider?: AnyImageProviderId;
 
   @IsOptional()
   @IsString()
@@ -229,4 +234,19 @@ export class WorkerGenerationJobSucceedDto implements WorkerGenerationJobSucceed
   @IsOptional()
   @IsObject()
   packageOutput?: EditorExportPackageOutput;
+}
+
+export class WorkerProviderRuntimeConfigDto implements WorkerProviderRuntimeConfigInput {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  projectId!: string;
+
+  @IsIn(MANAGED_PROVIDER_KINDS)
+  kind!: WorkerProviderRuntimeConfigInput["kind"];
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  provider!: WorkerProviderRuntimeConfigInput["provider"];
 }

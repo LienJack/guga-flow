@@ -122,6 +122,47 @@ describe("AssetsService", () => {
     });
   });
 
+  it("stores uploaded audio files as audio assets with audio previews", async () => {
+    prisma.asset.create.mockResolvedValue(
+      asset({
+        id: "asset_audio_1",
+        type: "audio",
+        purpose: "voice_reference",
+        storageKey: "project_1/hero-voice.mp3",
+        mimeType: "audio/mpeg",
+        originalFilename: "hero-voice.mp3",
+        metadataJson: { previewKind: "audio" },
+      }),
+    );
+
+    const result = await service.uploadAsset(
+      "project_1",
+      createFile({
+        originalname: "hero-voice.mp3",
+        mimetype: "audio/mpeg",
+      }),
+      { purpose: "voice_reference" },
+    );
+
+    expect(prisma.asset.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          projectId: "project_1",
+          type: "audio",
+          purpose: "voice_reference",
+          mimeType: "audio/mpeg",
+          metadataJson: expect.objectContaining({ previewKind: "audio" }),
+        }),
+      }),
+    );
+    expect(result).toMatchObject({
+      id: "asset_audio_1",
+      type: "audio",
+      purpose: "voice_reference",
+      previewKind: "audio",
+    });
+  });
+
   it("rejects unsupported MIME types before storing files", async () => {
     await expect(
       service.uploadAsset(
@@ -254,6 +295,7 @@ describe("AssetsService", () => {
         aspectRatio: "16:9",
         fps: 24,
         sortMode: "manual",
+        exportPreset: "standard_zip",
         tracks: [],
         assets: [],
       },

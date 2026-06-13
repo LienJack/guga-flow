@@ -62,19 +62,46 @@ function createPrismaE2eMock() {
   const canvasNodes = new Map<string, Record<string, unknown>>();
   const canvasEdges = new Map<string, Record<string, unknown>>();
   const novelDocuments = new Map<string, Record<string, unknown>>();
+  const novelEventGraphs = new Map<string, Record<string, unknown>>();
+  const scriptDrafts = new Map<string, Record<string, unknown>>();
   const storyboardDrafts = new Map<string, Record<string, unknown>>();
   const generationJobs = new Map<string, Record<string, unknown>>();
+  const skillTemplates = new Map<string, Record<string, unknown>>();
+  const skillTemplateVersions = new Map<string, Record<string, unknown>>();
   let projectSequence = 1;
   let assetSequence = 1;
   let canvasSequence = 1;
   let nodeSequence = 1;
   let edgeSequence = 1;
   let novelSequence = 1;
+  let novelEventGraphSequence = 1;
+  let scriptDraftSequence = 1;
   let storyboardDraftSequence = 1;
   let generationJobSequence = 1;
+  let skillTemplateSequence = 1;
+  let skillTemplateVersionSequence = 1;
 
   function nextDate() {
     return new Date(`2026-06-12T00:${String(projectSequence).padStart(2, "0")}:00.000Z`);
+  }
+
+  function skillTemplateKey(input: { projectId: string; kind: string; slug: string }): string {
+    return `${input.projectId}:${input.kind}:${input.slug}`;
+  }
+
+  function uniqueSkillTemplateRows(): Record<string, unknown>[] {
+    return Array.from(
+      new Map(Array.from(skillTemplates.values()).map((row) => [row.id as string, row])).values(),
+    );
+  }
+
+  function skillTemplateWithVersions(row: Record<string, unknown>): Record<string, unknown> {
+    return {
+      ...row,
+      versions: Array.from(skillTemplateVersions.values())
+        .filter((version) => version.skillTemplateId === row.id)
+        .sort((left, right) => (right.version as number) - (left.version as number)),
+    };
   }
 
   const prisma = {
@@ -144,9 +171,29 @@ function createPrismaE2eMock() {
             novelDocuments.delete(novelId);
           }
         }
+        for (const [graphId, graph] of novelEventGraphs.entries()) {
+          if (graph.projectId === where.id) {
+            novelEventGraphs.delete(graphId);
+          }
+        }
+        for (const [scriptId, script] of scriptDrafts.entries()) {
+          if (script.projectId === where.id) {
+            scriptDrafts.delete(scriptId);
+          }
+        }
         for (const [draftId, draft] of storyboardDrafts.entries()) {
           if (draft.projectId === where.id) {
             storyboardDrafts.delete(draftId);
+          }
+        }
+        for (const template of uniqueSkillTemplateRows()) {
+          if (template.projectId === where.id) {
+            skillTemplates.delete(template.id as string);
+            skillTemplates.delete(skillTemplateKey({
+              projectId: template.projectId as string,
+              kind: template.kind as string,
+              slug: template.slug as string,
+            }));
           }
         }
         return existing;
@@ -207,12 +254,110 @@ function createPrismaE2eMock() {
           throw new Error("Novel not found");
         }
         novelDocuments.delete(where.id);
+        for (const [graphId, graph] of novelEventGraphs.entries()) {
+          if (graph.novelDocumentId === where.id) {
+            novelEventGraphs.delete(graphId);
+          }
+        }
+        for (const [scriptId, script] of scriptDrafts.entries()) {
+          if (script.novelDocumentId === where.id) {
+            scriptDrafts.delete(scriptId);
+          }
+        }
         for (const [draftId, draft] of storyboardDrafts.entries()) {
           if (draft.novelDocumentId === where.id) {
             storyboardDrafts.delete(draftId);
           }
         }
         return existing;
+      }),
+    },
+    novelEventGraph: {
+      create: vi.fn(async ({ data }) => {
+        const id = `novel_event_graph_${novelEventGraphSequence}`;
+        novelEventGraphSequence += 1;
+        const graph = {
+          id,
+          projectId: data.projectId,
+          novelDocumentId: data.novelDocumentId,
+          chaptersJson: data.chaptersJson ?? [],
+          eventsJson: data.eventsJson ?? [],
+          createdAt: new Date("2026-06-12T00:39:00.000Z"),
+          updatedAt: new Date("2026-06-12T00:39:00.000Z"),
+        };
+        novelEventGraphs.set(id, graph);
+        return graph;
+      }),
+      findFirst: vi.fn(async ({ where }) =>
+        Array.from(novelEventGraphs.values())
+          .filter(
+            (graph) =>
+              graph.projectId === where.projectId &&
+              graph.novelDocumentId === where.novelDocumentId,
+          )
+          .sort(
+            (left, right) =>
+              (right.createdAt as Date).getTime() - (left.createdAt as Date).getTime(),
+          )[0] ?? null,
+      ),
+    },
+    scriptDraft: {
+      findMany: vi.fn(async ({ where, orderBy, take }) => {
+        const rows = Array.from(scriptDrafts.values())
+          .filter(
+            (draft) =>
+              draft.projectId === where.projectId &&
+              draft.novelDocumentId === where.novelDocumentId,
+          )
+          .sort((left, right) => {
+            if (orderBy?.version === "desc") {
+              return (right.version as number) - (left.version as number);
+            }
+            return (right.updatedAt as Date).getTime() - (left.updatedAt as Date).getTime();
+          });
+        return typeof take === "number" ? rows.slice(0, take) : rows;
+      }),
+      findFirst: vi.fn(async ({ where }) =>
+        Array.from(scriptDrafts.values()).find(
+          (draft) =>
+            draft.id === where.id &&
+            draft.projectId === where.projectId &&
+            draft.novelDocumentId === where.novelDocumentId,
+        ) ?? null,
+      ),
+      create: vi.fn(async ({ data }) => {
+        const id = `script_draft_${scriptDraftSequence}`;
+        scriptDraftSequence += 1;
+        const now = new Date("2026-06-12T00:39:30.000Z");
+        const draft = {
+          id,
+          projectId: data.projectId,
+          novelDocumentId: data.novelDocumentId,
+          version: data.version,
+          title: data.title,
+          strategy: data.strategy,
+          status: data.status ?? "draft",
+          scriptJson: data.scriptJson ?? {},
+          createdAt: now,
+          updatedAt: now,
+        };
+        scriptDrafts.set(id, draft);
+        return draft;
+      }),
+      update: vi.fn(async ({ where, data }) => {
+        const existing = scriptDrafts.get(where.id);
+        if (!existing) {
+          throw new Error("Script draft not found");
+        }
+        const updated = {
+          ...existing,
+          ...Object.fromEntries(
+            Object.entries(data).filter(([, value]) => value !== undefined),
+          ),
+          updatedAt: new Date("2026-06-12T00:39:45.000Z"),
+        };
+        scriptDrafts.set(where.id, updated);
+        return updated;
       }),
     },
     storyboardDraft: {
@@ -578,6 +723,92 @@ function createPrismaE2eMock() {
         return asset;
       }),
     },
+    skillTemplate: {
+      findMany: vi.fn(async ({ where }) =>
+        uniqueSkillTemplateRows()
+          .filter(
+            (template) =>
+              (!where?.projectId || template.projectId === where.projectId) &&
+              (where?.enabled === undefined || template.enabled === where.enabled),
+          )
+          .map(skillTemplateWithVersions),
+      ),
+      findUnique: vi.fn(async ({ where }) => {
+        const row = where.id
+          ? skillTemplates.get(where.id)
+          : skillTemplates.get(skillTemplateKey(where.projectId_kind_slug));
+        return row ? skillTemplateWithVersions(row) : null;
+      }),
+      create: vi.fn(async ({ data }) => {
+        const id = `skill_template_${skillTemplateSequence}`;
+        skillTemplateSequence += 1;
+        const now = new Date("2026-06-12T01:10:00.000Z");
+        const template = {
+          id,
+          projectId: data.projectId,
+          kind: data.kind,
+          slug: data.slug,
+          displayName: data.displayName,
+          description: data.description ?? null,
+          enabled: data.enabled ?? true,
+          activeVersionId: data.activeVersionId ?? null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        skillTemplates.set(id, template);
+        skillTemplates.set(skillTemplateKey(template), template);
+        const createVersion = data.versions?.create;
+        if (createVersion) {
+          const version = {
+            id: `skill_template_version_${skillTemplateVersionSequence}`,
+            skillTemplateId: id,
+            version: createVersion.version,
+            sourceText: createVersion.sourceText,
+            status: createVersion.status,
+            diagnosticsJson: createVersion.diagnosticsJson,
+            createdAt: now,
+          };
+          skillTemplateVersionSequence += 1;
+          skillTemplateVersions.set(version.id, version);
+        }
+        return skillTemplateWithVersions(template);
+      }),
+      update: vi.fn(async ({ where, data }) => {
+        const existing = skillTemplates.get(where.id);
+        if (!existing) {
+          throw new Error("Skill template not found");
+        }
+        const updated = {
+          ...existing,
+          ...data,
+          updatedAt: new Date("2026-06-12T01:11:00.000Z"),
+        };
+        skillTemplates.set(where.id, updated);
+        skillTemplates.set(skillTemplateKey({
+          projectId: updated.projectId as string,
+          kind: updated.kind as string,
+          slug: updated.slug as string,
+        }), updated);
+        return skillTemplateWithVersions(updated);
+      }),
+    },
+    skillTemplateVersion: {
+      findUnique: vi.fn(async ({ where }) => skillTemplateVersions.get(where.id) ?? null),
+      create: vi.fn(async ({ data }) => {
+        const version = {
+          id: `skill_template_version_${skillTemplateVersionSequence}`,
+          skillTemplateId: data.skillTemplateId,
+          version: data.version,
+          sourceText: data.sourceText,
+          status: data.status,
+          diagnosticsJson: data.diagnosticsJson,
+          createdAt: new Date("2026-06-12T01:12:00.000Z"),
+        };
+        skillTemplateVersionSequence += 1;
+        skillTemplateVersions.set(version.id, version);
+        return version;
+      }),
+    },
   };
 
   return {
@@ -623,7 +854,7 @@ function createStorageE2eMock() {
 }
 
 function createProvidersE2eMock() {
-  return {
+  const providers = {
     getImageProviders: vi.fn(() => ({
       providers: [
         {
@@ -633,7 +864,7 @@ function createProvidersE2eMock() {
           requiresApiKey: false,
           defaultModel: "mock-image-v1",
           models: [{ id: "mock-image-v1", displayName: "Mock Image v1", default: true }],
-          supportedModes: ["text_to_image", "multi_reference"],
+          supportedModes: ["text_to_image", "image_to_image", "multi_reference"],
           supportsReferenceImages: true,
           maxReferenceImages: 99,
           supportsMultipleOutputs: false,
@@ -649,7 +880,7 @@ function createProvidersE2eMock() {
           requiresApiKey: true,
           defaultModel: "gpt-image-2",
           models: [{ id: "gpt-image-2", displayName: "GPT Image 2", default: true }],
-          supportedModes: ["text_to_image", "multi_reference"],
+          supportedModes: ["text_to_image", "image_to_image", "multi_reference"],
           supportsReferenceImages: true,
           maxReferenceImages: 4,
           supportsMultipleOutputs: true,
@@ -724,6 +955,18 @@ function createProvidersE2eMock() {
           ],
         },
       ],
+    })),
+  };
+
+  return {
+    ...providers,
+    getProjectImageProviders: vi.fn(async () => providers.getImageProviders()),
+    getProjectVideoProviders: vi.fn(async () => providers.getVideoProviders()),
+    getRuntimeProviderConfig: vi.fn(async (projectId: string, kind: string, provider: string) => ({
+      projectId,
+      kind,
+      provider,
+      env: {},
     })),
   };
 }
@@ -862,14 +1105,32 @@ describe("project api e2e", () => {
       previewKind: "text",
     });
 
+    const audioUpload = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/assets/upload`)
+      .field("purpose", "voice_reference")
+      .attach("file", Buffer.from("fake audio"), {
+        filename: "hero-voice.mp3",
+        contentType: "audio/mpeg",
+      })
+      .expect(201);
+
+    expect(audioUpload.body).toMatchObject({
+      projectId,
+      type: "audio",
+      purpose: "voice_reference",
+      originalFilename: "hero-voice.mp3",
+      previewKind: "audio",
+    });
+
     const assetId = markdownUpload.body.id;
 
     await request(app.getHttpServer())
       .get(`/api/v1/projects/${projectId}/assets`)
       .expect(200)
       .expect(({ body }) => {
-        expect(body).toHaveLength(1);
-        expect(body[0].id).toBe(assetId);
+        expect(body).toHaveLength(2);
+        expect(body.map((asset: { id: string }) => asset.id)).toContain(assetId);
+        expect(body.map((asset: { id: string }) => asset.id)).toContain(audioUpload.body.id);
       });
 
     await request(app.getHttpServer())

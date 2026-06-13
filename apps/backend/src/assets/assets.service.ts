@@ -51,7 +51,10 @@ export interface AssetPreviewPayload {
 
 export interface CreateGeneratedAssetInput {
   providerOutput: GeneratedMediaProviderOutput;
-  purpose: Extract<AssetPurpose, "shot_keyframe" | "shot_clip">;
+  purpose: Extract<
+    AssetPurpose,
+    "shot_keyframe" | "shot_clip" | "character_reference" | "location_reference"
+  >;
   metadataJson?: Record<string, unknown>;
 }
 
@@ -80,6 +83,9 @@ function assetTypeForMime(mimeType: UploadableAssetMimeType): AssetType {
   if (mimeType.startsWith("video/")) {
     return "video";
   }
+  if (mimeType.startsWith("audio/")) {
+    return "audio";
+  }
   return "document";
 }
 
@@ -99,6 +105,9 @@ function previewKindForMime(mimeType: string): AssetPreviewKind {
   }
   if (mimeType.startsWith("video/")) {
     return "video";
+  }
+  if (mimeType.startsWith("audio/")) {
+    return "audio";
   }
   if (mimeType.startsWith("text/")) {
     return "text";

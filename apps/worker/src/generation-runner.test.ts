@@ -1,7 +1,9 @@
 import { ProviderError, type ImageProvider, type VideoProvider } from "@guga-flow/provider-contracts";
 import type {
+  CharacterToImageJobInput,
   EditorExportJobInput,
   GenerationJobRecord,
+  ImageRefinementJobInput,
   ImageToVideoJobInput,
   ShotToImageJobInput,
 } from "@guga-flow/shared-types";
@@ -11,11 +13,21 @@ import type { GenerationWorkerClient } from "./generation-client";
 import type { GenerationExecutorRegistry } from "./generation-executors";
 import { runOneGenerationJob } from "./generation-runner";
 
-type WorkerGenerationJobInput = ShotToImageJobInput | ImageToVideoJobInput | EditorExportJobInput;
+type WorkerGenerationJobInput =
+  | ShotToImageJobInput
+  | CharacterToImageJobInput
+  | ImageRefinementJobInput
+  | ImageToVideoJobInput
+  | EditorExportJobInput;
 
 function createClientMock(): GenerationWorkerClient {
   return {
     claimNextJob: vi.fn(async () => ({})),
+    getProviderRuntimeConfig: vi.fn(async (_projectId, kind, provider) => ({
+      kind,
+      provider,
+      env: {},
+    })),
     getAssetBytes: vi.fn(async (_projectId: string, assetId: string) => ({
       body: Buffer.from(`clip:${assetId}`),
       mimeType: "video/mp4",
@@ -167,6 +179,59 @@ describe("generation worker runner", () => {
     expect(result).toEqual({ status: "succeeded", jobId: "job_image" });
   });
 
+  it("fetches project runtime provider config when using the default registry", async () => {
+    vi.mocked(client.claimNextJob).mockResolvedValue({
+      job: jobRecord("job_image", shotInput()),
+    });
+
+    const result = await runOneGenerationJob({ client });
+
+    expect(client.getProviderRuntimeConfig).toHaveBeenCalledWith("project_1", "image", "mock-image");
+    expect(client.succeedJob).toHaveBeenCalledWith(
+      "job_image",
+      expect.objectContaining({
+        provider: "mock-image",
+      }),
+      undefined,
+    );
+    expect(result).toEqual({ status: "succeeded", jobId: "job_image" });
+  });
+
+  it("executes claimed character reference image jobs and reports success", async () => {
+    vi.mocked(client.claimNextJob).mockResolvedValue({
+      job: jobRecord("job_character", characterInput(), {
+        operation: "character_to_image",
+        provider: "mock-image",
+      }),
+    });
+
+    const result = await runOneGenerationJob({ client, registry });
+    const imageProvider = registry.imageProviders.get("mock-image");
+
+    expect(registry.imageProviders.get).toHaveBeenCalledWith("mock-image");
+    expect(imageProvider.generateImage).toHaveBeenCalledWith({
+      projectId: "project_1",
+      prompt: "Character reference prompt",
+      mode: "text_to_image",
+      model: "mock-image-v1",
+      aspectRatio: "1:1",
+      count: 1,
+      referenceAssetIds: ["asset_character_ref"],
+      providerParams: { quality: "medium" },
+      forceFailure: undefined,
+    });
+    expect(client.succeedJob).toHaveBeenCalledWith(
+      "job_character",
+      expect.objectContaining({
+        storageKey: "mock/images/provider_image_1.png",
+        provider: "mock-image",
+        prompt: "Image prompt",
+      }),
+      undefined,
+    );
+    expect(result).toEqual({ status: "succeeded", jobId: "job_character" });
+  });
+
   it("executes claimed image-to-video jobs and reports success", async () => {
     vi.mocked(client.claimNextJob).mockResolvedValue({
       job: jobRecord("job_video", videoInput(), {
@@ -202,6 +267,43 @@ describe("generation worker runner", () => {
       undefined,
     );
     expect(result).toEqual({ status: "succeeded", jobId: "job_video" });
+  });
+
+  it("executes claimed image refinement jobs and reports success", async () => {
+    vi.mocked(client.claimNextJob).mockResolvedValue({
+      job: jobRecord("job_refine", imageRefinementInput(), {
+        operation: "image_refinement",
+        provider: "mock-image",
+      }),
+    });
+
+    const result = await runOneGenerationJob({ client, registry });
+    const imageProvider = registry.imageProviders.get("mock-image");
+
+    expect(registry.imageProviders.get).toHaveBeenCalledWith("mock-image");
+    expect(imageProvider.generateImage).toHaveBeenCalledWith({
+      projectId: "project_1",
+      prompt: "Refine image lighting",
+      mode: "image_to_image",
+      model: "mock-image-v1",
+      aspectRatio: "16:9",
+      count: 1,
+      sourceImageAssetId: "asset_image_1",
+      sourceImageNodeId: "image_1",
+      referenceAssetIds: ["asset_ref_1"],
+      providerParams: { strength: "medium" },
+      forceFailure: undefined,
+    });
+    expect(client.succeedJob).toHaveBeenCalledWith(
+      "job_refine",
+      expect.objectContaining({
+        storageKey: "mock/images/provider_image_1.png",
+        provider: "mock-image",
+        prompt: "Image prompt",
+      }),
+      undefined,
+    );
+    expect(result).toEqual({ status: "succeeded", jobId: "job_refine" });
   });
 
   it("marks submitted image-to-video jobs as waiting when provider task is still running", async () => {
@@ -391,6 +493,23 @@ function shotInput(): ShotToImageJobInput {
   };
 }
 
+function characterInput(): CharacterToImageJobInput {
+  return {
+    operation: "character_to_image",
+    projectId: "project_1",
+    sourceNodeId: "character_1",
+    characterNodeId: "character_1",
+    prompt: "Character reference prompt",
+    referenceAssetIds: ["asset_character_ref"],
+    sourceNodeIds: ["character_1"],
+    provider: "mock-image",
+    model: "mock-image-v1",
+    aspectRatio: "1:1",
+    providerParams: { quality: "medium" },
+    assetPurpose: "character_reference",
+  };
+}
+
 function videoInput(): ImageToVideoJobInput {
   return {
     operation: "image_to_video",
@@ -411,6 +530,24 @@ function videoInput(): ImageToVideoJobInput {
   };
 }
 
+function imageRefinementInput(): ImageRefinementJobInput {
+  return {
+    operation: "image_refinement",
+    projectId: "project_1",
+    sourceNodeId: "image_1",
+    imageNodeId: "image_1",
+    sourceImageAssetId: "asset_image_1",
+    prompt: "Refine image lighting",
+    referenceAssetIds: ["asset_ref_1"],
+    sourceNodeIds: ["image_1", "shot_1"],
+    parentShotNodeId: "shot_1",
+    provider: "mock-image",
+    model: "mock-image-v1",
+    aspectRatio: "16:9",
+    providerParams: { strength: "medium" },
+  };
+}
+
 function editorExportInput(): EditorExportJobInput {
   return {
     operation: "editor_export",
@@ -418,6 +555,7 @@ function editorExportInput(): EditorExportJobInput {
     editorExportId: "export_1",
     videoNodeIds: ["video_1", "video_2"],
     sortMode: "manual",
+    exportPreset: "standard_zip",
     includeStoryboardCsv: true,
     includeSubtitles: false,
     fps: 24,
