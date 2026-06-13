@@ -4,17 +4,21 @@ import type {
   CanvasEdgeRecord,
   CanvasNodeRecord,
   CanvasSaveStatus,
+  CreateAgentCanvasActionResult,
   GenerationJobRecord,
   GenerationQueueSummary,
   ImportStoryboardToCanvasResult,
+  ProjectDetail,
+  UndoAgentCanvasActionResult,
 } from "@guga-flow/shared-types";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-import { getProjectCanvas, listGenerationJobs } from "../../lib/api";
+import { getProject, getProjectCanvas, listGenerationJobs } from "../../lib/api";
 import { WorkbenchShell } from "../workbench-shell";
 import { NovelStoryboardPanel } from "../novels/novel-storyboard-panel";
 import { mergeStoryboardImportGraph } from "../novels/storyboard-data";
 import { type CanvasSelectionState, EMPTY_CANVAS_SELECTION } from "./canvas-selection";
+import { AgentCanvasActionsPanel } from "./agent-canvas-actions-panel";
 import { CanvasEditor } from "./canvas-editor";
 import { CanvasInspector } from "./canvas-inspector";
 import {
@@ -32,6 +36,7 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
   const [saveError, setSaveError] = useState<string | null>(null);
   const [canvasNodes, setCanvasNodes] = useState<CanvasNodeRecord[]>([]);
   const [canvasEdges, setCanvasEdges] = useState<CanvasEdgeRecord[]>([]);
+  const [project, setProject] = useState<ProjectDetail | null>(null);
   const [generationJobs, setGenerationJobs] = useState<GenerationJobRecord[]>([]);
   const [queueSummary, setQueueSummary] = useState<
     Pick<GenerationQueueSummary, "queued" | "running" | "failed" | "providerWaiting" | "cancelled">
@@ -72,6 +77,25 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
     const canvas = await getProjectCanvas(projectId);
     setCanvasNodes(canvas.nodes);
     setCanvasEdges(canvas.edges);
+  }, [projectId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getProject(projectId)
+      .then((result) => {
+        if (!cancelled) {
+          setProject(result);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProject(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [projectId]);
 
   const refreshGenerationState = useCallback(
@@ -144,6 +168,55 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
     setFocusRequest({ nodeId, key: focusRequestSequenceRef.current });
   }, []);
 
+  const handleAgentActionComplete = useCallback(
+    async (result: CreateAgentCanvasActionResult) => {
+      if (result.nodes.length > 0) {
+        setCanvasNodes((current) => mergeCanvasNodeRecords(current, result.nodes));
+      }
+      if (result.edges.length > 0) {
+        setCanvasEdges((current) => mergeCanvasEdgeRecords(current, result.edges));
+      }
+      try {
+        await refreshGenerationState({ refreshCanvas: true });
+      } catch {
+        // The action result already contains changed artifacts; queue refresh is best-effort.
+      }
+      const focusNodeId = result.focusNodeId ?? result.nodes[0]?.id;
+      if (focusNodeId) {
+        handleSelectCanvasNode(focusNodeId);
+      }
+    },
+    [handleSelectCanvasNode, refreshGenerationState],
+  );
+
+  const handleAgentUndoComplete = useCallback(
+    async (result: UndoAgentCanvasActionResult) => {
+      if (result.deletedNodeIds.length > 0 || result.restoredNodes.length > 0) {
+        setCanvasNodes((current) =>
+          mergeCanvasNodeRecords(
+            current.filter((node) => !result.deletedNodeIds.includes(node.id)),
+            result.restoredNodes,
+          ),
+        );
+      }
+      if (result.deletedEdgeIds.length > 0) {
+        setCanvasEdges((current) =>
+          current.filter((edge) => !result.deletedEdgeIds.includes(edge.id)),
+        );
+      }
+      try {
+        await refreshGenerationState({ refreshCanvas: true });
+      } catch {
+        // Undo returned the affected artifacts; queue refresh is best-effort.
+      }
+      const focusNodeId = result.restoredNodes[0]?.id;
+      if (focusNodeId) {
+        handleSelectCanvasNode(focusNodeId);
+      }
+    },
+    [handleSelectCanvasNode, refreshGenerationState],
+  );
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (isEditableShortcutTarget(event.target)) {
@@ -169,12 +242,19 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
   return (
     <WorkbenchShell
       projectId={projectId}
-      projectTitle={`Project ${projectId}`}
+      projectTitle={project?.title ?? `Project ${projectId}`}
       storyboardEnabled
       queueSummary={queueSummary}
       saveStateSlot={<CanvasSaveStatusBadge status={saveStatus} error={saveError} />}
       sidebarSlot={
         <>
+          <AgentCanvasActionsPanel
+            nodes={canvasNodes}
+            projectId={projectId}
+            selection={selection}
+            onActionComplete={handleAgentActionComplete}
+            onUndoComplete={handleAgentUndoComplete}
+          />
           <CanvasProductivityPanel
             nodes={canvasNodes}
             selectedNodeId={selection.kind === "business-node" ? selection.nodeId : undefined}
@@ -185,6 +265,7 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
           <NovelStoryboardPanel
             canvasNodes={canvasNodes}
             projectId={projectId}
+            selectedNodeId={selection.kind === "business-node" ? selection.nodeId : undefined}
             onStoryboardImported={handleStoryboardImported}
           />
         </>
@@ -206,15 +287,45 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
         <CanvasInspector
           edges={canvasEdges}
           projectId={projectId}
+          project={project}
           generationJobs={generationJobs}
           nodes={canvasNodes}
           selection={selection}
           onGraphUpdated={handleGraphUpdated}
           onGenerationChanged={handleGenerationChanged}
           onNodeUpdated={handleNodeUpdated}
+          onProjectUpdated={setProject}
           onSelectionChange={setSelection}
         />
       }
     />
   );
+}
+
+function mergeCanvasNodeRecords(
+  current: CanvasNodeRecord[],
+  incoming: CanvasNodeRecord[],
+): CanvasNodeRecord[] {
+  if (incoming.length === 0) {
+    return current;
+  }
+  const byId = new Map(current.map((node) => [node.id, node]));
+  for (const node of incoming) {
+    byId.set(node.id, node);
+  }
+  return Array.from(byId.values()).sort((a, b) => a.zIndex - b.zIndex || a.id.localeCompare(b.id));
+}
+
+function mergeCanvasEdgeRecords(
+  current: CanvasEdgeRecord[],
+  incoming: CanvasEdgeRecord[],
+): CanvasEdgeRecord[] {
+  if (incoming.length === 0) {
+    return current;
+  }
+  const byId = new Map(current.map((edge) => [edge.id, edge]));
+  for (const edge of incoming) {
+    byId.set(edge.id, edge);
+  }
+  return Array.from(byId.values());
 }

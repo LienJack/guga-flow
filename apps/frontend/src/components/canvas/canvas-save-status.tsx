@@ -1,11 +1,13 @@
 import type { CanvasSaveStatus } from "@guga-flow/shared-types";
 import React from "react";
 
-const saveStatusLabels: Record<CanvasSaveStatus, string> = {
-  idle: "Ready",
-  saving: "Saving",
-  saved: "Saved",
-  failed: "Save failed",
+import { useI18n } from "../../lib/i18n";
+
+const saveStatusLabelKeys: Record<CanvasSaveStatus, string> = {
+  idle: "save.ready",
+  saving: "save.saving",
+  saved: "save.saved",
+  failed: "save.failed",
 };
 
 interface CanvasSaveStatusBadgeProps {
@@ -14,9 +16,11 @@ interface CanvasSaveStatusBadgeProps {
 }
 
 export function CanvasSaveStatusBadge({ status, error }: CanvasSaveStatusBadgeProps) {
+  const { t } = useI18n();
+
   return (
     <div className={`save-state ${status === "failed" ? "failed" : ""}`} title={error ?? undefined}>
-      {saveStatusLabels[status]}
+      {t(saveStatusLabelKeys[status])}
     </div>
   );
 }

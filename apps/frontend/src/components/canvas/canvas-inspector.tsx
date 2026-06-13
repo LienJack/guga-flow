@@ -7,6 +7,7 @@ import type {
   GenerationJobRecord,
   GenerationQueueSummary,
   ImageNodeData,
+  ProjectDetail,
   ShotNodeData,
   StoryBlueprintNodeData,
   StoryEventTraceData,
@@ -16,6 +17,7 @@ import type {
 import React from "react";
 
 import { updateCanvasNode } from "../../lib/api";
+import { useI18n } from "../../lib/i18n";
 import { AssetLibrary } from "../projects/asset-library";
 import { type CanvasGraphState } from "./canvas-edge-data";
 import { CanvasEdgeInspector } from "./canvas-edge-inspector";
@@ -23,19 +25,26 @@ import type { CanvasSelectionState } from "./canvas-selection";
 import { BusinessNodeForm } from "./business-node-form";
 import { CanvasProductivityActions } from "./canvas-productivity-actions";
 import { EditorExportActions, isExportableVideoNode } from "./editor-export-actions";
+import {
+  ProjectGenerationSettingsPanel,
+  ShotGenerationSettingsPanel,
+} from "./generation-creative-settings-panel";
 import { GenerationActions, GenerationBatchActions } from "./generation-actions";
+import { NodeAudioAssets } from "./node-audio-assets";
 import { NodeReferenceAssets } from "./node-reference-assets";
 import { buildPromptPreviewRefreshKey, ShotPromptPreview } from "./shot-prompt-preview";
 
 interface CanvasInspectorProps {
   edges: CanvasEdgeRecord[];
   projectId: string;
+  project?: ProjectDetail | null;
   nodes: CanvasNodeRecord[];
   generationJobs?: GenerationJobRecord[];
   selection: CanvasSelectionState;
   onGraphUpdated(graph: CanvasGraphState): void;
   onGenerationChanged?(queueSummary?: GenerationQueueSummary): void;
   onNodeUpdated(node: CanvasNodeRecord): void;
+  onProjectUpdated?(project: ProjectDetail): void;
   onSelectionChange(selection: CanvasSelectionState): void;
 }
 
@@ -46,7 +55,9 @@ export function CanvasInspector({
   onGenerationChanged,
   onGraphUpdated,
   onNodeUpdated,
+  onProjectUpdated,
   onSelectionChange,
+  project,
   projectId,
   selection,
 }: CanvasInspectorProps) {
@@ -85,9 +96,16 @@ export function CanvasInspector({
           .map((nodeId) => nodes.find((node) => node.id === nodeId))
           .filter((node): node is CanvasNodeRecord<VideoNodeData> => isExportableVideoNode(node))
       : [];
+  const selectedShotNode =
+    selectedNode && selectedNode.type === "shot"
+      ? (selectedNode as CanvasNodeRecord<ShotNodeData>)
+      : undefined;
 
   return (
     <div className="canvas-inspector">
+      <ProjectGenerationSettingsPanel project={project} onProjectUpdated={onProjectUpdated} />
+      <GenerationQueueInspectorPanel generationJobs={generationJobs} />
+
       <section className="inspector-section" aria-label="Selection details">
         {selection.kind === "empty" ? (
           <InspectorState title="No selection" value="Canvas ready" />
@@ -135,12 +153,23 @@ export function CanvasInspector({
             onSelectionChange={onSelectionChange}
           />
         ) : null}
+        {selectedShotNode ? (
+          <ShotGenerationSettingsPanel
+            node={selectedShotNode}
+            projectGenerationSettings={project?.generationSettings}
+            projectId={projectId}
+            onNodeUpdated={onNodeUpdated}
+          />
+        ) : null}
         {selectedNode ? (
           <NodeReferenceAssets
             projectId={projectId}
             node={selectedNode}
             onNodeUpdated={onNodeUpdated}
           />
+        ) : null}
+        {selectedNode ? (
+          <NodeAudioAssets projectId={projectId} node={selectedNode} onNodeUpdated={onNodeUpdated} />
         ) : null}
         {selectedNode ? (
           <GenerationActions
@@ -175,6 +204,81 @@ export function CanvasInspector({
       <AssetLibrary projectId={projectId} />
     </div>
   );
+}
+
+function GenerationQueueInspectorPanel({
+  generationJobs,
+}: {
+  generationJobs: readonly GenerationJobRecord[];
+}) {
+  const { t } = useI18n();
+  const counts = summarizeGenerationJobs(generationJobs);
+  const failedJobs = generationJobs.filter((job) => job.status === "failed").slice(0, 3);
+
+  return (
+    <section className="generation-panel queue-inspector-panel" aria-label={t("queue.summary")}>
+      <div className="section-heading-row">
+        <h3>{t("queue.summary")}</h3>
+        <span className="status-chip">{generationJobs.length}</span>
+      </div>
+      <div className="queue-inspector-grid">
+        <QueueMetric label={t("queue.queued", { count: "" }).trim()} value={counts.queued} />
+        <QueueMetric label={t("queue.running", { count: "" }).trim()} value={counts.running} />
+        <QueueMetric label={t("queue.waiting", { count: "" }).trim()} value={counts.provider_waiting} />
+        <QueueMetric label={t("queue.failed", { count: "" }).trim()} value={counts.failed} warning />
+        <QueueMetric label={t("queue.cancelled", { count: "" }).trim()} value={counts.cancelled} />
+      </div>
+      <div className="queue-failure-list">
+        <strong>{t("queue.recentFailures")}</strong>
+        {failedJobs.length ? (
+          <ul>
+            {failedJobs.map((job) => (
+              <li key={job.id}>
+                <span>{job.operation}</span>
+                <small>{job.errorMessage || job.id}</small>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <span>{t("queue.noRecentFailures")}</span>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function QueueMetric({
+  label,
+  value,
+  warning = false,
+}: {
+  label: string;
+  value: number;
+  warning?: boolean;
+}) {
+  return (
+    <div className={`queue-metric ${warning ? "warning" : ""}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function summarizeGenerationJobs(
+  generationJobs: readonly GenerationJobRecord[],
+): Record<GenerationJobRecord["status"], number> {
+  const counts: Record<GenerationJobRecord["status"], number> = {
+    cancelled: 0,
+    failed: 0,
+    provider_waiting: 0,
+    queued: 0,
+    running: 0,
+    succeeded: 0,
+  };
+  for (const job of generationJobs) {
+    counts[job.status] += 1;
+  }
+  return counts;
 }
 
 function InspectorState({ title, value }: { title: string; value: string }) {

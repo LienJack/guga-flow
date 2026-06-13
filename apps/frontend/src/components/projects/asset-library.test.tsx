@@ -14,7 +14,7 @@ vi.mock("../../lib/api", () => ({
 }));
 
 describe("AssetLibrary", () => {
-  it("renders upload controls and image/video/document asset rows", () => {
+  it("renders upload controls and image/video/audio/document asset rows", () => {
     const html = renderToStaticMarkup(
       <AssetLibrary
         projectId="project_1"
@@ -46,13 +46,25 @@ describe("AssetLibrary", () => {
           {
             id: "asset_3",
             projectId: "project_1",
+            type: "audio",
+            purpose: "voice_reference",
+            storageKey: "project_1/voice.mp3",
+            mimeType: "audio/mpeg",
+            originalFilename: "voice.mp3",
+            sizeBytes: 3200,
+            createdAt: "2026-06-12T00:02:00.000Z",
+            previewKind: "audio",
+          },
+          {
+            id: "asset_4",
+            projectId: "project_1",
             type: "document",
             purpose: "uploaded",
             storageKey: "project_1/notes.md",
             mimeType: "text/markdown",
             originalFilename: "notes.md",
             sizeBytes: 80,
-            createdAt: "2026-06-12T00:02:00.000Z",
+            createdAt: "2026-06-12T00:03:00.000Z",
             previewKind: "text",
           },
         ]}
@@ -63,7 +75,11 @@ describe("AssetLibrary", () => {
     expect(html).toContain("Upload");
     expect(html).toContain("hero.png");
     expect(html).toContain("clip.mp4");
+    expect(html).toContain("voice.mp3");
     expect(html).toContain("notes.md");
+    expect(html).toContain("Voice ref");
+    expect(html).toContain("Shot audio");
+    expect(html).toContain("BGM");
   });
 
   it("renders an upload-first empty state", () => {

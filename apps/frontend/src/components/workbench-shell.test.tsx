@@ -12,6 +12,9 @@ describe("WorkbenchShell", () => {
     expect(html).toContain("Canvas");
     expect(html).toContain("Inspector");
     expect(html).toContain("Queue");
+    expect(html).toContain("EN");
+    expect(html).toContain("中文");
+    expect(html).toContain('aria-label="Storyboard"');
   });
 
   it("renders in mock mode without provider credentials", () => {

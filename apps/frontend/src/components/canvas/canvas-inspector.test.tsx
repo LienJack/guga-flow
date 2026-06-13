@@ -1,4 +1,9 @@
-import type { CanvasEdgeRecord, CanvasNodeRecord } from "@guga-flow/shared-types";
+import type {
+  CanvasEdgeRecord,
+  CanvasNodeRecord,
+  GenerationJobRecord,
+  ProjectDetail,
+} from "@guga-flow/shared-types";
 import { renderToStaticMarkup } from "react-dom/server";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -25,6 +30,7 @@ vi.mock("../../lib/api", () => ({
   retryGenerationJob: vi.fn(),
   sendEditorExportToLocalEditor: vi.fn(),
   updateCanvasNode: vi.fn(),
+  updateProject: vi.fn(),
   uploadAsset: vi.fn(),
 }));
 
@@ -85,19 +91,59 @@ const edge: CanvasEdgeRecord = {
   createdAt: "2026-06-12T00:00:00.000Z",
 };
 
+const project: ProjectDetail = {
+  id: "project_1",
+  ownerUserId: "default-user",
+  title: "Demo Project",
+  defaultAspectRatio: "9:16",
+  generationSettings: {
+    visualStyle: "project cinematic noir",
+    aspectRatio: "16:9",
+    visualManual: {
+      artStyle: "project rainy noir",
+      palette: "cyan shadows and amber signals",
+    },
+    directorManual: {
+      pacing: "project slow-burn",
+      cameraLanguage: "project controlled push-ins",
+    },
+    subtitle: { status: "requested_unresolved", label: "Captions" },
+    viralReference: { hook: "Manual safe hook", complianceNote: "Manual input only" },
+    continuity: { mode: "match_cut", transitionPrompt: "Match flash to thunder" },
+    talkingPhoto: {
+      enabled: true,
+      consentConfirmed: true,
+      sourceAssetId: "asset_portrait_1",
+      scriptPrompt: "Presenter teaser",
+    },
+    marketing: {
+      cover: { label: "Episode cover" },
+      callToAction: "Watch next",
+    },
+  },
+  assetCount: 0,
+  createdAt: "2026-06-12T00:00:00.000Z",
+  updatedAt: "2026-06-12T00:00:00.000Z",
+};
+
 function renderInspector(input: {
   nodes?: CanvasNodeRecord[];
   edges?: CanvasEdgeRecord[];
+  generationJobs?: GenerationJobRecord[];
+  project?: ProjectDetail | null;
   selection: Parameters<typeof CanvasInspector>[0]["selection"];
 }) {
   return renderToStaticMarkup(
     <CanvasInspector
       edges={input.edges ?? []}
       projectId="project_1"
+      project={input.project}
       nodes={input.nodes ?? []}
+      generationJobs={input.generationJobs ?? []}
       selection={input.selection}
       onGraphUpdated={vi.fn()}
       onNodeUpdated={vi.fn()}
+      onProjectUpdated={vi.fn()}
       onSelectionChange={vi.fn()}
     />,
   );
@@ -118,18 +164,87 @@ describe("CanvasInspector", () => {
     ).toContain("Edge unavailable");
   });
 
+  it("renders a compact queue summary with failed job details", () => {
+    const html = renderInspector({
+      generationJobs: [
+        generationJob("job_queued", "queued"),
+        generationJob("job_running", "running"),
+        generationJob("job_waiting", "provider_waiting"),
+        generationJob("job_failed", "failed", "Provider timeout"),
+      ],
+      selection: { kind: "empty" },
+    });
+
+    expect(html).toContain("Queue summary");
+    expect(html).toContain("Provider timeout");
+    expect(html).toContain("shot_to_image");
+    expect(html).toContain("Recent failures");
+  });
+
   it("renders the Shot form and keeps the asset library available", () => {
     const html = renderInspector({
+      project,
       nodes: [shotNode],
       selection: { kind: "business-node", nodeId: shotNode.id },
     });
 
+    expect(html).toContain("Project defaults");
     expect(html).toContain("Shot");
     expect(html).toContain("Visual Description");
     expect(html).toContain("Wide shot of the launch platform.");
+    expect(html).toContain("Shot overrides");
     expect(html).toContain("Prompt preview");
     expect(html).toContain("Generate Image");
     expect(html).toContain("Assets");
+  });
+
+  it("renders project generation defaults and Shot-level overrides", () => {
+    const shotWithOverrides: CanvasNodeRecord = {
+      ...shotNode,
+      dataJson: {
+        visualDescription: "Wide shot of the launch platform.",
+        cameraMovement: "Slow push-in",
+        generationSettings: {
+          visualStyle: "shot rainy realism",
+          visualManual: {
+            lens: "shot long lens",
+          },
+          directorManual: {
+            cameraLanguage: "shot surveillance angle",
+          },
+          bgm: { status: "absent" },
+          continuity: { mode: "one_take", adjacentShotPrompt: "Continue the umbrella motion" },
+          marketing: { poster: { label: "Shot poster" } },
+        },
+      },
+    };
+    const html = renderInspector({
+      project,
+      nodes: [shotWithOverrides],
+      selection: { kind: "business-node", nodeId: shotWithOverrides.id },
+    });
+
+    expect(html).toContain("Project defaults");
+    expect(html).toContain("project cinematic noir");
+    expect(html).toContain("Visual manual");
+    expect(html).toContain("project rainy noir");
+    expect(html).toContain("cyan shadows and amber signals");
+    expect(html).toContain("Director manual");
+    expect(html).toContain("project slow-burn");
+    expect(html).toContain("shot long lens");
+    expect(html).toContain("shot surveillance angle");
+    expect(html).toContain("Captions");
+    expect(html).toContain("Shot overrides");
+    expect(html).toContain("shot rainy realism");
+    expect(html).toContain("BGM");
+    expect(html).toContain("absent");
+    expect(html).toContain("Manual safe hook");
+    expect(html).toContain("Manual input only");
+    expect(html).toContain("one_take");
+    expect(html).toContain("Continue the umbrella motion");
+    expect(html).toContain("asset_portrait_1");
+    expect(html).toContain("Episode cover");
+    expect(html).toContain("Shot poster");
   });
 
   it("renders Character prompt fields and node reference image controls", () => {
@@ -307,3 +422,22 @@ describe("CanvasInspector", () => {
     expect(onSelectionChange).not.toHaveBeenCalled();
   });
 });
+
+function generationJob(
+  id: string,
+  status: GenerationJobRecord["status"],
+  errorMessage?: string,
+): GenerationJobRecord {
+  return {
+    id,
+    projectId: "project_1",
+    operation: "shot_to_image",
+    status,
+    provider: "mock-image",
+    sourceNodeId: "node_1",
+    inputJson: {},
+    errorMessage,
+    createdAt: "2026-06-12T00:00:00.000Z",
+    updatedAt: "2026-06-12T00:00:00.000Z",
+  };
+}

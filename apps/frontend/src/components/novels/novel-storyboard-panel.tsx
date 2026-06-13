@@ -6,19 +6,28 @@ import type {
   ImportNovelSourceInput,
   ImportStoryboardToCanvasResult,
   NovelDocumentRecord,
+  NovelEventGraphRecord,
+  ScriptAdaptationStrategy,
+  ScriptDraftRecord,
   StoryboardDraftRecord,
   StoryboardResult,
 } from "@guga-flow/shared-types";
-import { CheckCircle2, FileText, Import, Plus, RefreshCw, Save, Trash2, Upload, X } from "lucide-react";
+import { CheckCircle2, Download, FileText, Import, Plus, RefreshCw, Save, Trash2, Upload, X } from "lucide-react";
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
+  createScriptDraft,
   createNovelDocument,
   deleteNovelDocument,
+  extractNovelEvents,
+  exportScriptDraft,
+  generateStoryboardFromScriptDraft,
   generateStoryboardDraft,
   getActiveStoryboardDraft,
+  getNovelEventGraph,
   importStoryboardToCanvas,
   importNovelSource,
+  listScriptDrafts,
   listNovelDocuments,
   markStoryboardDraftReady,
   updateNovelDocument,
@@ -38,6 +47,7 @@ import { StoryboardEditor } from "./storyboard-editor";
 interface NovelStoryboardPanelProps {
   projectId: string;
   canvasNodes?: CanvasNodeRecord[];
+  selectedNodeId?: string;
   initialNovels?: NovelDocumentRecord[];
   initialDraft?: StoryboardDraftRecord;
   onStoryboardImported?: (result: ImportStoryboardToCanvasResult) => void;
@@ -49,6 +59,8 @@ type BusyAction =
   | "import"
   | "update"
   | "delete"
+  | "events"
+  | "script"
   | "generate"
   | "draft"
   | "canvas-import"
@@ -56,6 +68,7 @@ type BusyAction =
 
 export function NovelStoryboardPanel({
   canvasNodes = [],
+  selectedNodeId,
   projectId,
   initialNovels = [],
   initialDraft,
@@ -69,6 +82,9 @@ export function NovelStoryboardPanel({
   const [selectedContent, setSelectedContent] = useState("");
   const [draft, setDraft] = useState<StoryboardDraftRecord | undefined>(initialDraft);
   const [storyboard, setStoryboard] = useState<StoryboardResult | undefined>(initialDraft?.storyboard);
+  const [eventGraph, setEventGraph] = useState<NovelEventGraphRecord | undefined>();
+  const [scriptDrafts, setScriptDrafts] = useState<ScriptDraftRecord[]>([]);
+  const [scriptStrategy, setScriptStrategy] = useState<ScriptAdaptationStrategy>("faithful");
   const [draftDirty, setDraftDirty] = useState(false);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [error, setError] = useState<string | null>(null);
@@ -120,8 +136,58 @@ export function NovelStoryboardPanel({
   useEffect(() => {
     setSelectedTitle(selectedNovel?.title ?? "");
     setSelectedContent(selectedNovel?.content ?? "");
+    setEventGraph(undefined);
+    setScriptDrafts([]);
     setConfirmNewVersion(false);
   }, [selectedNovel]);
+
+  useEffect(() => {
+    if (!selectedNovelId) {
+      setEventGraph(undefined);
+      return;
+    }
+
+    let ignore = false;
+    getNovelEventGraph(projectId, selectedNovelId)
+      .then((result) => {
+        if (!ignore) {
+          setEventGraph(result);
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (!ignore && !isNotFoundError(loadError)) {
+          setError(summarizeStoryboardActionError(loadError, "Unable to load event graph"));
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [projectId, selectedNovelId]);
+
+  useEffect(() => {
+    if (!selectedNovelId) {
+      setScriptDrafts([]);
+      return;
+    }
+
+    let ignore = false;
+    listScriptDrafts(projectId, selectedNovelId)
+      .then((result) => {
+        if (!ignore) {
+          setScriptDrafts(result.scriptDrafts);
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (!ignore && !isNotFoundError(loadError)) {
+          setError(summarizeStoryboardActionError(loadError, "Unable to load script drafts"));
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [projectId, selectedNovelId]);
 
   useEffect(() => {
     if (!selectedNovelId) {
@@ -224,8 +290,75 @@ export function NovelStoryboardPanel({
       setSelectedNovelId(nextNovels[0]?.id ?? "");
       setDraft(undefined);
       setStoryboard(undefined);
+      setEventGraph(undefined);
+      setScriptDrafts([]);
       setDraftDirty(false);
       setNotice("Novel deleted");
+    });
+  }
+
+  async function handleExtractEvents() {
+    if (!selectedNovel) {
+      return;
+    }
+    await runAction("events", async () => {
+      const result = await extractNovelEvents(projectId, selectedNovel.id);
+      setEventGraph(result.eventGraph);
+      setNotice("Events extracted");
+    });
+  }
+
+  async function handleCreateScriptDraft() {
+    if (!selectedNovel) {
+      return;
+    }
+    await runAction("script", async () => {
+      const result = await createScriptDraft(projectId, selectedNovel.id, {
+        strategy: scriptStrategy,
+      });
+      setScriptDrafts((current) => [
+        result.scriptDraft,
+        ...current.filter((draftItem) => draftItem.id !== result.scriptDraft.id),
+      ]);
+      setNotice("Script draft created");
+    });
+  }
+
+  async function handleExportScriptDraft(scriptDraft: ScriptDraftRecord) {
+    if (!selectedNovel) {
+      return;
+    }
+    await runAction("script", async () => {
+      const result = await exportScriptDraft(projectId, selectedNovel.id, scriptDraft.id);
+      downloadTextFile(result.filename, result.content);
+      setScriptDrafts((current) =>
+        current.map((item) =>
+          item.id === scriptDraft.id ? { ...item, status: "exported" } : item,
+        ),
+      );
+      setNotice(`Exported ${result.filename}`);
+    });
+  }
+
+  async function handleGenerateStoryboardFromScript(scriptDraft: ScriptDraftRecord) {
+    if (!selectedNovel) {
+      return;
+    }
+    await runAction("script", async () => {
+      const result = await generateStoryboardFromScriptDraft(projectId, selectedNovel.id, scriptDraft.id);
+      if (!result.draft) {
+        setError(
+          result.validation.success
+            ? "Script storyboard generation did not return a draft"
+            : formatStoryboardValidationIssues(result.validation.issues),
+        );
+        return;
+      }
+      applyDraft(result.draft);
+      setScriptDrafts((current) =>
+        current.map((item) => (item.id === scriptDraft.id ? { ...item, status: "selected" } : item)),
+      );
+      setNotice("Storyboard generated from script");
     });
   }
 
@@ -353,7 +486,9 @@ export function NovelStoryboardPanel({
       </div>
 
       <CreativeAgentEntry
+        canvasNodes={canvasNodes}
         projectId={projectId}
+        selectedNodeId={selectedNodeId}
         hasPriorStoryboardImport={hasPriorStoryboardImport}
         onCreativeStoryboardCreated={handleCreativeStoryboardCreated}
         onStoryboardImported={onStoryboardImported}
@@ -455,6 +590,15 @@ export function NovelStoryboardPanel({
               Save source
             </button>
             <button
+              className="ghost-action compact"
+              type="button"
+              onClick={() => void handleExtractEvents()}
+              disabled={Boolean(busyAction)}
+            >
+              <RefreshCw size={15} aria-hidden="true" />
+              Extract events
+            </button>
+            <button
               className="icon-action danger"
               type="button"
               title="Delete novel"
@@ -464,7 +608,79 @@ export function NovelStoryboardPanel({
               <Trash2 size={14} aria-hidden="true" />
             </button>
           </div>
+          <EventGraphSummary eventGraph={eventGraph} />
         </form>
+      ) : null}
+
+      {selectedNovel ? (
+        <section className="script-workbench" aria-label="Script workbench">
+          <div className="panel-heading compact">
+            <h2>Script</h2>
+            <span>{scriptDrafts.length}</span>
+          </div>
+          <div className="storyboard-action-row">
+            <label className="field-label script-strategy-field">
+              <span>Strategy</span>
+              <select
+                name="script-strategy"
+                value={scriptStrategy}
+                onChange={(event) => setScriptStrategy(event.target.value as ScriptAdaptationStrategy)}
+              >
+                <option value="faithful">Faithful</option>
+                <option value="short_drama">Short drama</option>
+                <option value="visual_first">Visual first</option>
+              </select>
+            </label>
+            <button
+              className="primary-action compact"
+              type="button"
+              onClick={() => void handleCreateScriptDraft()}
+              disabled={Boolean(busyAction)}
+            >
+              <Plus size={15} aria-hidden="true" />
+              Create script
+            </button>
+          </div>
+          {scriptDrafts.length === 0 ? (
+            <div className="empty-state small">
+              <strong>No scripts</strong>
+              <span>Create a draft from this source.</span>
+            </div>
+          ) : (
+            <ul className="script-draft-list">
+              {scriptDrafts.map((scriptDraft) => (
+                <li className="script-draft-row" key={scriptDraft.id}>
+                  <div>
+                    <strong>{scriptDraft.title}</strong>
+                    <span>
+                      v{scriptDraft.version} · {formatScriptStrategy(scriptDraft.strategy)} · {scriptDraft.status}
+                    </span>
+                  </div>
+                  <div className="storyboard-action-row">
+                    <button
+                      className="ghost-action compact"
+                      type="button"
+                      onClick={() => void handleGenerateStoryboardFromScript(scriptDraft)}
+                      disabled={Boolean(busyAction)}
+                    >
+                      <RefreshCw size={15} aria-hidden="true" />
+                      Storyboard
+                    </button>
+                    <button
+                      className="icon-action"
+                      type="button"
+                      title="Export script"
+                      onClick={() => void handleExportScriptDraft(scriptDraft)}
+                      disabled={Boolean(busyAction)}
+                    >
+                      <Download size={14} aria-hidden="true" />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       ) : null}
 
       {selectedNovel ? (
@@ -541,6 +757,36 @@ export function NovelStoryboardPanel({
   );
 }
 
+function EventGraphSummary({ eventGraph }: { eventGraph: NovelEventGraphRecord | undefined }) {
+  if (!eventGraph) {
+    return (
+      <div className="event-graph-summary empty">
+        <strong>Events</strong>
+        <span>No graph</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="event-graph-summary" aria-label="Novel event graph">
+      <div>
+        <strong>{eventGraph.events.length}</strong>
+        <span>events</span>
+      </div>
+      <div>
+        <strong>{eventGraph.chapters.length}</strong>
+        <span>chapters</span>
+      </div>
+      {eventGraph.events.slice(0, 2).map((event) => (
+        <p key={event.eventId}>
+          <strong>{event.title ?? event.eventId}</strong>
+          <span>{event.summary}</span>
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export function getNovelImportSourceType(
   file: Pick<File, "name" | "type">,
 ): ImportNovelSourceInput["sourceType"] | null {
@@ -557,4 +803,27 @@ export function getNovelImportSourceType(
 
 function isNotFoundError(error: unknown): boolean {
   return error instanceof Error && /not found|404/i.test(error.message);
+}
+
+function formatScriptStrategy(strategy: ScriptAdaptationStrategy): string {
+  if (strategy === "short_drama") {
+    return "Short drama";
+  }
+  if (strategy === "visual_first") {
+    return "Visual first";
+  }
+  return "Faithful";
+}
+
+function downloadTextFile(filename: string, content: string) {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }

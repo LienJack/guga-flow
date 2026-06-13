@@ -1,6 +1,7 @@
 import type {
   CanvasNodeRecord,
   CreateEditorExportInput,
+  EditorExportPreset,
   EditorExportRecord,
   EditorExportSendResult,
   EditorExportSortMode,
@@ -8,8 +9,8 @@ import type {
   GenerationQueueSummary,
   VideoNodeData,
 } from "@guga-flow/shared-types";
-import { EDITOR_EXPORT_SORT_MODES } from "@guga-flow/shared-types";
-import { Archive, Download, Send } from "lucide-react";
+import { EDITOR_EXPORT_PRESETS, EDITOR_EXPORT_SORT_MODES } from "@guga-flow/shared-types";
+import { Archive, Download, RotateCcw, Send } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 
 import {
@@ -18,6 +19,7 @@ import {
   listEditorExports,
   sendEditorExportToLocalEditor,
 } from "../../lib/api";
+import { useI18n } from "../../lib/i18n";
 
 type ExportableVideoNode = CanvasNodeRecord<VideoNodeData>;
 
@@ -31,10 +33,16 @@ interface EditorExportActionsProps {
 }
 
 const ACTIVE_STATUSES = new Set(["queued", "running", "provider_waiting"]);
-const SORT_LABELS: Record<EditorExportSortMode, string> = {
-  shot_index: "Shot Index",
-  canvas_x: "Canvas X",
-  manual: "Manual",
+const SORT_LABEL_KEYS: Record<EditorExportSortMode, string> = {
+  shot_index: "export.shotIndex",
+  canvas_x: "export.canvasX",
+  manual: "export.manual",
+};
+const PRESET_LABEL_KEYS: Record<EditorExportPreset, string> = {
+  standard_zip: "export.standardZip",
+  gif_preview: "export.gifPreview",
+  image_sequence: "export.imageSequence",
+  hd_1080p: "export.hd1080p",
 };
 
 export function EditorExportActions({
@@ -45,7 +53,9 @@ export function EditorExportActions({
   projectId,
   videoNodes,
 }: EditorExportActionsProps) {
+  const { t } = useI18n();
   const [sortMode, setSortMode] = useState<EditorExportSortMode>("shot_index");
+  const [exportPreset, setExportPreset] = useState<EditorExportPreset>("standard_zip");
   const [exports, setExports] = useState<EditorExportRecord[]>(initialExports);
   const [busy, setBusy] = useState(false);
   const [sendBusy, setSendBusy] = useState(false);
@@ -77,21 +87,23 @@ export function EditorExportActions({
 
   const matchingExport = exports.find((editorExport) =>
     idsEqual(editorExportSelectedVideoIds(editorExport), selectedVideoNodeIds) &&
-    editorExportSortMode(editorExport) === sortMode,
+    editorExportSortMode(editorExport) === sortMode &&
+    editorExportPreset(editorExport) === exportPreset,
   );
   const activeJob = generationJobs.find(
     (job) =>
       job.operation === "editor_export" &&
       ACTIVE_STATUSES.has(job.status) &&
       idsEqual(editorExportJobSelectedVideoIds(job), selectedVideoNodeIds) &&
-      editorExportJobSortMode(job) === sortMode,
+      editorExportJobSortMode(job) === sortMode &&
+      editorExportJobPreset(job) === exportPreset,
   );
 
   if (!videoNodes.length) {
     return null;
   }
 
-  async function handleCreateExport() {
+  async function handleCreateExport(sourceEditorExportId?: string) {
     setBusy(true);
     setError(null);
     setLastResult(null);
@@ -100,13 +112,13 @@ export function EditorExportActions({
     try {
       const result = await createEditorExport(
         projectId,
-        buildCreateEditorExportInput(videoNodes, sortMode),
+        buildCreateEditorExportInput(videoNodes, sortMode, exportPreset, sourceEditorExportId),
       );
       setExports((current) => [result.export, ...current.filter((item) => item.id !== result.export.id)]);
-      setLastResult("Export queued");
+      setLastResult(sourceEditorExportId ? t("export.revisionQueued") : t("export.exportQueued"));
       onGenerationChanged?.(result.queueSummary);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Editor export request failed");
+      setError(caught instanceof Error ? caught.message : t("export.requestFailed"));
     } finally {
       setBusy(false);
     }
@@ -125,7 +137,7 @@ export function EditorExportActions({
       setExports((current) => current.map((item) => (item.id === result.export.id ? result.export : item)));
       setSendResult(result);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Local editor send failed");
+      setError(caught instanceof Error ? caught.message : t("export.sendFailed"));
     } finally {
       setSendBusy(false);
     }
@@ -136,15 +148,17 @@ export function EditorExportActions({
   const canQueue = !busy && !activeJob;
 
   return (
-    <section className="generation-panel editor-export-panel" aria-label="Editor export">
+    <section className="generation-panel editor-export-panel" aria-label={t("export.aria")}>
       <div className="section-heading-row">
-        <h3>Editor Export</h3>
-        <span className="status-chip">{status}</span>
+        <h3>{t("export.title")}</h3>
+        <span className="status-chip">{statusLabel(status, t)}</span>
       </div>
       <div className="generation-status">
-        {videoNodes.length} video{videoNodes.length === 1 ? "" : "s"} selected
+        {t(videoNodes.length === 1 ? "export.videoSelected" : "export.videosSelected", {
+          count: videoNodes.length,
+        })}
       </div>
-      <div className="editor-export-sort-modes" role="group" aria-label="Sort mode">
+      <div className="editor-export-sort-modes" role="group" aria-label={t("export.sortMode")}>
         {EDITOR_EXPORT_SORT_MODES.map((mode) => (
           <button
             key={mode}
@@ -153,10 +167,32 @@ export function EditorExportActions({
             disabled={busy || Boolean(activeJob)}
             onClick={() => setSortMode(mode)}
           >
-            {SORT_LABELS[mode]}
+            {t(SORT_LABEL_KEYS[mode])}
           </button>
         ))}
       </div>
+      <div className="editor-export-sort-modes" role="group" aria-label={t("export.preset")}>
+        {EDITOR_EXPORT_PRESETS.map((preset) => (
+          <button
+            key={preset}
+            className={preset === exportPreset ? "active" : ""}
+            type="button"
+            disabled={busy || Boolean(activeJob)}
+            onClick={() => setExportPreset(preset)}
+          >
+            {t(PRESET_LABEL_KEYS[preset])}
+          </button>
+        ))}
+      </div>
+      {succeededExport ? (
+        <p className="generation-status">
+          {t("export.historyMatch", {
+            preset: t(PRESET_LABEL_KEYS[exportPreset]),
+            sortMode: t(SORT_LABEL_KEYS[sortMode]),
+            id: succeededExport.id,
+          })}
+        </p>
+      ) : null}
       <div className="generation-actions">
         <button
           className="primary-action compact"
@@ -165,8 +201,19 @@ export function EditorExportActions({
           onClick={() => void handleCreateExport()}
         >
           <Archive size={15} aria-hidden="true" />
-          Queue Export
+          {t("export.queueExport")}
         </button>
+        {succeededExport ? (
+          <button
+            className="ghost-action compact"
+            type="button"
+            disabled={!canQueue}
+            onClick={() => void handleCreateExport(succeededExport.id)}
+          >
+            <RotateCcw size={14} aria-hidden="true" />
+            {t("export.queueRevision")}
+          </button>
+        ) : null}
         {succeededExport ? (
           <a
             className="ghost-action compact"
@@ -174,7 +221,7 @@ export function EditorExportActions({
             download
           >
             <Download size={14} aria-hidden="true" />
-            Download
+            {t("export.download")}
           </a>
         ) : null}
         {succeededExport ? (
@@ -185,7 +232,7 @@ export function EditorExportActions({
             onClick={() => void handleSendExport()}
           >
             <Send size={14} aria-hidden="true" />
-            Send
+            {t("export.send")}
           </button>
         ) : null}
       </div>
@@ -194,10 +241,10 @@ export function EditorExportActions({
         <p className="generation-status">
           {sendResult.editorUrl ? (
             <a href={sendResult.editorUrl} target="_blank" rel="noreferrer">
-              Open local editor
+              {t("export.openLocalEditor")}
             </a>
           ) : (
-            "Sent to local editor"
+            t("export.sentToLocalEditor")
           )}
         </p>
       ) : null}
@@ -205,6 +252,13 @@ export function EditorExportActions({
       {error ? <p className="form-error">{error}</p> : null}
     </section>
   );
+}
+
+function statusLabel(
+  status: string,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
+  return t(`status.${status}`);
 }
 
 export function isExportableVideoNode(
@@ -216,19 +270,35 @@ export function isExportableVideoNode(
 export function buildCreateEditorExportInput(
   videoNodes: readonly ExportableVideoNode[],
   sortMode: EditorExportSortMode,
+  exportPreset: EditorExportPreset = "standard_zip",
+  sourceEditorExportId?: string,
 ): CreateEditorExportInput {
-  return {
+  const input: CreateEditorExportInput = {
     videoNodeIds: videoNodes.map((node) => node.id),
     sortMode,
+    exportPreset,
   };
+  if (sourceEditorExportId) {
+    input.sourceEditorExportId = sourceEditorExportId;
+  }
+  return input;
 }
 
 function editorExportSelectedVideoIds(editorExport: EditorExportRecord): string[] {
-  return stringArray(objectData(editorExport.timelineJson).selectedVideoNodeIds);
+  const timeline = objectData(editorExport.timelineJson);
+  const topLevelIds = stringArray(timeline.selectedVideoNodeIds);
+  if (topLevelIds.length) {
+    return topLevelIds;
+  }
+  return stringArray(objectData(timeline.metadata).selectedVideoNodeIds);
 }
 
 function editorExportSortMode(editorExport: EditorExportRecord): EditorExportSortMode | undefined {
   return normalizeSortMode(objectData(editorExport.timelineJson).sortMode);
+}
+
+function editorExportPreset(editorExport: EditorExportRecord): EditorExportPreset {
+  return normalizeExportPreset(objectData(editorExport.timelineJson).exportPreset);
 }
 
 function editorExportJobSelectedVideoIds(job: GenerationJobRecord): string[] {
@@ -239,10 +309,20 @@ function editorExportJobSortMode(job: GenerationJobRecord): EditorExportSortMode
   return normalizeSortMode(objectData(job.inputJson).sortMode);
 }
 
+function editorExportJobPreset(job: GenerationJobRecord): EditorExportPreset {
+  return normalizeExportPreset(objectData(job.inputJson).exportPreset);
+}
+
 function normalizeSortMode(value: unknown): EditorExportSortMode | undefined {
   return typeof value === "string" && EDITOR_EXPORT_SORT_MODES.includes(value as EditorExportSortMode)
     ? (value as EditorExportSortMode)
     : undefined;
+}
+
+function normalizeExportPreset(value: unknown): EditorExportPreset {
+  return typeof value === "string" && EDITOR_EXPORT_PRESETS.includes(value as EditorExportPreset)
+    ? (value as EditorExportPreset)
+    : "standard_zip";
 }
 
 function objectData(value: unknown): Record<string, unknown> {

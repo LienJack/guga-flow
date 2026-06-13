@@ -53,6 +53,7 @@ function edge(overrides: Partial<CanvasEdgeRecord> = {}) {
 describe("canvas edge data helpers", () => {
   it("labels relations and endpoints with business-node fallbacks", () => {
     expect(getCanvasEdgeRelationLabel("references_character")).toBe("Character reference");
+    expect(getCanvasEdgeRelationLabel("story_seed")).toBe("Story seed");
     expect(getCanvasEdgeEndpointLabel(undefined)).toBe("Missing node");
     expect(
       getCanvasEdgeEndpointLabel(

@@ -120,6 +120,12 @@ function composedPrompt(): ShotPromptCompositionResult {
     },
     referenceAssetIds: ["asset_1"],
     negativePrompt: "no logos",
+    resolvedGenerationSettings: {
+      project: {},
+      shot: {},
+      effective: {},
+      sources: {},
+    },
     image: {
       channel: "image",
       prompt: "image prompt body",

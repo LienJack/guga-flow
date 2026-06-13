@@ -1,7 +1,7 @@
 "use client";
 
 import type { AssetDetail, AssetListItem, AssetPurpose } from "@guga-flow/shared-types";
-import { FileText, Image as ImageIcon, Trash2, Upload, Video } from "lucide-react";
+import { FileText, Image as ImageIcon, Trash2, Upload, Video, Volume2 } from "lucide-react";
 import React, { FormEvent, useEffect, useState } from "react";
 
 import { assetPreviewUrl, deleteAsset, getAsset, listAssets, uploadAsset } from "../../lib/api";
@@ -30,6 +30,9 @@ function AssetTypeIcon({ previewKind }: { previewKind: AssetListItem["previewKin
   }
   if (previewKind === "video") {
     return <Video size={15} aria-hidden="true" />;
+  }
+  if (previewKind === "audio") {
+    return <Volume2 size={15} aria-hidden="true" />;
   }
   return <FileText size={15} aria-hidden="true" />;
 }
@@ -136,7 +139,7 @@ export function AssetLibrary({ projectId, initialAssets = [] }: AssetLibraryProp
         <input
           name="file"
           type="file"
-          accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,text/plain,text/markdown,.md"
+          accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/wav,audio/x-wav,audio/ogg,audio/webm,text/plain,text/markdown,.mp3,.m4a,.wav,.ogg,.webm,.md"
         />
         <select
           name="purpose"
@@ -145,8 +148,11 @@ export function AssetLibrary({ projectId, initialAssets = [] }: AssetLibraryProp
         >
           <option value="uploaded">Uploaded</option>
           <option value="character_reference">Character ref</option>
+          <option value="voice_reference">Voice ref</option>
           <option value="location_reference">Location ref</option>
           <option value="style_reference">Style ref</option>
+          <option value="shot_audio">Shot audio</option>
+          <option value="background_music">BGM</option>
         </select>
         <button className="primary-action compact" type="submit" disabled={busy}>
           <Upload size={15} aria-hidden="true" />
@@ -195,6 +201,9 @@ export function AssetLibrary({ projectId, initialAssets = [] }: AssetLibraryProp
           ) : null}
           {selectedAsset.previewKind === "video" ? (
             <video src={assetPreviewUrl(projectId, selectedAsset.id)} controls />
+          ) : null}
+          {selectedAsset.previewKind === "audio" ? (
+            <audio src={assetPreviewUrl(projectId, selectedAsset.id)} controls />
           ) : null}
           {selectedAsset.previewKind === "text" ? (
             <pre>{selectedAsset.textPreview ?? "Text preview unavailable"}</pre>

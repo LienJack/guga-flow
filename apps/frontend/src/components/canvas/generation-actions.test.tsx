@@ -15,14 +15,15 @@ import {
   GenerationActions,
   GenerationBatchActions,
 } from "./generation-actions";
+import { I18nProvider } from "../../lib/i18n";
 
 vi.mock("../../lib/api", () => ({
   cancelGenerationJob: vi.fn(),
   createBatchImagesToVideosJobs: vi.fn(),
   createBatchShotsToImagesJobs: vi.fn(),
   createGenerationJob: vi.fn(),
-  getImageProviderCatalog: vi.fn(),
-  getVideoProviderCatalog: vi.fn(),
+  getProjectImageProviderCatalog: vi.fn(),
+  getProjectVideoProviderCatalog: vi.fn(),
   retryGenerationJob: vi.fn(),
 }));
 
@@ -42,6 +43,48 @@ describe("GenerationActions", () => {
     expect(html).toContain("Generate Image");
     expect(html).toContain("Provider");
     expect(html).toContain("Mock Image");
+  });
+
+  it("renders generation controls in Chinese when a locale provider is present", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider initialLocale="zh">
+        <GenerationActions
+          generationJobs={[]}
+          imageProviderCatalog={catalogFixture()}
+          projectId="project_1"
+          node={node("shot_1", "shot")}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain("生成");
+    expect(html).toContain("生成图片");
+    expect(html).toContain("供应商");
+    expect(html).toContain("Mock Image");
+  });
+
+  it("renders Character and Location reference generation actions", () => {
+    const characterHtml = renderToStaticMarkup(
+      <GenerationActions
+        generationJobs={[]}
+        imageProviderCatalog={catalogFixture()}
+        projectId="project_1"
+        node={node("character_1", "character_asset")}
+      />,
+    );
+    const locationHtml = renderToStaticMarkup(
+      <GenerationActions
+        generationJobs={[]}
+        imageProviderCatalog={catalogFixture()}
+        projectId="project_1"
+        node={node("location_1", "location_asset")}
+      />,
+    );
+
+    expect(characterHtml).toContain("Generate Reference");
+    expect(characterHtml).toContain("Mock Image");
+    expect(locationHtml).toContain("Generate Reference");
+    expect(locationHtml).toContain("Mock Image");
   });
 
   it("renders disabled real image providers without secret values", () => {
@@ -70,8 +113,31 @@ describe("GenerationActions", () => {
     );
 
     expect(html).toContain("Generate Video");
+    expect(html).toContain("Refine Image");
+    expect(html).toContain("Refinement prompt");
     expect(html).toContain("Provider");
     expect(html).toContain("Mock Video");
+  });
+
+  it("marks enabled image providers without image-to-image support as unsupported for refinement", () => {
+    const catalog = catalogFixture();
+    catalog.providers[2] = {
+      ...catalog.providers[2]!,
+      enabled: true,
+      disabledReason: undefined,
+    };
+
+    const html = renderToStaticMarkup(
+      <GenerationActions
+        generationJobs={[]}
+        imageProviderCatalog={catalog}
+        projectId="project_1"
+        node={node<ImageNodeData>("image_1", "image", { assetId: "asset_image_1" })}
+      />,
+    );
+
+    expect(html).toContain("Nano Banana unsupported");
+    expect(html).toContain("Refine Image");
   });
 
   it("does not render image-to-video action before an image asset exists", () => {
@@ -140,6 +206,47 @@ describe("GenerationActions", () => {
       resolution: "1080p",
       videoProviderParams: { cameraFixed: true },
     });
+
+    expect(
+      buildGenerationJobInputForOperation(
+        "image_refinement",
+        "image_1",
+        {
+          provider: "mock-image",
+          model: "mock-image-v1",
+          aspectRatio: "1:1",
+          count: 1,
+          providerParams: { strength: "medium" },
+        },
+        undefined,
+        "make the lighting warmer",
+      ),
+    ).toEqual({
+      operation: "image_refinement",
+      sourceNodeId: "image_1",
+      refinementPrompt: "make the lighting warmer",
+      provider: "mock-image",
+      model: "mock-image-v1",
+      aspectRatio: "1:1",
+      providerParams: { strength: "medium" },
+    });
+
+    expect(
+      buildGenerationJobInputForOperation("character_to_image", "character_1", {
+        provider: "mock-image",
+        model: "mock-image-v1",
+        aspectRatio: "1:1",
+        count: 4,
+        providerParams: { quality: "medium" },
+      }),
+    ).toEqual({
+      operation: "character_to_image",
+      sourceNodeId: "character_1",
+      provider: "mock-image",
+      model: "mock-image-v1",
+      aspectRatio: "1:1",
+      providerParams: { quality: "medium" },
+    });
   });
 
   it("renders batch image actions for selected Shot nodes", () => {
@@ -207,7 +314,7 @@ function catalogFixture(): ImageProviderCatalogResult {
         requiresApiKey: false,
         defaultModel: "mock-image-v1",
         models: [{ id: "mock-image-v1", displayName: "Mock Image v1", default: true }],
-        supportedModes: ["text_to_image", "multi_reference"],
+        supportedModes: ["text_to_image", "image_to_image", "multi_reference"],
         supportsReferenceImages: true,
         maxReferenceImages: 99,
         supportsMultipleOutputs: false,
@@ -224,7 +331,7 @@ function catalogFixture(): ImageProviderCatalogResult {
         requiresApiKey: true,
         defaultModel: "gpt-image-2",
         models: [{ id: "gpt-image-2", displayName: "GPT Image 2", default: true }],
-        supportedModes: ["text_to_image", "multi_reference"],
+        supportedModes: ["text_to_image", "image_to_image", "multi_reference"],
         supportsReferenceImages: true,
         maxReferenceImages: 4,
         supportsMultipleOutputs: true,

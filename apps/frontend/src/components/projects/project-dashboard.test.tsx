@@ -41,6 +41,13 @@ describe("ProjectDashboard", () => {
     expect(html).toContain("Pilot Project");
     expect(html).toContain("9:16");
     expect(html).toContain("Open canvas");
+    expect(html).toContain('aria-label="Open Pilot Project canvas"');
+    expect(html).toContain('aria-label="Edit Pilot Project"');
+    expect(html).toContain('aria-label="Duplicate Pilot Project"');
+    expect(html).toContain('aria-label="Delete Pilot Project"');
+    expect(html).toContain('aria-label="Scripts"');
+    expect(html).toContain('aria-label="Settings"');
+    expect(html).toContain('disabled=""');
   });
 
   it("renders a usable empty state", () => {

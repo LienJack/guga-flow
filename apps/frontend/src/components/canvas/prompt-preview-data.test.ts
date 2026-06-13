@@ -62,6 +62,18 @@ describe("prompt preview data helpers", () => {
       sourceNodeLabel: "1 source node: node_1",
       referenceAssetLabel: "1 reference image: asset_1",
     });
+    expect(
+      formatPromptDebugPart({
+        id: "visual-manual:shot_1",
+        kind: "visual_manual",
+        label: "Visual manual",
+        text: "Palette: cyan shadows",
+        channels: ["image", "video"],
+      }),
+    ).toMatchObject({
+      kindLabel: "Visual manual",
+      referenceAssetLabel: "No reference images",
+    });
   });
 
   it("returns no channels before a compose result is loaded", () => {
@@ -106,6 +118,12 @@ function composedPrompt(): ShotPromptCompositionResult {
     },
     referenceAssetIds: ["asset_1", "asset_2"],
     negativePrompt: "no logos",
+    resolvedGenerationSettings: {
+      project: {},
+      shot: {},
+      effective: {},
+      sources: {},
+    },
     image: {
       channel: "image",
       prompt: "image prompt body",

@@ -169,13 +169,13 @@ export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectD
             <Clapperboard size={22} />
           </div>
           <div className="rail-actions">
-            <button className="rail-button active" type="button" title="Projects">
+            <button className="rail-button active" type="button" title="Projects" aria-label="Projects">
               <FolderOpen size={21} aria-hidden="true" />
             </button>
-            <button className="rail-button" type="button" title="Scripts">
+            <button className="rail-button" type="button" title="Scripts" aria-label="Scripts" disabled>
               <LayoutList size={21} aria-hidden="true" />
             </button>
-            <button className="rail-button" type="button" title="Settings">
+            <button className="rail-button" type="button" title="Settings" aria-label="Settings" disabled>
               <Settings size={21} aria-hidden="true" />
             </button>
           </div>
@@ -269,6 +269,7 @@ export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectD
                           className="icon-action"
                           type="button"
                           title="Open canvas"
+                          aria-label={`Open ${project.title} canvas`}
                           onClick={() => router.push(`/projects/${project.id}/canvas`)}
                         >
                           <FolderOpen size={16} aria-hidden="true" />
@@ -277,6 +278,7 @@ export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectD
                           className="icon-action"
                           type="button"
                           title="Edit project"
+                          aria-label={`Edit ${project.title}`}
                           onClick={() => startEdit(project)}
                         >
                           <PenLine size={16} aria-hidden="true" />
@@ -285,6 +287,7 @@ export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectD
                           className="icon-action"
                           type="button"
                           title="Duplicate project"
+                          aria-label={`Duplicate ${project.title}`}
                           onClick={() => void handleDuplicate(project.id)}
                           disabled={busy}
                         >
@@ -294,6 +297,7 @@ export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectD
                           <button
                             className="danger-action"
                             type="button"
+                            aria-label={`Confirm delete ${project.title}`}
                             onClick={() => void handleDelete(project.id)}
                             disabled={busy}
                           >
@@ -304,6 +308,7 @@ export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectD
                             className="icon-action danger"
                             type="button"
                             title="Delete project"
+                            aria-label={`Delete ${project.title}`}
                             onClick={() => setPendingDeleteProjectId(project.id)}
                           >
                             <Trash2 size={16} aria-hidden="true" />

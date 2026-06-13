@@ -11,8 +11,13 @@ import type {
   CreateBatchImagesToVideosJobResult,
   CreateBatchShotsToImagesJobInput,
   CreateBatchShotsToImagesJobResult,
+  CreateAgentCanvasActionInput,
+  CreateAgentCanvasActionResult,
+  CreateAgentMemoryInput,
   CreateCreativeStoryboardInput,
   CreateCreativeStoryboardResult,
+  CreateScriptDraftInput,
+  CreateScriptDraftResult,
   CreateEditorExportInput,
   CreateEditorExportResult,
   CreateGenerationJobInput,
@@ -24,36 +29,66 @@ import type {
   DeleteCanvasNodeResult,
   DeleteNovelDocumentResult,
   ComposeShotPromptInput,
+  ExtractNovelEventsResult,
   GenerateStoryboardResult,
   EditorExportDetailResult,
   EditorExportListResult,
   EditorExportSendResult,
   GenerationJobListResult,
   GenerationJobRecord,
+  AgentMemoryListResult,
+  AgentMemoryRecord,
+  RecallAgentMemoriesInput,
+  RecallAgentMemoriesResult,
+  ClearAgentMemoriesInput,
+  ClearAgentMemoriesResult,
   ImageProviderCatalogResult,
   VideoProviderCatalogResult,
+  ProviderConfigUpdateResult,
+  ProviderConnectionTestInput,
+  ProviderConnectionTestResult,
+  ProviderManagementResult,
+  ProgrammableProviderDefinitionResult,
+  ProgrammableProviderDefinitionSummary,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
   ImportStoryboardToCanvasInput,
   ImportStoryboardToCanvasResult,
   MarkStoryboardDraftReadyResult,
   NovelDocumentRecord,
+  NovelEventGraphRecord,
   ProjectDetail,
+  ProjectSettingsExportResult,
+  ProjectSettingsImportValidationResult,
+  ProjectSettingsSummaryResult,
   ProjectListItem,
   RetryGenerationJobResult,
   SaveCanvasSnapshotInput,
   SaveCanvasSnapshotResult,
   ShotPromptCompositionResult,
+  SkillTemplateListResult,
+  SkillTemplateResult,
+  ScriptDraftListResult,
+  ScriptExportResult,
   StoryboardDraftRecord,
   UpdateStoryboardDraftInput,
   UpdateStoryboardDraftResult,
   UpdateProjectInput,
+  ValidateProjectSettingsImportInput,
   UpdateCanvasNodeGeometryInput,
   UpdateCanvasNodeGeometryResult,
   UpdateCanvasNodeInput,
   UpdateCanvasNodeResult,
   UpdateNovelDocumentInput,
   UpdateNovelDocumentResult,
+  UpdateProviderConfigInput,
+  UpdateSkillTemplateSourceInput,
+  UndoAgentCanvasActionResult,
+  UpdateAgentMemoryInput,
+  CreateProgrammableProviderInput,
+  UpdateProgrammableProviderSourceInput,
+  ActivateProgrammableProviderVersionInput,
+  ActivateSkillTemplateVersionInput,
 } from "@guga-flow/shared-types";
 
 export type ComposeShotPromptRequest = Pick<
@@ -108,9 +143,31 @@ export function createProject(input: CreateProjectInput): Promise<ProjectDetail>
   });
 }
 
+export function getProject(projectId: string): Promise<ProjectDetail> {
+  return requestJson<ProjectDetail>(`/projects/${projectId}`);
+}
+
 export function updateProject(projectId: string, input: UpdateProjectInput): Promise<ProjectDetail> {
   return requestJson<ProjectDetail>(`/projects/${projectId}`, {
     method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getProjectSettingsSummary(projectId: string): Promise<ProjectSettingsSummaryResult> {
+  return requestJson<ProjectSettingsSummaryResult>(`/projects/${projectId}/settings`);
+}
+
+export function exportProjectSettings(projectId: string): Promise<ProjectSettingsExportResult> {
+  return requestJson<ProjectSettingsExportResult>(`/projects/${projectId}/settings/export`);
+}
+
+export function validateProjectSettingsImport(
+  projectId: string,
+  input: ValidateProjectSettingsImportInput,
+): Promise<ProjectSettingsImportValidationResult> {
+  return requestJson<ProjectSettingsImportValidationResult>(`/projects/${projectId}/settings/import/validate`, {
+    method: "POST",
     body: JSON.stringify(input),
   });
 }
@@ -183,6 +240,69 @@ export function importNovelSource(
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function extractNovelEvents(
+  projectId: string,
+  novelId: string,
+): Promise<ExtractNovelEventsResult> {
+  return requestJson<ExtractNovelEventsResult>(
+    `/projects/${projectId}/novels/${novelId}/extract-events`,
+    { method: "POST" },
+  );
+}
+
+export function getNovelEventGraph(
+  projectId: string,
+  novelId: string,
+): Promise<NovelEventGraphRecord> {
+  return requestJson<NovelEventGraphRecord>(
+    `/projects/${projectId}/novels/${novelId}/event-graph`,
+  );
+}
+
+export function listScriptDrafts(
+  projectId: string,
+  novelId: string,
+): Promise<ScriptDraftListResult> {
+  return requestJson<ScriptDraftListResult>(
+    `/projects/${projectId}/novels/${novelId}/script-drafts`,
+  );
+}
+
+export function createScriptDraft(
+  projectId: string,
+  novelId: string,
+  input: CreateScriptDraftInput,
+): Promise<CreateScriptDraftResult> {
+  return requestJson<CreateScriptDraftResult>(
+    `/projects/${projectId}/novels/${novelId}/script-drafts`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function exportScriptDraft(
+  projectId: string,
+  novelId: string,
+  scriptDraftId: string,
+): Promise<ScriptExportResult> {
+  return requestJson<ScriptExportResult>(
+    `/projects/${projectId}/novels/${novelId}/script-drafts/${scriptDraftId}/export`,
+  );
+}
+
+export function generateStoryboardFromScriptDraft(
+  projectId: string,
+  novelId: string,
+  scriptDraftId: string,
+): Promise<GenerateStoryboardResult> {
+  return requestJson<GenerateStoryboardResult>(
+    `/projects/${projectId}/novels/${novelId}/script-drafts/${scriptDraftId}/generate-storyboard`,
+    { method: "POST" },
+  );
 }
 
 export function createCreativeStoryboard(
@@ -281,6 +401,81 @@ export function importStoryboardToCanvas(
       body: JSON.stringify(input),
     },
   );
+}
+
+export function createAgentCanvasAction(
+  projectId: string,
+  input: CreateAgentCanvasActionInput,
+): Promise<CreateAgentCanvasActionResult> {
+  return requestJson<CreateAgentCanvasActionResult>(
+    `/projects/${projectId}/agents/canvas-actions`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function undoAgentCanvasAction(
+  projectId: string,
+  jobId: string,
+): Promise<UndoAgentCanvasActionResult> {
+  return requestJson<UndoAgentCanvasActionResult>(
+    `/projects/${projectId}/agents/canvas-actions/${jobId}/undo`,
+    { method: "POST" },
+  );
+}
+
+export function listAgentMemories(projectId: string): Promise<AgentMemoryListResult> {
+  return requestJson<AgentMemoryListResult>(`/projects/${projectId}/agents/memories`);
+}
+
+export function createAgentMemory(
+  projectId: string,
+  input: CreateAgentMemoryInput,
+): Promise<AgentMemoryRecord> {
+  return requestJson<AgentMemoryRecord>(`/projects/${projectId}/agents/memories`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateAgentMemory(
+  projectId: string,
+  memoryId: string,
+  input: UpdateAgentMemoryInput,
+): Promise<AgentMemoryRecord> {
+  return requestJson<AgentMemoryRecord>(`/projects/${projectId}/agents/memories/${memoryId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function disableAgentMemory(projectId: string, memoryId: string): Promise<AgentMemoryRecord> {
+  return requestJson<AgentMemoryRecord>(
+    `/projects/${projectId}/agents/memories/${memoryId}/disable`,
+    { method: "POST" },
+  );
+}
+
+export function clearAgentMemories(
+  projectId: string,
+  input: ClearAgentMemoriesInput = {},
+): Promise<ClearAgentMemoriesResult> {
+  return requestJson<ClearAgentMemoriesResult>(`/projects/${projectId}/agents/memories/clear`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function recallAgentMemories(
+  projectId: string,
+  input: RecallAgentMemoriesInput,
+): Promise<RecallAgentMemoriesResult> {
+  return requestJson<RecallAgentMemoriesResult>(`/projects/${projectId}/agents/memories/recall`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function getProjectCanvas(projectId: string): Promise<CanvasLoadResult> {
@@ -392,6 +587,146 @@ export function getVideoProviderCatalog(): Promise<VideoProviderCatalogResult> {
   return requestJson<VideoProviderCatalogResult>("/providers/video");
 }
 
+export function getProviderManagement(projectId: string): Promise<ProviderManagementResult> {
+  return requestJson<ProviderManagementResult>(`/projects/${projectId}/providers`);
+}
+
+export function listProgrammableProviders(
+  projectId: string,
+): Promise<{ providers: ProgrammableProviderDefinitionSummary[] }> {
+  return requestJson<{ providers: ProgrammableProviderDefinitionSummary[] }>(
+    `/projects/${projectId}/providers/programmable`,
+  );
+}
+
+export function createProgrammableProvider(
+  projectId: string,
+  input: CreateProgrammableProviderInput,
+): Promise<ProgrammableProviderDefinitionResult> {
+  return requestJson<ProgrammableProviderDefinitionResult>(
+    `/projects/${projectId}/providers/programmable`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function updateProgrammableProviderSource(
+  projectId: string,
+  kind: string,
+  provider: string,
+  input: UpdateProgrammableProviderSourceInput,
+): Promise<ProgrammableProviderDefinitionResult> {
+  return requestJson<ProgrammableProviderDefinitionResult>(
+    `/projects/${projectId}/providers/programmable/${encodeURIComponent(kind)}/${encodeURIComponent(provider)}/source`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function activateProgrammableProviderVersion(
+  projectId: string,
+  kind: string,
+  provider: string,
+  input: ActivateProgrammableProviderVersionInput,
+): Promise<ProgrammableProviderDefinitionResult> {
+  return requestJson<ProgrammableProviderDefinitionResult>(
+    `/projects/${projectId}/providers/programmable/${encodeURIComponent(kind)}/${encodeURIComponent(provider)}/activate`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function disableProgrammableProvider(
+  projectId: string,
+  kind: string,
+  provider: string,
+): Promise<ProgrammableProviderDefinitionResult> {
+  return requestJson<ProgrammableProviderDefinitionResult>(
+    `/projects/${projectId}/providers/programmable/${encodeURIComponent(kind)}/${encodeURIComponent(provider)}/disable`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export function listSkillTemplates(projectId: string): Promise<SkillTemplateListResult> {
+  return requestJson<SkillTemplateListResult>(`/projects/${projectId}/skills`);
+}
+
+export function updateSkillTemplateSource(
+  projectId: string,
+  kind: string,
+  slug: string,
+  input: UpdateSkillTemplateSourceInput,
+): Promise<SkillTemplateResult> {
+  return requestJson<SkillTemplateResult>(
+    `/projects/${projectId}/skills/${encodeURIComponent(kind)}/${encodeURIComponent(slug)}/source`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function activateSkillTemplateVersion(
+  projectId: string,
+  kind: string,
+  slug: string,
+  input: ActivateSkillTemplateVersionInput,
+): Promise<SkillTemplateResult> {
+  return requestJson<SkillTemplateResult>(
+    `/projects/${projectId}/skills/${encodeURIComponent(kind)}/${encodeURIComponent(slug)}/activate`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function getProjectImageProviderCatalog(projectId: string): Promise<ImageProviderCatalogResult> {
+  return requestJson<ImageProviderCatalogResult>(`/projects/${projectId}/providers/image`);
+}
+
+export function getProjectVideoProviderCatalog(projectId: string): Promise<VideoProviderCatalogResult> {
+  return requestJson<VideoProviderCatalogResult>(`/projects/${projectId}/providers/video`);
+}
+
+export function updateProviderConfig(
+  projectId: string,
+  kind: string,
+  provider: string,
+  input: UpdateProviderConfigInput,
+): Promise<ProviderConfigUpdateResult> {
+  return requestJson<ProviderConfigUpdateResult>(
+    `/projects/${projectId}/providers/${kind}/${provider}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function testProviderConfig(
+  projectId: string,
+  kind: string,
+  provider: string,
+  input: ProviderConnectionTestInput = {},
+): Promise<ProviderConnectionTestResult> {
+  return requestJson<ProviderConnectionTestResult>(
+    `/projects/${projectId}/providers/${kind}/${provider}/test`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 export function createBatchImagesToVideosJobs(
   projectId: string,
   input: CreateBatchImagesToVideosJobInput,
@@ -450,7 +785,9 @@ export function createEditorExport(
 }
 
 export function listEditorExports(projectId: string): Promise<EditorExportListResult> {
-  return requestJson<EditorExportListResult>(`/projects/${projectId}/editor-exports`);
+  return requestJson<EditorExportListResult>(`/projects/${projectId}/editor-exports`, {
+    cache: "no-store",
+  });
 }
 
 export function getEditorExport(

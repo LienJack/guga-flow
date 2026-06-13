@@ -6,6 +6,7 @@ import type {
   GenerationQueueSummary,
   ImageProviderCatalogItem,
   ImageProviderCatalogResult,
+  ImageProviderMode,
   ImageNodeData,
   ShotNodeData,
   VideoProviderCatalogItem,
@@ -19,10 +20,11 @@ import {
   createBatchImagesToVideosJobs,
   createBatchShotsToImagesJobs,
   createGenerationJob,
-  getImageProviderCatalog,
-  getVideoProviderCatalog,
+  getProjectImageProviderCatalog,
+  getProjectVideoProviderCatalog,
   retryGenerationJob,
 } from "../../lib/api";
+import { useI18n } from "../../lib/i18n";
 
 interface GenerationActionsProps {
   generationJobs: GenerationJobRecord[];
@@ -41,7 +43,7 @@ const FALLBACK_IMAGE_PROVIDER: ImageProviderCatalogItem = {
   requiresApiKey: false,
   defaultModel: "mock-image-v1",
   models: [{ id: "mock-image-v1", displayName: "Mock Image v1", default: true }],
-  supportedModes: ["text_to_image", "multi_reference"],
+  supportedModes: ["text_to_image", "image_to_image", "multi_reference"],
   supportsReferenceImages: true,
   maxReferenceImages: 99,
   supportsMultipleOutputs: false,
@@ -89,6 +91,21 @@ export interface VideoGenerationFormSettings {
   videoProviderParams: Record<string, CanvasSnapshotJson>;
 }
 
+type DirectGenerationOperation =
+  | "shot_to_image"
+  | "character_to_image"
+  | "location_to_image"
+  | "image_refinement"
+  | "image_to_video";
+
+interface GenerationAction {
+  icon: typeof ImagePlus;
+  labelKey: string;
+  operation: DirectGenerationOperation;
+}
+
+type Translator = (key: string, params?: Record<string, string | number>) => string;
+
 export function GenerationActions({
   generationJobs,
   imageProviderCatalog,
@@ -97,6 +114,7 @@ export function GenerationActions({
   onGenerationChanged,
   projectId,
 }: GenerationActionsProps) {
+  const { t } = useI18n();
   const [imageCatalog, setImageCatalog] = useState<ImageProviderCatalogResult | null>(imageProviderCatalog ?? null);
   const [videoCatalog, setVideoCatalog] = useState<VideoProviderCatalogResult | null>(videoProviderCatalog ?? null);
   const [busy, setBusy] = useState(false);
@@ -108,11 +126,23 @@ export function GenerationActions({
   const [videoSettings, setVideoSettings] = useState<VideoGenerationFormSettings>(() =>
     videoSettingsForProvider(FALLBACK_VIDEO_PROVIDER),
   );
-  const action = generationActionForNode(node);
+  const [refinementPrompt, setRefinementPrompt] = useState("");
+  const actions = generationActionsForNode(node);
+  const hasImageProviderAction = actions.some((action) => isImageProviderOperation(action.operation));
+  const hasVideoProviderAction = actions.some((action) => action.operation === "image_to_video");
+  const hasRefinementAction = actions.some((action) => action.operation === "image_refinement");
+  const trimmedRefinementPrompt = refinementPrompt.trim();
+  const requiredImageProviderMode: ImageProviderMode = hasRefinementAction
+    ? "image_to_image"
+    : "text_to_image";
   const imageProviders = imageCatalog?.providers.length ? imageCatalog.providers : [FALLBACK_IMAGE_PROVIDER];
   const selectedProvider =
-    imageProviders.find((provider) => provider.id === imageSettings.provider) ??
-    imageProviders.find((provider) => provider.enabled) ??
+    imageProviders.find(
+      (provider) =>
+        provider.id === imageSettings.provider &&
+        imageProviderSupportsMode(provider, requiredImageProviderMode),
+    ) ??
+    imageProviders.find((provider) => imageProviderSupportsMode(provider, requiredImageProviderMode)) ??
     FALLBACK_IMAGE_PROVIDER;
   const normalizedImageSettings = normalizeImageSettings(imageSettings, selectedProvider);
   const videoProviders = videoCatalog?.providers.length ? videoCatalog.providers : [FALLBACK_VIDEO_PROVIDER];
@@ -141,12 +171,12 @@ export function GenerationActions({
   }, [videoProviderCatalog]);
 
   useEffect(() => {
-    if (action?.operation !== "shot_to_image" || imageProviderCatalog) {
+    if (!hasImageProviderAction || imageProviderCatalog) {
       return;
     }
 
     let cancelled = false;
-    getImageProviderCatalog()
+    getProjectImageProviderCatalog(projectId)
       .then((result) => {
         if (!cancelled) {
           setImageCatalog(result);
@@ -161,15 +191,15 @@ export function GenerationActions({
     return () => {
       cancelled = true;
     };
-  }, [action?.operation, imageProviderCatalog]);
+  }, [hasImageProviderAction, imageProviderCatalog, projectId]);
 
   useEffect(() => {
-    if (action?.operation !== "image_to_video" || videoProviderCatalog) {
+    if (!hasVideoProviderAction || videoProviderCatalog) {
       return;
     }
 
     let cancelled = false;
-    getVideoProviderCatalog()
+    getProjectVideoProviderCatalog(projectId)
       .then((result) => {
         if (!cancelled) {
           setVideoCatalog(result);
@@ -184,16 +214,13 @@ export function GenerationActions({
     return () => {
       cancelled = true;
     };
-  }, [action?.operation, videoProviderCatalog]);
+  }, [hasVideoProviderAction, projectId, videoProviderCatalog]);
 
-  if (!action) {
+  if (!actions.length) {
     return null;
   }
 
-  async function handleGenerate() {
-    if (!action) {
-      return;
-    }
+  async function handleGenerate(operation: DirectGenerationOperation) {
     setBusy(true);
     setError(null);
     setLastResult(null);
@@ -202,16 +229,17 @@ export function GenerationActions({
       const result = await createGenerationJob(
         projectId,
         buildGenerationJobInputForOperation(
-          action.operation,
+          operation,
           node.id,
           normalizedImageSettings,
           normalizedVideoSettings,
+          trimmedRefinementPrompt,
         ),
       );
-      setLastResult("Queued");
+      setLastResult(t("generation.queued"));
       onGenerationChanged?.(result.queueSummary);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Generation request failed");
+      setError(caught instanceof Error ? caught.message : t("generation.requestFailed"));
     } finally {
       setBusy(false);
     }
@@ -224,10 +252,10 @@ export function GenerationActions({
 
     try {
       const result = await retryGenerationJob(projectId, jobId);
-      setLastResult("Retry queued");
+      setLastResult(t("generation.retryQueued"));
       onGenerationChanged?.(result.queueSummary);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Generation retry failed");
+      setError(caught instanceof Error ? caught.message : t("generation.retryFailed"));
     } finally {
       setBusy(false);
     }
@@ -240,38 +268,54 @@ export function GenerationActions({
 
     try {
       await cancelGenerationJob(projectId, jobId);
-      setLastResult("Cancelled");
+      setLastResult(t("generation.cancelled"));
       onGenerationChanged?.();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Generation cancel failed");
+      setError(caught instanceof Error ? caught.message : t("generation.cancelFailed"));
     } finally {
       setBusy(false);
     }
   }
 
-  const Icon = action.icon;
-  const generateDisabled =
+  const generateDisabledForOperation = (operation: DirectGenerationOperation) =>
     busy ||
     Boolean(activeJob) ||
-    (action.operation === "shot_to_image" && !selectedProvider.enabled) ||
-    (action.operation === "image_to_video" && !selectedVideoProvider.enabled);
+    (isImageProviderOperation(operation) && !selectedProvider.enabled) ||
+    (operation === "image_refinement" &&
+      !imageProviderSupportsMode(selectedProvider, "image_to_image")) ||
+    (operation === "image_to_video" && !selectedVideoProvider.enabled) ||
+    (operation === "image_refinement" && !trimmedRefinementPrompt);
 
   return (
-    <section className="generation-panel" aria-label="Generation">
+    <section className="generation-panel" aria-label={t("generation.title")}>
       <div className="section-heading-row">
-        <h3>Generation</h3>
-        {activeJob ? <span className="status-chip">{activeJob.status}</span> : null}
+        <h3>{t("generation.title")}</h3>
+        {activeJob ? <span className="status-chip">{statusLabel(activeJob.status, t)}</span> : null}
       </div>
-      {action.operation === "shot_to_image" ? (
+      {hasImageProviderAction ? (
         <ImageGenerationSettings
           busy={busy || Boolean(activeJob)}
           providers={imageProviders}
+          requiredMode={requiredImageProviderMode}
           selectedProvider={selectedProvider}
           settings={normalizedImageSettings}
           onSettingsChange={setImageSettings}
         />
       ) : null}
-      {action.operation === "image_to_video" ? (
+      {hasRefinementAction ? (
+        <div className="generation-field wide">
+          <label htmlFor="generation-refinement-prompt">{t("generation.refinementPrompt")}</label>
+          <textarea
+            id="generation-refinement-prompt"
+            value={refinementPrompt}
+            maxLength={1000}
+            rows={3}
+            disabled={busy || Boolean(activeJob)}
+            onChange={(event) => setRefinementPrompt(event.target.value)}
+          />
+        </div>
+      ) : null}
+      {hasVideoProviderAction ? (
         <VideoGenerationSettings
           busy={busy || Boolean(activeJob)}
           providers={videoProviders}
@@ -281,15 +325,21 @@ export function GenerationActions({
         />
       ) : null}
       <div className="generation-actions">
-        <button
-          className="primary-action compact"
-          type="button"
-          disabled={generateDisabled}
-          onClick={() => void handleGenerate()}
-        >
-          <Icon size={15} aria-hidden="true" />
-          {action.label}
-        </button>
+        {actions.map((action) => {
+          const Icon = action.icon;
+          return (
+            <button
+              key={action.operation}
+              className="primary-action compact"
+              type="button"
+              disabled={generateDisabledForOperation(action.operation)}
+              onClick={() => void handleGenerate(action.operation)}
+            >
+              <Icon size={15} aria-hidden="true" />
+              {t(action.labelKey)}
+            </button>
+          );
+        })}
         {activeJob ? (
           <button
             className="ghost-action compact"
@@ -298,7 +348,7 @@ export function GenerationActions({
             onClick={() => void handleCancel(activeJob.id)}
           >
             <Ban size={14} aria-hidden="true" />
-            Cancel
+            {t("generation.cancel")}
           </button>
         ) : null}
         {failedJob ? (
@@ -309,7 +359,7 @@ export function GenerationActions({
             onClick={() => void handleRetry(failedJob.id)}
           >
             <RotateCcw size={14} aria-hidden="true" />
-            Retry
+            {t("generation.retry")}
           </button>
         ) : null}
       </div>
@@ -332,6 +382,7 @@ export function GenerationBatchActions({
   shotNodes?: Array<CanvasNodeRecord<ShotNodeData>>;
   onGenerationChanged?(queueSummary?: GenerationQueueSummary): void;
 }) {
+  const { t } = useI18n();
   const [imageCatalog, setImageCatalog] = useState<ImageProviderCatalogResult | null>(null);
   const [videoCatalog, setVideoCatalog] = useState<VideoProviderCatalogResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -365,7 +416,7 @@ export function GenerationBatchActions({
 
   useEffect(() => {
     let cancelled = false;
-    getImageProviderCatalog()
+    getProjectImageProviderCatalog(projectId)
       .then((result) => {
         if (!cancelled) {
           setImageCatalog(result);
@@ -380,11 +431,11 @@ export function GenerationBatchActions({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     let cancelled = false;
-    getVideoProviderCatalog()
+    getProjectVideoProviderCatalog(projectId)
       .then((result) => {
         if (!cancelled) {
           setVideoCatalog(result);
@@ -399,7 +450,7 @@ export function GenerationBatchActions({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [projectId]);
 
   if (!shotNodes.length && !imageNodes.length) {
     return null;
@@ -419,11 +470,11 @@ export function GenerationBatchActions({
         ),
       );
       setLastResult(
-        `${result.jobs.length} images queued${result.skipped.length ? `, ${result.skipped.length} skipped` : ""}`,
+        queuedResultLabel(t, "generation.imagesQueued", result.jobs.length, result.skipped.length),
       );
       onGenerationChanged?.(result.queueSummary);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Batch image request failed");
+      setError(caught instanceof Error ? caught.message : t("generation.batchImageRequestFailed"));
     } finally {
       setBusy(false);
     }
@@ -445,12 +496,10 @@ export function GenerationBatchActions({
         resolution: normalizedVideoSettings.resolution,
         videoProviderParams: normalizedVideoSettings.videoProviderParams,
       });
-      setLastResult(
-        `${result.jobs.length} queued${result.skipped.length ? `, ${result.skipped.length} skipped` : ""}`,
-      );
+      setLastResult(queuedResultLabel(t, "generation.jobsQueued", result.jobs.length, result.skipped.length));
       onGenerationChanged?.(result.queueSummary);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Batch generation request failed");
+      setError(caught instanceof Error ? caught.message : t("generation.batchVideoRequestFailed"));
     } finally {
       setBusy(false);
     }
@@ -462,14 +511,15 @@ export function GenerationBatchActions({
   return (
     <>
       {shotNodes.length ? (
-        <section className="generation-panel" aria-label="Batch image generation">
+        <section className="generation-panel" aria-label={t("generation.batchImageTitle")}>
           <div className="section-heading-row">
-            <h3>Batch Image</h3>
+            <h3>{t("generation.batchImageTitle")}</h3>
             <span className="status-chip">{availableShotNodes.length}/{shotNodes.length}</span>
           </div>
           <ImageGenerationSettings
             busy={busy}
             providers={imageProviders}
+            requiredMode="text_to_image"
             selectedProvider={selectedImageProvider}
             settings={normalizedImageSettings}
             onSettingsChange={setImageSettings}
@@ -482,15 +532,15 @@ export function GenerationBatchActions({
               onClick={() => void handleBatchGenerateImages()}
             >
               <ImagePlus size={15} aria-hidden="true" />
-              Batch Image
+              {t("generation.batchImage")}
             </button>
           </div>
         </section>
       ) : null}
       {imageNodes.length ? (
-        <section className="generation-panel" aria-label="Batch video generation">
+        <section className="generation-panel" aria-label={t("generation.batchVideoTitle")}>
           <div className="section-heading-row">
-            <h3>Batch Video</h3>
+            <h3>{t("generation.batchVideoTitle")}</h3>
             <span className="status-chip">{availableImageNodes.length}/{imageNodes.length}</span>
           </div>
           <VideoGenerationSettings
@@ -508,7 +558,7 @@ export function GenerationBatchActions({
               onClick={() => void handleBatchGenerateVideos()}
             >
               <Video size={15} aria-hidden="true" />
-              Batch Video
+              {t("generation.batchVideo")}
             </button>
           </div>
         </section>
@@ -523,15 +573,18 @@ function ImageGenerationSettings({
   busy,
   onSettingsChange,
   providers,
+  requiredMode,
   selectedProvider,
   settings,
 }: {
   busy: boolean;
   onSettingsChange(next: ImageGenerationFormSettings): void;
   providers: ImageProviderCatalogItem[];
+  requiredMode: ImageProviderMode;
   selectedProvider: ImageProviderCatalogItem;
   settings: ImageGenerationFormSettings;
 }) {
+  const { t } = useI18n();
   const disabledProviderReasons = providers.filter(
     (provider) => provider.id !== selectedProvider.id && !provider.enabled && provider.disabledReason,
   );
@@ -539,7 +592,7 @@ function ImageGenerationSettings({
   return (
     <div className="generation-settings">
       <div className="generation-field">
-        <label htmlFor="generation-provider">Provider</label>
+        <label htmlFor="generation-provider">{t("generation.provider")}</label>
         <select
           id="generation-provider"
           value={selectedProvider.id}
@@ -551,16 +604,24 @@ function ImageGenerationSettings({
           }}
         >
           {providers.map((provider) => (
-            <option key={provider.id} value={provider.id} disabled={!provider.enabled}>
+            <option
+              key={provider.id}
+              value={provider.id}
+              disabled={!imageProviderSupportsMode(provider, requiredMode)}
+            >
               {provider.displayName}
-              {provider.enabled ? "" : " unavailable"}
+              {provider.enabled
+                ? provider.supportedModes.includes(requiredMode)
+                  ? ""
+                  : ` ${t("generation.providerUnsupported")}`
+                : ` ${t("generation.providerUnavailable")}`}
             </option>
           ))}
         </select>
       </div>
       <div className="generation-field-grid">
         <div className="generation-field">
-          <label htmlFor="generation-model">Model</label>
+          <label htmlFor="generation-model">{t("generation.model")}</label>
           <select
             id="generation-model"
             value={settings.model}
@@ -575,7 +636,7 @@ function ImageGenerationSettings({
           </select>
         </div>
         <div className="generation-field">
-          <label htmlFor="generation-aspect-ratio">Aspect</label>
+          <label htmlFor="generation-aspect-ratio">{t("generation.aspect")}</label>
           <select
             id="generation-aspect-ratio"
             value={settings.aspectRatio}
@@ -595,7 +656,7 @@ function ImageGenerationSettings({
           </select>
         </div>
         <div className="generation-field">
-          <label htmlFor="generation-count">Count</label>
+          <label htmlFor="generation-count">{t("generation.count")}</label>
           <input
             id="generation-count"
             type="number"
@@ -672,6 +733,7 @@ function VideoGenerationSettings({
   selectedProvider: VideoProviderCatalogItem;
   settings: VideoGenerationFormSettings;
 }) {
+  const { t } = useI18n();
   const disabledProviderReasons = providers.filter(
     (provider) => provider.id !== selectedProvider.id && !provider.enabled && provider.disabledReason,
   );
@@ -679,7 +741,7 @@ function VideoGenerationSettings({
   return (
     <div className="generation-settings">
       <div className="generation-field">
-        <label htmlFor="generation-video-provider">Provider</label>
+        <label htmlFor="generation-video-provider">{t("generation.provider")}</label>
         <select
           id="generation-video-provider"
           value={selectedProvider.id}
@@ -693,14 +755,14 @@ function VideoGenerationSettings({
           {providers.map((provider) => (
             <option key={provider.id} value={provider.id} disabled={!provider.enabled}>
               {provider.displayName}
-              {provider.enabled ? "" : " unavailable"}
+              {provider.enabled ? "" : ` ${t("generation.providerUnavailable")}`}
             </option>
           ))}
         </select>
       </div>
       <div className="generation-field-grid video">
         <div className="generation-field">
-          <label htmlFor="generation-video-model">Model</label>
+          <label htmlFor="generation-video-model">{t("generation.model")}</label>
           <select
             id="generation-video-model"
             value={settings.videoModel}
@@ -715,7 +777,7 @@ function VideoGenerationSettings({
           </select>
         </div>
         <div className="generation-field">
-          <label htmlFor="generation-video-aspect-ratio">Aspect</label>
+          <label htmlFor="generation-video-aspect-ratio">{t("generation.aspect")}</label>
           <select
             id="generation-video-aspect-ratio"
             value={settings.videoAspectRatio}
@@ -735,7 +797,7 @@ function VideoGenerationSettings({
           </select>
         </div>
         <div className="generation-field">
-          <label htmlFor="generation-video-duration">Duration</label>
+          <label htmlFor="generation-video-duration">{t("generation.duration")}</label>
           <select
             id="generation-video-duration"
             value={settings.durationSeconds}
@@ -752,7 +814,7 @@ function VideoGenerationSettings({
           </select>
         </div>
         <div className="generation-field">
-          <label htmlFor="generation-video-resolution">Resolution</label>
+          <label htmlFor="generation-video-resolution">{t("generation.resolution")}</label>
           <select
             id="generation-video-resolution"
             value={settings.resolution}
@@ -841,10 +903,11 @@ function VideoGenerationSettings({
 }
 
 export function buildGenerationJobInputForOperation(
-  operation: "shot_to_image" | "image_to_video",
+  operation: DirectGenerationOperation,
   sourceNodeId: string,
   imageSettings: ImageGenerationFormSettings = settingsForProvider(FALLBACK_IMAGE_PROVIDER),
   videoSettings: VideoGenerationFormSettings = videoSettingsForProvider(FALLBACK_VIDEO_PROVIDER),
+  refinementPrompt = "",
 ): CreateGenerationJobInput {
   if (operation === "image_to_video") {
     return {
@@ -856,6 +919,29 @@ export function buildGenerationJobInputForOperation(
       durationSeconds: videoSettings.durationSeconds,
       resolution: videoSettings.resolution,
       videoProviderParams: videoSettings.videoProviderParams,
+    };
+  }
+
+  if (operation === "image_refinement") {
+    return {
+      operation,
+      sourceNodeId,
+      refinementPrompt,
+      provider: imageSettings.provider,
+      model: imageSettings.model,
+      aspectRatio: imageSettings.aspectRatio,
+      providerParams: imageSettings.providerParams,
+    };
+  }
+
+  if (operation === "character_to_image" || operation === "location_to_image") {
+    return {
+      operation,
+      sourceNodeId,
+      provider: imageSettings.provider,
+      model: imageSettings.model,
+      aspectRatio: imageSettings.aspectRatio,
+      providerParams: imageSettings.providerParams,
     };
   }
 
@@ -983,28 +1069,82 @@ function clampCount(value: number, maxOutputs: number): number {
   return Math.min(Math.max(Math.trunc(value), 1), maxOutputs);
 }
 
-function generationActionForNode(node: CanvasNodeRecord):
-  | {
-      icon: typeof ImagePlus;
-      label: string;
-      operation: "shot_to_image" | "image_to_video";
-    }
-  | undefined {
+function isImageProviderOperation(operation: DirectGenerationOperation): boolean {
+  return (
+    operation === "shot_to_image" ||
+    operation === "character_to_image" ||
+    operation === "location_to_image" ||
+    operation === "image_refinement"
+  );
+}
+
+function imageProviderSupportsMode(
+  provider: ImageProviderCatalogItem,
+  requiredMode: ImageProviderMode,
+): boolean {
+  return provider.enabled && provider.supportedModes.includes(requiredMode);
+}
+
+function statusLabel(status: string, t: Translator): string {
+  return t(`status.${status}`);
+}
+
+function queuedResultLabel(
+  t: Translator,
+  queuedKey: string,
+  queuedCount: number,
+  skippedCount: number,
+): string {
+  return `${t(queuedKey, { count: queuedCount })}${
+    skippedCount ? t("generation.skippedSuffix", { count: skippedCount }) : ""
+  }`;
+}
+
+function generationActionsForNode(node: CanvasNodeRecord): GenerationAction[] {
   if (node.type === "shot") {
-    return {
-      icon: ImagePlus,
-      label: "Generate Image",
-      operation: "shot_to_image",
-    };
+    return [
+      {
+        icon: ImagePlus,
+        labelKey: "generation.generateImage",
+        operation: "shot_to_image",
+      },
+    ];
+  }
+
+  if (node.type === "character_asset") {
+    return [
+      {
+        icon: ImagePlus,
+        labelKey: "generation.generateReference",
+        operation: "character_to_image",
+      },
+    ];
+  }
+
+  if (node.type === "location_asset") {
+    return [
+      {
+        icon: ImagePlus,
+        labelKey: "generation.generateReference",
+        operation: "location_to_image",
+      },
+    ];
   }
 
   if (node.type === "image" && typeof (node.dataJson as ImageNodeData | undefined)?.assetId === "string") {
-    return {
-      icon: Video,
-      label: "Generate Video",
-      operation: "image_to_video",
-    };
+    return [
+      {
+        icon: Video,
+        labelKey: "generation.generateVideo",
+        operation: "image_to_video",
+      },
+      {
+        icon: ImagePlus,
+        labelKey: "generation.refineImage",
+        operation: "image_refinement",
+      },
+    ];
   }
 
-  return undefined;
+  return [];
 }

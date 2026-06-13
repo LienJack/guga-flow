@@ -25,6 +25,7 @@ export interface ShotReferenceState {
 
 export const CANVAS_EDGE_RELATION_LABELS = {
   derived_from: "Derived from",
+  story_seed: "Story seed",
   belongs_to_scene: "Belongs to scene",
   references_character: "Character reference",
   references_location: "Location reference",
