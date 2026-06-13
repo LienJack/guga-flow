@@ -1,7 +1,7 @@
 ---
 title: feat: Add light agent creative entry
 type: feat
-status: active
+status: completed
 date: 2026-06-13
 origin: docs/brainstorms/2026-06-13-014-phase-13-light-agent-entry-requirements.md
 ---

@@ -1,6 +1,7 @@
 ---
 title: "feat: Add real video provider generation"
 type: feat
+status: completed
 date: 2026-06-12
 origin: docs/brainstorms/2026-06-12-011-phase-10-real-video-provider-requirements.md
 ---
