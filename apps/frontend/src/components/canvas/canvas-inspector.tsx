@@ -1,10 +1,15 @@
 import type {
   CanvasEdgeRecord,
   CanvasNodeRecord,
+  CharacterAssetNodeData,
+  CharacterLifecycleStageData,
+  CharacterStageReferenceData,
   GenerationJobRecord,
   GenerationQueueSummary,
   ImageNodeData,
   ShotNodeData,
+  StoryBlueprintNodeData,
+  StoryEventTraceData,
   UpdateCanvasNodeInput,
   VideoNodeData,
 } from "@guga-flow/shared-types";
@@ -118,6 +123,7 @@ export function CanvasInspector({
             }}
           />
         ) : null}
+        {selectedNode ? <NodeTracePanel node={selectedNode} nodes={nodes} /> : null}
         {selectedNode ? (
           <CanvasProductivityActions
             edges={edges}
@@ -178,6 +184,267 @@ function InspectorState({ title, value }: { title: string; value: string }) {
       <span>{value}</span>
     </div>
   );
+}
+
+function NodeTracePanel({
+  node,
+  nodes,
+}: {
+  node: CanvasNodeRecord;
+  nodes: readonly CanvasNodeRecord[];
+}) {
+  const data = objectData(node.dataJson);
+  const blueprint = node.type === "novel" ? storyBlueprint(data) : undefined;
+  const storyEvents =
+    node.type === "scene_frame" || node.type === "scene" || node.type === "shot"
+      ? storyEventArray(data.storyEvents)
+      : [];
+  const stageRefs = node.type === "shot" ? characterStageReferenceArray(data.characterStageRefs) : [];
+  const lifecycleStages = node.type === "character_asset" ? lifecycleStageArray(data.lifecycleStages) : [];
+  const lockedFields = node.type === "character_asset" ? stringArray(data.lockedFields) : [];
+  const locked = node.type === "character_asset" && data.locked === true;
+
+  if (!blueprint && storyEvents.length === 0 && stageRefs.length === 0 && lifecycleStages.length === 0 && !locked) {
+    return null;
+  }
+
+  return (
+    <section className="node-trace-panel" aria-label="Story trace">
+      <div className="panel-heading compact">
+        <h2>Story trace</h2>
+        <span>{traceSummary(blueprint, storyEvents, stageRefs, lifecycleStages, locked, lockedFields)}</span>
+      </div>
+
+      {blueprint ? (
+        <div className="node-trace-group">
+          <strong>Blueprint</strong>
+          {blueprint.worldSummary ? <p>{blueprint.worldSummary}</p> : null}
+          <small>
+            {compactText([
+              countLabel(blueprint.timelineEvents?.length ?? 0, "event"),
+              countLabel(blueprint.characterRelationships?.length ?? 0, "relation"),
+            ])}
+          </small>
+        </div>
+      ) : null}
+
+      {storyEvents.length > 0 ? (
+        <TraceList title="Events">
+          {storyEvents.map((event) => (
+            <li key={event.eventId}>
+              <strong>{event.title ?? event.eventId}</strong>
+              <span>{event.summary ?? event.sourceExcerpt ?? event.result ?? event.eventId}</span>
+              <small>
+                {compactText([
+                  event.emotion ? `Emotion: ${event.emotion}` : "",
+                  event.conflict ? `Conflict: ${event.conflict}` : "",
+                  event.result ? `Result: ${event.result}` : "",
+                ])}
+              </small>
+            </li>
+          ))}
+        </TraceList>
+      ) : null}
+
+      {stageRefs.length > 0 ? (
+        <TraceList title="Stage refs">
+          {stageRefs.map((reference) => {
+            const character = characterForReference(reference.characterTempId, nodes);
+            const stage = character ? stageForReference(reference.stageId, character) : undefined;
+            return (
+              <li key={`${reference.characterTempId}:${reference.stageId}`}>
+                <strong>{characterLabel(character, reference.characterTempId)}</strong>
+                <span>{stage?.label ?? reference.stageId}</span>
+                {stage?.identityPrompt ? <small>{stage.identityPrompt}</small> : null}
+              </li>
+            );
+          })}
+        </TraceList>
+      ) : null}
+
+      {lifecycleStages.length > 0 ? (
+        <TraceList title="Lifecycle">
+          {lifecycleStages.map((stage) => (
+            <li key={stage.stageId}>
+              <strong>{stage.label || stage.stageId}</strong>
+              <span>
+                {compactText([stage.ageRange, stage.costume, stage.emotionalState]) || stage.stageId}
+              </span>
+              {stage.identityPrompt ? <small>{stage.identityPrompt}</small> : null}
+            </li>
+          ))}
+        </TraceList>
+      ) : null}
+
+      {locked ? (
+        <div className="node-trace-lock">
+          <strong>Locked identity</strong>
+          <span>{lockedFields.length > 0 ? lockedFields.join(", ") : "Core identity fields"}</span>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function TraceList({ children, title }: { children: React.ReactNode; title: string }) {
+  return (
+    <div className="node-trace-group">
+      <strong>{title}</strong>
+      <ul className="node-trace-list">{children}</ul>
+    </div>
+  );
+}
+
+function traceSummary(
+  blueprint: StoryBlueprintNodeData | undefined,
+  storyEvents: readonly StoryEventTraceData[],
+  stageRefs: readonly CharacterStageReferenceData[],
+  lifecycleStages: readonly CharacterLifecycleStageData[],
+  locked: boolean,
+  lockedFields: readonly string[],
+): string {
+  return (
+    compactText([
+      blueprint ? "Blueprint" : "",
+      countLabel(storyEvents.length, "event"),
+      countLabel(stageRefs.length, "stage ref"),
+      countLabel(lifecycleStages.length, "stage"),
+      locked ? countLabel(Math.max(lockedFields.length, 1), "lock") : "",
+    ]) || "Trace"
+  );
+}
+
+function storyBlueprint(data: Record<string, unknown>): StoryBlueprintNodeData | undefined {
+  const blueprint = objectData(data.storyBlueprint);
+  if (Object.keys(blueprint).length === 0) {
+    return undefined;
+  }
+
+  return {
+    worldSummary: textValue(blueprint.worldSummary),
+    timelineEvents: storyEventArray(blueprint.timelineEvents),
+    characterRelationships: objectArray(blueprint.characterRelationships)
+      .map((item) => ({
+        relationshipId: textValue(item.relationshipId) ?? "",
+        characterTempIds: stringArray(item.characterTempIds),
+        type: textValue(item.type),
+        summary: textValue(item.summary),
+        status: textValue(item.status),
+      }))
+      .filter((relationship) => relationship.relationshipId),
+    themes: stringArray(blueprint.themes),
+    adaptationNotes: textValue(blueprint.adaptationNotes),
+  };
+}
+
+function storyEventArray(value: unknown): StoryEventTraceData[] {
+  return objectArray(value)
+    .map((item) => ({
+      eventId: textValue(item.eventId) ?? "",
+      title: textValue(item.title),
+      orderIndex: typeof item.orderIndex === "number" ? item.orderIndex : undefined,
+      chapterIndex: typeof item.chapterIndex === "number" ? item.chapterIndex : undefined,
+      sourceExcerpt: textValue(item.sourceExcerpt),
+      summary: textValue(item.summary),
+      characters: stringArray(item.characters),
+      locationName: textValue(item.locationName),
+      emotion: textValue(item.emotion),
+      conflict: textValue(item.conflict),
+      result: textValue(item.result),
+      estimatedDurationSec:
+        typeof item.estimatedDurationSec === "number" ? item.estimatedDurationSec : undefined,
+    }))
+    .filter((event) => event.eventId);
+}
+
+function characterStageReferenceArray(value: unknown): CharacterStageReferenceData[] {
+  return objectArray(value)
+    .map((item) => ({
+      characterTempId: textValue(item.characterTempId) ?? "",
+      stageId: textValue(item.stageId) ?? "",
+    }))
+    .filter((reference) => reference.characterTempId && reference.stageId);
+}
+
+function lifecycleStageArray(value: unknown): CharacterLifecycleStageData[] {
+  return objectArray(value)
+    .map((item) => ({
+      stageId: textValue(item.stageId) ?? "",
+      label: textValue(item.label) ?? "",
+      ageRange: textValue(item.ageRange),
+      appearance: textValue(item.appearance),
+      costume: textValue(item.costume),
+      hairstyle: textValue(item.hairstyle),
+      emotionalState: textValue(item.emotionalState),
+      identityPrompt: textValue(item.identityPrompt),
+    }))
+    .filter((stage) => stage.stageId);
+}
+
+function characterForReference(
+  referenceId: string,
+  nodes: readonly CanvasNodeRecord[],
+): CanvasNodeRecord<CharacterAssetNodeData> | undefined {
+  return nodes.find((candidate): candidate is CanvasNodeRecord<CharacterAssetNodeData> => {
+    if (candidate.type !== "character_asset") {
+      return false;
+    }
+    const data = objectData(candidate.dataJson);
+    return candidate.id === referenceId || textValue(objectData(data.storyboardImport).sourceTempId) === referenceId;
+  });
+}
+
+function stageForReference(
+  stageId: string,
+  character: CanvasNodeRecord<CharacterAssetNodeData>,
+): CharacterLifecycleStageData | undefined {
+  return lifecycleStageArray(objectData(character.dataJson).lifecycleStages).find((stage) => stage.stageId === stageId);
+}
+
+function characterLabel(
+  character: CanvasNodeRecord<CharacterAssetNodeData> | undefined,
+  fallback: string,
+): string {
+  if (!character) {
+    return fallback;
+  }
+  const data = objectData(character.dataJson);
+  return character.title ?? textValue(data.name) ?? fallback;
+}
+
+function countLabel(count: number, label: string): string {
+  return count > 0 ? `${count} ${label}${count === 1 ? "" : "s"}` : "";
+}
+
+function compactText(values: ReadonlyArray<string | undefined>): string {
+  return values.filter((value): value is string => Boolean(value?.trim())).join(" / ");
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(textValue).filter((item): item is string => Boolean(item)) : [];
+}
+
+function objectArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          typeof item === "object" && item !== null && !Array.isArray(item),
+      )
+    : [];
+}
+
+function objectData(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function textValue(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const text = value.trim();
+  return text ? text : undefined;
 }
 
 async function saveNode(

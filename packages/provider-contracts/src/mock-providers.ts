@@ -71,6 +71,50 @@ export class MockLlmProvider implements LlmProvider {
     return {
       title,
       logline: `A mock storyboard generated from ${input.novelText.length} characters.`,
+      storyBlueprint: {
+        worldSummary: "A near-future city where rooftop signals reveal hidden alliances.",
+        timelineEvents: [
+          {
+            eventId: "event_opening",
+            title: "Signal spotted",
+            orderIndex: 1,
+            chapterIndex: 1,
+            sourceExcerpt: input.novelText.slice(0, 160),
+            summary: "The hero notices a hidden signal above the city and decides to investigate.",
+            characters: ["char_hero"],
+            locationName: "City Rooftop",
+            emotion: "anticipation",
+            conflict: "The hero must decide whether the signal is a trap.",
+            result: "The hero moves toward the signal.",
+            estimatedDurationSec: 12,
+          },
+          {
+            eventId: "event_decision",
+            title: "Alliance confirmed",
+            orderIndex: 2,
+            chapterIndex: 1,
+            sourceExcerpt: input.novelText.slice(160, 320) || input.novelText.slice(0, 160),
+            summary: "The ally joins the hero and confirms the city signal points to the next move.",
+            characters: ["char_hero", "char_ally"],
+            locationName: "City Rooftop",
+            emotion: "resolve",
+            conflict: "The pair must commit before the signal disappears.",
+            result: "The hero and ally choose the mission together.",
+            estimatedDurationSec: 15,
+          },
+        ],
+        characterRelationships: [
+          {
+            relationshipId: "rel_hero_ally",
+            characterTempIds: ["char_hero", "char_ally"],
+            type: "allies",
+            summary: "The hero and ally trust each other after surviving previous city signals.",
+            status: "tested",
+          },
+        ],
+        themes: ["trust", "hidden-city"],
+        adaptationNotes: "Keep the glowing signal visible as the story trace across shots.",
+      },
       characters: [
         {
           tempId: "char_hero",
@@ -79,6 +123,26 @@ export class MockLlmProvider implements LlmProvider {
           appearance: "A consistent lead character for mock generation.",
           personality: "Determined and observant.",
           identityPrompt: "consistent protagonist, cinematic character reference",
+          lifecycleStages: [
+            {
+              stageId: "stage_alert",
+              label: "Signal discovery",
+              ageRange: "late 20s",
+              appearance: "alert lead character with rain-damp hair",
+              costume: "dark utility coat",
+              emotionalState: "wary",
+              identityPrompt: "alert protagonist in dark utility coat, rain-damp hair",
+            },
+            {
+              stageId: "stage_resolved",
+              label: "Mission decision",
+              ageRange: "late 20s",
+              appearance: "resolved lead character standing tall",
+              costume: "dark utility coat with glowing signal reflection",
+              emotionalState: "determined",
+              identityPrompt: "resolved protagonist, glowing signal reflection on dark coat",
+            },
+          ],
         },
         {
           tempId: "char_ally",
@@ -87,6 +151,17 @@ export class MockLlmProvider implements LlmProvider {
           appearance: "A reliable companion with a clean visual silhouette.",
           personality: "Calm, practical, and watchful.",
           identityPrompt: "consistent support character, cinematic character reference",
+          lifecycleStages: [
+            {
+              stageId: "stage_joining",
+              label: "Joining the mission",
+              ageRange: "early 30s",
+              appearance: "calm companion with a precise silhouette",
+              costume: "light tactical jacket",
+              emotionalState: "focused",
+              identityPrompt: "calm support character in light tactical jacket",
+            },
+          ],
         },
       ],
       locations: [
@@ -103,19 +178,23 @@ export class MockLlmProvider implements LlmProvider {
       scenes: [
         mockScene({
           sceneIndex: 1,
+          eventId: "event_opening",
           title: "Opening Beat",
           sourceExcerpt: input.novelText.slice(0, 160),
           summary: "The story opens with a clear visual action.",
           mood: "anticipatory",
           timeOfDay: "evening",
+          heroStageId: "stage_alert",
         }),
         mockScene({
           sceneIndex: 2,
+          eventId: "event_decision",
           title: "Decision Beat",
           sourceExcerpt: input.novelText.slice(160, 320) || input.novelText.slice(0, 160),
           summary: "The hero and ally make the decision that moves the story forward.",
           mood: "resolved",
           timeOfDay: "night",
+          heroStageId: "stage_resolved",
         }),
       ],
     };
@@ -124,11 +203,13 @@ export class MockLlmProvider implements LlmProvider {
 
 function mockScene(input: {
   sceneIndex: number;
+  eventId: string;
   title: string;
   sourceExcerpt: string;
   summary: string;
   mood: string;
   timeOfDay: string;
+  heroStageId: string;
 }): StoryboardResult["scenes"][number] {
   return {
     tempId: `scene_${input.sceneIndex}`,
@@ -139,8 +220,16 @@ function mockScene(input: {
     timeOfDay: input.timeOfDay,
     characterTempIds: ["char_hero", "char_ally"],
     locationTempId: "loc_city",
+    storyEventIds: [input.eventId],
     shots: [1, 2, 3].map((shotIndex) => {
       const globalShotIndex = (input.sceneIndex - 1) * 3 + shotIndex;
+      const characterStageRefs =
+        shotIndex === 1
+          ? [{ characterTempId: "char_hero", stageId: input.heroStageId }]
+          : [
+              { characterTempId: "char_hero", stageId: input.heroStageId },
+              { characterTempId: "char_ally", stageId: "stage_joining" },
+            ];
       return {
         tempId: `shot_${globalShotIndex}`,
         shotIndex: globalShotIndex,
@@ -158,6 +247,8 @@ function mockScene(input: {
         mood: input.mood,
         characterTempIds: shotIndex === 1 ? ["char_hero"] : ["char_hero", "char_ally"],
         locationTempId: "loc_city",
+        storyEventIds: [input.eventId],
+        characterStageRefs,
         imagePrompt: `cinematic rooftop scene ${input.sceneIndex} shot ${shotIndex}, consistent hero and ally`,
         videoPrompt: `camera ${shotIndex} movement over rooftop scene ${input.sceneIndex}`,
       };

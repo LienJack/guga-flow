@@ -189,6 +189,10 @@ function getStringArray(value: CanvasSnapshotJson | undefined): string[] {
     : [];
 }
 
+function hasExistingLifecycleStages(value: CanvasSnapshotJson | undefined): boolean {
+  return Array.isArray(value) && value.length > 0;
+}
+
 function getOptionalString(value: CanvasSnapshotJson | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
@@ -463,10 +467,11 @@ export class CanvasService {
       for (const plannedNode of plan.nodes) {
         const reusableAssetNode = this.findReusableAssetNode(plannedNode, existingAssetNodes);
         if (reusableAssetNode) {
-          nodeByPlanKey.set(plannedNode.key, reusableAssetNode);
-          if (!resultNodeIds.has(reusableAssetNode.id)) {
-            resultNodes.push(reusableAssetNode);
-            resultNodeIds.add(reusableAssetNode.id);
+          const mergedAssetNode = await this.mergeReusableAssetNode(tx, reusableAssetNode, plannedNode);
+          nodeByPlanKey.set(plannedNode.key, mergedAssetNode);
+          if (!resultNodeIds.has(mergedAssetNode.id)) {
+            resultNodes.push(mergedAssetNode);
+            resultNodeIds.add(mergedAssetNode.id);
           }
           reusedNodeIds.add(reusableAssetNode.id);
           continue;
@@ -877,6 +882,35 @@ export class CanvasService {
         node.type === plannedType &&
         this.assetKeyForNode(plannedType, this.toNodeDataObject(node.dataJson)) === plannedAssetKey,
     );
+  }
+
+  private async mergeReusableAssetNode(
+    tx: CanvasPrismaClient,
+    existingNode: CanvasNodeModel,
+    plannedNode: StoryboardImportPlannedNode,
+  ): Promise<CanvasNodeModel> {
+    if (plannedNode.type !== "character_asset" && plannedNode.type !== "location_asset") {
+      return existingNode;
+    }
+
+    const existingData = this.toNodeDataObject(existingNode.dataJson);
+    const plannedData = this.toNodeDataObject(plannedNode.dataJson);
+    const mergedData = {
+      ...plannedData,
+      ...existingData,
+    };
+
+    if (plannedData.storyboardImport) {
+      mergedData.storyboardImport = plannedData.storyboardImport;
+    }
+    if (plannedData.lifecycleStages && !hasExistingLifecycleStages(existingData.lifecycleStages)) {
+      mergedData.lifecycleStages = plannedData.lifecycleStages;
+    }
+
+    return tx.canvasNode.update({
+      where: { id: existingNode.id },
+      data: { dataJson: mergedData },
+    });
   }
 
   private assetKeyForNode(

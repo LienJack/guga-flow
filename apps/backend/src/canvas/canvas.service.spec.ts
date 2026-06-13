@@ -596,16 +596,15 @@ describe("CanvasService", () => {
 
   it("reuses matching character nodes during storyboard import", async () => {
     let sequence = 1;
+    const existingCharacter = canvasNode({
+      id: "existing_character",
+      type: "character_asset",
+      tldrawShapeId: "shape:existing-character",
+      dataJson: { name: "Hero", role: "protagonist" },
+    });
     prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
     prisma.storyboardDraft.findFirst.mockResolvedValue(storyboardDraft());
-    prisma.canvasNode.findMany.mockResolvedValue([
-      canvasNode({
-        id: "existing_character",
-        type: "character_asset",
-        tldrawShapeId: "shape:existing-character",
-        dataJson: { name: "Hero", role: "protagonist" },
-      }),
-    ]);
+    prisma.canvasNode.findMany.mockResolvedValue([existingCharacter]);
     prisma.canvasNode.create.mockImplementation(async ({ data }: MockCreateArgs) =>
       canvasNode({
         id: `created_${sequence++}`,
@@ -619,12 +618,18 @@ describe("CanvasService", () => {
         ...data,
       }),
     );
-    prisma.canvasNode.update.mockImplementation(async ({ where, data }: MockUpdateArgs) =>
-      canvasNode({
+    prisma.canvasNode.update.mockImplementation(async ({ where, data }: MockUpdateArgs) => {
+      if (where.id === existingCharacter.id) {
+        return {
+          ...existingCharacter,
+          dataJson: data.dataJson,
+        };
+      }
+      return canvasNode({
         id: where.id,
         dataJson: data.dataJson,
-      }),
-    );
+      });
+    });
 
     const result = await service.importStoryboard("project_1", {
       novelDocumentId: "novel_1",
@@ -636,6 +641,82 @@ describe("CanvasService", () => {
     expect(result.edges).toContainEqual(
       expect.objectContaining({
         sourceNodeId: "existing_character",
+        relation: "references_character",
+      }),
+    );
+  });
+
+  it("merges lifecycle trace into reusable locked character nodes without overwriting identity fields", async () => {
+    let sequence = 1;
+    const existingCharacter = canvasNode({
+      id: "existing_character",
+      type: "character_asset",
+      title: "Hero",
+      tldrawShapeId: "shape:existing-character",
+      dataJson: {
+        name: "Hero",
+        role: "protagonist",
+        appearance: "User edited silver coat",
+        identityPrompt: "locked user hero identity",
+        lifecycleStages: [],
+        locked: true,
+        lockedFields: ["appearance", "identityPrompt"],
+      },
+    });
+    prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
+    prisma.storyboardDraft.findFirst.mockResolvedValue(
+      storyboardDraft({ storyboardJson: importStoryboardWithBlueprint() }),
+    );
+    prisma.canvasNode.findMany.mockResolvedValue([existingCharacter]);
+    prisma.canvasNode.create.mockImplementation(async ({ data }: MockCreateArgs) =>
+      canvasNode({
+        id: `created_${sequence++}`,
+        ...data,
+      }),
+    );
+    prisma.canvasEdge.findFirst.mockResolvedValue(null);
+    prisma.canvasEdge.create.mockImplementation(async ({ data }: MockCreateArgs) =>
+      canvasEdge({
+        id: `edge_${sequence++}`,
+        ...data,
+      }),
+    );
+    prisma.canvasNode.update.mockImplementation(async ({ where, data }: MockUpdateArgs) => {
+      if (where.id === existingCharacter.id) {
+        return {
+          ...existingCharacter,
+          dataJson: data.dataJson,
+        };
+      }
+      return canvasNode({
+        id: where.id,
+        dataJson: data.dataJson,
+      });
+    });
+
+    const result = await service.importStoryboard("project_1", {
+      novelDocumentId: "novel_1",
+      storyboardDraftId: "draft_1",
+    });
+
+    const reusedCharacter = result.nodes.find((node) => node.id === "existing_character");
+    expect(result.summary.reusedNodeCount).toBe(1);
+    expect(reusedCharacter?.dataJson).toMatchObject({
+      appearance: "User edited silver coat",
+      identityPrompt: "locked user hero identity",
+      locked: true,
+      lockedFields: ["appearance", "identityPrompt"],
+      lifecycleStages: [
+        expect.objectContaining({
+          stageId: "stage_alert",
+          identityPrompt: "alert hero in dark coat",
+        }),
+      ],
+    });
+    expect(result.edges).toContainEqual(
+      expect.objectContaining({
+        sourceNodeId: "existing_character",
+        targetNodeId: expect.any(String),
         relation: "references_character",
       }),
     );
@@ -988,4 +1069,52 @@ function importStoryboard(): StoryboardResult {
       })),
     })),
   };
+}
+
+function importStoryboardWithBlueprint(): StoryboardResult {
+  const storyboard = importStoryboard();
+  storyboard.storyBlueprint = {
+    worldSummary: "A city where rooftop signals reveal hidden alliances.",
+    timelineEvents: [
+      {
+        eventId: "event_opening",
+        title: "Signal discovered",
+        orderIndex: 1,
+        sourceExcerpt: "Scene 1 source.",
+        summary: "The hero notices the hidden signal and chooses to act.",
+        characters: ["char_hero"],
+        emotion: "anticipation",
+      },
+    ],
+    characterRelationships: [
+      {
+        relationshipId: "rel_hero_friend",
+        characterTempIds: ["char_hero", "char_friend"],
+        type: "allies",
+        summary: "Hero and Friend coordinate under pressure.",
+      },
+    ],
+  };
+  storyboard.characters[0] = {
+    ...storyboard.characters[0]!,
+    lifecycleStages: [
+      {
+        stageId: "stage_alert",
+        label: "Signal alert",
+        ageRange: "late 20s",
+        costume: "dark utility coat",
+        identityPrompt: "alert hero in dark coat",
+      },
+    ],
+  };
+  storyboard.scenes = storyboard.scenes.map((scene) => ({
+    ...scene,
+    storyEventIds: ["event_opening"],
+    shots: scene.shots.map((shot) => ({
+      ...shot,
+      storyEventIds: ["event_opening"],
+      characterStageRefs: [{ characterTempId: "char_hero", stageId: "stage_alert" }],
+    })),
+  }));
+  return storyboard;
 }

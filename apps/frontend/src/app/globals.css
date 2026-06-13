@@ -580,6 +580,72 @@ select {
   padding-top: 2px;
 }
 
+.node-trace-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 2px;
+}
+
+.node-trace-group,
+.node-trace-lock {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid #e7e7e7;
+  border-radius: 7px;
+  background: #fafafa;
+  padding: 9px;
+}
+
+.node-trace-group p,
+.node-trace-group span,
+.node-trace-group small,
+.node-trace-lock span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.node-trace-group strong,
+.node-trace-lock strong {
+  font-size: 12px;
+}
+
+.node-trace-group p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.node-trace-group small,
+.node-trace-lock span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.node-trace-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.node-trace-list li {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.node-trace-list span {
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .generation-panel {
   display: grid;
   gap: 10px;
@@ -1632,6 +1698,10 @@ select {
   gap: 8px;
 }
 
+.storyboard-summary-grid.blueprint {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .storyboard-summary-grid div {
   display: grid;
   gap: 2px;
@@ -1661,6 +1731,15 @@ select {
   font-size: 13px;
 }
 
+.storyboard-trace-note {
+  margin: 0;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 2px 0 2px 8px;
+}
+
 .storyboard-editor-group {
   display: grid;
   gap: 8px;
@@ -1678,6 +1757,24 @@ select {
 .storyboard-editor-group.shot {
   border-radius: 6px;
   background: #fff;
+}
+
+.storyboard-editor-group.lifecycle {
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 8px;
+}
+
+.storyboard-lifecycle-stack {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.storyboard-lifecycle-stack h4 {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .storyboard-group-heading {

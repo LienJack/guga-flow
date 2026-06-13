@@ -9,6 +9,64 @@ export type StoryboardLocationType = (typeof STORYBOARD_LOCATION_TYPES)[number];
 export const STORYBOARD_DRAFT_STATUSES = ["draft", "valid", "invalid", "ready"] as const;
 export type StoryboardDraftStatus = (typeof STORYBOARD_DRAFT_STATUSES)[number];
 
+export const CHARACTER_IDENTITY_LOCK_FIELDS = [
+  "name",
+  "role",
+  "appearance",
+  "personality",
+  "costume",
+  "identityPrompt",
+  "lifecycleStages",
+] as const;
+export type CharacterIdentityLockField = (typeof CHARACTER_IDENTITY_LOCK_FIELDS)[number];
+
+export const characterLifecycleStageSchema = z.object({
+  stageId: nonEmptyString,
+  label: nonEmptyString,
+  ageRange: optionalNonEmptyString,
+  appearance: optionalNonEmptyString,
+  costume: optionalNonEmptyString,
+  hairstyle: optionalNonEmptyString,
+  emotionalState: optionalNonEmptyString,
+  identityPrompt: optionalNonEmptyString,
+});
+
+export const characterStageReferenceSchema = z.object({
+  characterTempId: nonEmptyString,
+  stageId: nonEmptyString,
+});
+
+export const storyTimelineEventSchema = z.object({
+  eventId: nonEmptyString,
+  title: optionalNonEmptyString,
+  orderIndex: z.number().int().nonnegative(),
+  chapterIndex: z.number().int().positive().optional(),
+  sourceExcerpt: optionalNonEmptyString,
+  summary: nonEmptyString,
+  characters: z.array(nonEmptyString).optional(),
+  locationName: optionalNonEmptyString,
+  emotion: optionalNonEmptyString,
+  conflict: optionalNonEmptyString,
+  result: optionalNonEmptyString,
+  estimatedDurationSec: z.number().positive().optional(),
+});
+
+export const characterRelationshipSchema = z.object({
+  relationshipId: nonEmptyString,
+  characterTempIds: z.array(nonEmptyString).min(2),
+  type: nonEmptyString,
+  summary: nonEmptyString,
+  status: optionalNonEmptyString,
+});
+
+export const storyBlueprintSchema = z.object({
+  worldSummary: optionalNonEmptyString,
+  timelineEvents: z.array(storyTimelineEventSchema).optional(),
+  characterRelationships: z.array(characterRelationshipSchema).optional(),
+  themes: z.array(nonEmptyString).optional(),
+  adaptationNotes: optionalNonEmptyString,
+});
+
 export const characterDraftSchema = z.object({
   tempId: nonEmptyString,
   name: nonEmptyString,
@@ -17,6 +75,9 @@ export const characterDraftSchema = z.object({
   personality: nonEmptyString,
   costume: optionalNonEmptyString,
   identityPrompt: nonEmptyString,
+  lifecycleStages: z.array(characterLifecycleStageSchema).optional(),
+  locked: z.boolean().optional(),
+  lockedFields: z.array(z.enum(CHARACTER_IDENTITY_LOCK_FIELDS)).optional(),
 });
 
 export const locationDraftSchema = z.object({
@@ -46,6 +107,8 @@ export const shotDraftSchema = z.object({
   soundEffect: optionalNonEmptyString,
   characterTempIds: z.array(nonEmptyString),
   locationTempId: optionalNonEmptyString,
+  storyEventIds: z.array(nonEmptyString).optional(),
+  characterStageRefs: z.array(characterStageReferenceSchema).optional(),
   imagePrompt: nonEmptyString,
   videoPrompt: nonEmptyString,
   negativePrompt: optionalNonEmptyString,
@@ -60,6 +123,7 @@ export const sceneDraftSchema = z.object({
   timeOfDay: optionalNonEmptyString,
   characterTempIds: z.array(nonEmptyString),
   locationTempId: optionalNonEmptyString,
+  storyEventIds: z.array(nonEmptyString).optional(),
   shots: z.array(shotDraftSchema).min(1),
 });
 
@@ -67,6 +131,7 @@ export const storyboardResultSchema = z
   .object({
     title: nonEmptyString,
     logline: nonEmptyString,
+    storyBlueprint: storyBlueprintSchema.optional(),
     characters: z.array(characterDraftSchema).min(1),
     locations: z.array(locationDraftSchema).min(1),
     scenes: z.array(sceneDraftSchema).min(1),
@@ -90,11 +155,61 @@ export const storyboardResultSchema = z
       "Duplicate scene temp id",
       (index) => ["scenes", index, "tempId"],
     );
+    addDuplicateTempIdIssues(
+      context,
+      storyboard.storyBlueprint?.timelineEvents?.map((event) => event.eventId) ?? [],
+      "Duplicate story event id",
+      (index) => ["storyBlueprint", "timelineEvents", index, "eventId"],
+    );
+    addDuplicateTempIdIssues(
+      context,
+      storyboard.storyBlueprint?.characterRelationships?.map((relationship) => relationship.relationshipId) ?? [],
+      "Duplicate character relationship id",
+      (index) => ["storyBlueprint", "characterRelationships", index, "relationshipId"],
+    );
 
     const characterIds = new Set(storyboard.characters.map((character) => character.tempId));
     const locationIds = new Set(storyboard.locations.map((location) => location.tempId));
+    const storyEventIds = new Set(
+      storyboard.storyBlueprint?.timelineEvents?.map((event) => event.eventId) ?? [],
+    );
+    const stageIdsByCharacter = new Map(
+      storyboard.characters.map((character) => [
+        character.tempId,
+        new Set(character.lifecycleStages?.map((stage) => stage.stageId) ?? []),
+      ]),
+    );
     const shotIds: string[] = [];
     const shotPaths: Array<(string | number)[]> = [];
+
+    storyboard.characters.forEach((character, characterIndex) => {
+      addDuplicateTempIdIssues(
+        context,
+        character.lifecycleStages?.map((stage) => stage.stageId) ?? [],
+        "Duplicate character lifecycle stage id",
+        (index) => ["characters", characterIndex, "lifecycleStages", index, "stageId"],
+      );
+    });
+
+    storyboard.storyBlueprint?.timelineEvents?.forEach((event, eventIndex) => {
+      assertKnownReferences(
+        context,
+        event.characters ?? [],
+        characterIds,
+        ["storyBlueprint", "timelineEvents", eventIndex, "characters"],
+        "Unknown story event character temp id",
+      );
+    });
+
+    storyboard.storyBlueprint?.characterRelationships?.forEach((relationship, relationshipIndex) => {
+      assertKnownReferences(
+        context,
+        relationship.characterTempIds,
+        characterIds,
+        ["storyBlueprint", "characterRelationships", relationshipIndex, "characterTempIds"],
+        "Unknown character relationship participant temp id",
+      );
+    });
 
     storyboard.scenes.forEach((scene, sceneIndex) => {
       assertKnownReferences(
@@ -110,6 +225,13 @@ export const storyboardResultSchema = z
         locationIds,
         ["scenes", sceneIndex, "locationTempId"],
         "Unknown scene location temp id",
+      );
+      assertKnownStoryEventReferences(
+        context,
+        scene.storyEventIds ?? [],
+        storyEventIds,
+        ["scenes", sceneIndex, "storyEventIds"],
+        "Unknown scene story event id",
       );
 
       scene.shots.forEach((shot, shotIndex) => {
@@ -129,6 +251,46 @@ export const storyboardResultSchema = z
           ["scenes", sceneIndex, "shots", shotIndex, "locationTempId"],
           "Unknown shot location temp id",
         );
+        assertKnownStoryEventReferences(
+          context,
+          shot.storyEventIds ?? [],
+          storyEventIds,
+          ["scenes", sceneIndex, "shots", shotIndex, "storyEventIds"],
+          "Unknown shot story event id",
+        );
+        shot.characterStageRefs?.forEach((stageRef, stageRefIndex) => {
+          if (!characterIds.has(stageRef.characterTempId)) {
+            context.addIssue({
+              code: "custom",
+              message: "Unknown shot character stage character temp id",
+              path: [
+                "scenes",
+                sceneIndex,
+                "shots",
+                shotIndex,
+                "characterStageRefs",
+                stageRefIndex,
+                "characterTempId",
+              ],
+            });
+            return;
+          }
+          if (!stageIdsByCharacter.get(stageRef.characterTempId)?.has(stageRef.stageId)) {
+            context.addIssue({
+              code: "custom",
+              message: "Unknown shot character lifecycle stage id",
+              path: [
+                "scenes",
+                sceneIndex,
+                "shots",
+                shotIndex,
+                "characterStageRefs",
+                stageRefIndex,
+                "stageId",
+              ],
+            });
+          }
+        });
       });
     });
 
@@ -136,9 +298,14 @@ export const storyboardResultSchema = z
   });
 
 export type CharacterDraft = z.infer<typeof characterDraftSchema>;
+export type CharacterLifecycleStage = z.infer<typeof characterLifecycleStageSchema>;
+export type CharacterStageReference = z.infer<typeof characterStageReferenceSchema>;
+export type CharacterRelationship = z.infer<typeof characterRelationshipSchema>;
 export type LocationDraft = z.infer<typeof locationDraftSchema>;
 export type SceneDraft = z.infer<typeof sceneDraftSchema>;
 export type ShotDraft = z.infer<typeof shotDraftSchema>;
+export type StoryBlueprint = z.infer<typeof storyBlueprintSchema>;
+export type StoryTimelineEvent = z.infer<typeof storyTimelineEventSchema>;
 export type StoryboardResult = z.infer<typeof storyboardResultSchema>;
 
 export interface StoryboardValidationIssue {
@@ -264,4 +431,22 @@ function assertOptionalReference(
       path,
     });
   }
+}
+
+function assertKnownStoryEventReferences(
+  context: z.RefinementCtx,
+  values: string[],
+  knownIds: Set<string>,
+  basePath: Array<string | number>,
+  message: string,
+) {
+  values.forEach((value, index) => {
+    if (!knownIds.has(value)) {
+      context.addIssue({
+        code: "custom",
+        message,
+        path: [...basePath, index],
+      });
+    }
+  });
 }

@@ -188,6 +188,15 @@ describe("shared domain constants", () => {
       durationSeconds: 4,
       promptNotes: "cinematic, practical lights",
       negativePromptNotes: "no logos",
+      storyEventIds: ["event_launch"],
+      storyEvents: [
+        {
+          eventId: "event_launch",
+          orderIndex: 1,
+          summary: "Ari commits to the launch.",
+        },
+      ],
+      characterStageRefs: [{ characterTempId: "char_ari", stageId: "stage_pilot" }],
       characterAssetIds: ["node_character_1"],
       locationAssetId: "node_location_1",
       selectedImageNodeId: "image_1",
@@ -202,6 +211,17 @@ describe("shared domain constants", () => {
       role: "Pilot",
       appearance: "Silver flight suit",
       consistencyPrompt: "same face and suit in every shot",
+      lifecycleStages: [
+        {
+          stageId: "stage_pilot",
+          label: "Pilot",
+          ageRange: "late 20s",
+          costume: "Silver flight suit",
+          identityPrompt: "Ari in a silver flight suit",
+        },
+      ],
+      locked: true,
+      lockedFields: ["appearance", "identityPrompt"],
     };
     const locationData: LocationAssetNodeData = {
       name: "Orbital elevator base",
@@ -250,8 +270,11 @@ describe("shared domain constants", () => {
 
     expect(node.dataJson.visualDescription).toContain("launch platform");
     expect(shotData.selectedImageNodeId).toBe("image_1");
+    expect(shotData.storyEvents?.[0]?.summary).toContain("commits");
     expect(sceneFrameData.collapsed).toBe(true);
     expect(characterData.consistencyPrompt).toContain("same face");
+    expect(characterData.lifecycleStages?.[0]?.stageId).toBe("stage_pilot");
+    expect(characterData.lockedFields).toContain("appearance");
     expect(locationData.visualStyle).toBe("clean hard sci-fi");
     expect(updateInput.status).toBe("draft");
     expect(deleteResult.nodeId).toBe("node_1");
@@ -441,6 +464,52 @@ describe("shared domain constants", () => {
     expect(emptyScenesValidation.success).toBe(false);
   });
 
+  it("validates Phase 14 story blueprint and character lifecycle references", () => {
+    const storyboard = blueprintStoryboard();
+    const validation = validateStoryboardResult(storyboard);
+    expect(validation.success).toBe(true);
+
+    if (!validation.success) {
+      throw new Error("Expected blueprint storyboard validation to succeed");
+    }
+
+    expect(validation.data.storyBlueprint?.timelineEvents?.[0]?.eventId).toBe("event_opening");
+    expect(validation.data.characters[0]?.lifecycleStages?.[0]?.stageId).toBe("stage_younger");
+    expect(validation.data.scenes[0]?.shots[0]?.characterStageRefs?.[0]).toEqual({
+      characterTempId: "char_hero",
+      stageId: "stage_younger",
+    });
+
+    const missingEvent = blueprintStoryboard();
+    missingEvent.scenes[0]!.shots[0]!.storyEventIds = ["event_missing"];
+    const missingEventValidation = validateStoryboardResult(missingEvent);
+    expect(missingEventValidation.success).toBe(false);
+    expect(missingEventValidation.issues.map((issue) => issue.message)).toContain(
+      "Unknown shot story event id",
+    );
+
+    const missingRelationshipParticipant = blueprintStoryboard();
+    missingRelationshipParticipant.storyBlueprint!.characterRelationships![0]!.characterTempIds = [
+      "char_hero",
+      "char_missing",
+    ];
+    const missingRelationshipValidation = validateStoryboardResult(missingRelationshipParticipant);
+    expect(missingRelationshipValidation.success).toBe(false);
+    expect(missingRelationshipValidation.issues.map((issue) => issue.message)).toContain(
+      "Unknown character relationship participant temp id",
+    );
+
+    const missingStage = blueprintStoryboard();
+    missingStage.scenes[0]!.shots[0]!.characterStageRefs = [
+      { characterTempId: "char_hero", stageId: "stage_missing" },
+    ];
+    const missingStageValidation = validateStoryboardResult(missingStage);
+    expect(missingStageValidation.success).toBe(false);
+    expect(missingStageValidation.issues.map((issue) => issue.message)).toContain(
+      "Unknown shot character lifecycle stage id",
+    );
+  });
+
   it("exports Phase 6 storyboard import layout contracts", () => {
     expect(STORYBOARD_IMPORT_DUPLICATE_POLICIES).toEqual(["new_version"]);
 
@@ -495,6 +564,49 @@ describe("shared domain constants", () => {
     expect(findStoryboardImportLayoutOverlaps(plan.nodes)).toEqual([]);
   });
 
+  it("projects Phase 14 story blueprint and lifecycle trace into storyboard import nodes", () => {
+    const storyboard = blueprintStoryboard();
+    const plan = buildStoryboardImportPlan({
+      storyboard,
+      draftId: "draft_blueprint",
+      novelDocumentId: "novel_1",
+      importBatchId: "import_blueprint_1",
+      importedAt: "2026-06-13T00:00:00.000Z",
+      version: 1,
+    });
+
+    const novelNode = plan.nodes.find((node) => node.key === "novel");
+    const characterNode = plan.nodes.find((node) => node.key === "character_asset:char_hero");
+    const sceneNode = plan.nodes.find((node) => node.key === "scene:scene_1");
+    const shotNode = plan.nodes.find((node) => node.key === "shot:shot_1");
+
+    expect(novelNode?.dataJson.storyBlueprint).toMatchObject({
+      worldSummary: "A near-future city where rooftop signals mark resistance safehouses.",
+      timelineEvents: [expect.objectContaining({ eventId: "event_opening" })],
+    });
+    expect(characterNode?.dataJson).toMatchObject({
+      lifecycleStages: [
+        expect.objectContaining({
+          stageId: "stage_younger",
+          identityPrompt: "younger hero before the mission, anxious expression",
+        }),
+      ],
+      lockedFields: ["appearance", "identityPrompt"],
+    });
+    expect(sceneNode?.dataJson).toMatchObject({
+      storyEventIds: ["event_opening"],
+      storyEvents: [expect.objectContaining({ summary: "The hero sees the hidden signal and chooses to act." })],
+    });
+    expect(shotNode?.dataJson).toMatchObject({
+      storyEventIds: ["event_opening"],
+      characterStageRefs: [{ characterTempId: "char_hero", stageId: "stage_younger" }],
+    });
+    expect(plan.summary.createdNodeCount).toBe(7);
+    expect(plan.edges.map((edge) => edge.relation)).toEqual(
+      expect.arrayContaining(["belongs_to_scene", "references_character", "references_location"]),
+    );
+  });
+
   it("composes Phase 7 shot prompts from linked graph context and reference images", () => {
     const graph = promptComposerGraph();
     const result = composeShotPrompt({
@@ -517,14 +629,51 @@ describe("shared domain constants", () => {
       "asset_location_ref",
     ]);
     expect(result.image.prompt).toContain("Hero identity prompt");
+    expect(result.image.prompt).toContain("The hero notices the hidden signal and chooses to act.");
+    expect(result.image.prompt).toContain("alert hero stage identity prompt");
     expect(result.image.prompt).toContain("Location prompt text");
     expect(result.image.prompt).toContain("Image prompt: hero and friend at the console");
     expect(result.video.prompt).toContain("Video prompt: slow dolly across the console");
     expect(result.negativePrompt).toBe("no text overlays");
     expect(result.debugParts.map((part) => part.kind)).toEqual(
-      expect.arrayContaining(["global_style", "scene", "location", "character", "shot", "model_suffix"]),
+      expect.arrayContaining([
+        "global_style",
+        "story_event",
+        "scene",
+        "location",
+        "character",
+        "character_lifecycle",
+        "shot",
+        "model_suffix",
+      ]),
     );
     expect(result.missingContext).toEqual([]);
+  });
+
+  it("reports missing character lifecycle context for broken stage references", () => {
+    const graph = promptComposerGraph();
+    const nodes = graph.nodes.map((node) => {
+      if (node.id !== "shot_1") {
+        return node;
+      }
+      const data = node.dataJson as ShotNodeData;
+      return {
+        ...node,
+        dataJson: {
+          ...data,
+          characterStageRefs: [{ characterTempId: "character_missing", stageId: "stage_alert" }],
+        },
+      };
+    });
+
+    const result = composeShotPrompt({
+      ...graph,
+      nodes,
+      shotNodeId: "shot_1",
+    });
+
+    expect(result.missingContext.map((item) => item.kind)).toContain("character_lifecycle");
+    expect(result.missingContext.map((item) => item.label)).toContain("Character lifecycle");
   });
 
   it("returns shot-derived prompts and missing-context details when graph context is absent", () => {
@@ -1223,6 +1372,17 @@ function promptComposerGraph(): {
       appearance: "Silver jacket and calm posture.",
       identityPrompt: "Hero identity prompt",
       consistencyPrompt: "Hero consistency prompt",
+      lifecycleStages: [
+        {
+          stageId: "stage_alert",
+          label: "Alert",
+          ageRange: "late 20s",
+          appearance: "Focused eyes and tightened posture.",
+          costume: "dark utility coat",
+          emotionalState: "guarded determination",
+          identityPrompt: "alert hero stage identity prompt",
+        },
+      ],
       referenceAssetIds: ["asset_hero_ref", "asset_shared_ref", "asset_shared_ref"],
     }),
     canvasNode<CharacterAssetNodeData>("character_2", "character_asset", "Friend", {
@@ -1251,6 +1411,19 @@ function promptComposerGraph(): {
       negativePromptNotes: "no text overlays",
       characterAssetIds: ["character_1", "character_2"],
       locationAssetId: "location_1",
+      storyEventIds: ["event_opening"],
+      storyEvents: [
+        {
+          eventId: "event_opening",
+          orderIndex: 1,
+          summary: "The hero notices the hidden signal and chooses to act.",
+          characters: ["character_1", "character_2"],
+          emotion: "urgent focus",
+          conflict: "The console signal could expose the team.",
+          result: "The hero starts the launch sequence.",
+        },
+      ],
+      characterStageRefs: [{ characterTempId: "character_1", stageId: "stage_alert" }],
     }),
   ];
   return {
@@ -1381,6 +1554,75 @@ function validStoryboard(): StoryboardResult {
       },
     ],
   };
+}
+
+function blueprintStoryboard(): StoryboardResult {
+  const storyboard = validStoryboard();
+  storyboard.storyBlueprint = {
+    worldSummary: "A near-future city where rooftop signals mark resistance safehouses.",
+    timelineEvents: [
+      {
+        eventId: "event_opening",
+        title: "Rooftop signal",
+        orderIndex: 1,
+        chapterIndex: 1,
+        sourceExcerpt: "A hero watches the city lights before choosing the next shot.",
+        summary: "The hero sees the hidden signal and chooses to act.",
+        characters: ["char_hero"],
+        locationName: "City Rooftop",
+        emotion: "anticipation",
+        conflict: "The hero must decide whether to expose the signal.",
+        result: "The hero commits to the mission.",
+        estimatedDurationSec: 12,
+      },
+    ],
+    characterRelationships: [
+      {
+        relationshipId: "rel_hero_ally",
+        characterTempIds: ["char_hero", "char_ally"],
+        type: "allies",
+        summary: "The hero and ally trust each other under pressure.",
+        status: "tested",
+      },
+    ],
+    themes: ["trust", "resistance"],
+    adaptationNotes: "Keep the hidden signal visible in early shots.",
+  };
+  storyboard.characters.push({
+    tempId: "char_ally",
+    name: "Ally",
+    role: "support",
+    appearance: "A calm companion with a dark utility jacket.",
+    personality: "Practical and observant.",
+    identityPrompt: "consistent support character, cinematic character reference",
+  });
+  storyboard.characters[0] = {
+    ...storyboard.characters[0]!,
+    lifecycleStages: [
+      {
+        stageId: "stage_younger",
+        label: "Before the mission",
+        ageRange: "early 20s",
+        appearance: "A tense young lead with rain-damp hair.",
+        costume: "plain dark hoodie",
+        emotionalState: "uncertain",
+        identityPrompt: "younger hero before the mission, anxious expression",
+      },
+    ],
+    lockedFields: ["appearance", "identityPrompt"],
+  };
+  storyboard.scenes[0] = {
+    ...storyboard.scenes[0]!,
+    storyEventIds: ["event_opening"],
+    characterTempIds: ["char_hero", "char_ally"],
+    shots: storyboard.scenes[0]!.shots.map((shot) => ({
+      ...shot,
+      storyEventIds: ["event_opening"],
+      characterTempIds: ["char_hero"],
+      characterStageRefs: [{ characterTempId: "char_hero", stageId: "stage_younger" }],
+    })),
+  };
+  return storyboard;
 }
 
 function twoSceneStoryboard(): StoryboardResult {

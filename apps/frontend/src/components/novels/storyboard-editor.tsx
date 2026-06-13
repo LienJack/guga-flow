@@ -2,6 +2,7 @@
 
 import type {
   CharacterDraft,
+  CharacterLifecycleStage,
   LocationDraft,
   SceneDraft,
   ShotDraft,
@@ -18,6 +19,7 @@ import {
   formatStoryboardValidationIssues,
   summarizeStoryboard,
   updateStoryboardCharacter,
+  updateStoryboardCharacterLifecycleStage,
   updateStoryboardLocation,
   updateStoryboardOverview,
   updateStoryboardScene,
@@ -137,6 +139,46 @@ export function StoryboardEditor({
         </label>
       </section>
 
+      {storyboard.storyBlueprint ? (
+        <section className="storyboard-editor-section" aria-label="Story blueprint">
+          <h3>Story blueprint</h3>
+          <div className="storyboard-summary-grid blueprint" aria-label="Story blueprint summary">
+            <div>
+              <strong>{summary.eventCount}</strong>
+              <span>Events</span>
+            </div>
+            <div>
+              <strong>{summary.relationshipCount}</strong>
+              <span>Relations</span>
+            </div>
+            <div>
+              <strong>{summary.lifecycleStageCount}</strong>
+              <span>Stages</span>
+            </div>
+          </div>
+          <label className="field-label">
+            <span>World summary</span>
+            <textarea
+              name="story-blueprint-world-summary"
+              rows={3}
+              value={storyboard.storyBlueprint.worldSummary ?? ""}
+              onChange={(event) =>
+                onStoryboardChange({
+                  ...storyboard,
+                  storyBlueprint: {
+                    ...storyboard.storyBlueprint,
+                    worldSummary: textToOptional(event.target.value),
+                  },
+                })
+              }
+            />
+          </label>
+          {summary.firstEventSummary ? (
+            <p className="storyboard-trace-note">{summary.firstEventSummary}</p>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className="storyboard-editor-section" aria-label="Characters">
         <h3>Characters</h3>
         {storyboard.characters.map((character) => (
@@ -145,6 +187,16 @@ export function StoryboardEditor({
             key={character.tempId}
             onChange={(patch) =>
               onStoryboardChange(updateStoryboardCharacter(storyboard, character.tempId, patch))
+            }
+            onStageChange={(stage, patch) =>
+              onStoryboardChange(
+                updateStoryboardCharacterLifecycleStage(
+                  storyboard,
+                  character.tempId,
+                  stage.stageId,
+                  patch,
+                ),
+              )
             }
           />
         ))}
@@ -187,9 +239,14 @@ export function StoryboardEditor({
 function CharacterEditor({
   character,
   onChange,
+  onStageChange,
 }: {
   character: CharacterDraft;
   onChange(patch: Partial<Omit<CharacterDraft, "tempId">>): void;
+  onStageChange(
+    stage: CharacterLifecycleStage,
+    patch: Partial<Omit<CharacterLifecycleStage, "stageId">>,
+  ): void;
 }) {
   return (
     <div className="storyboard-editor-group">
@@ -229,6 +286,71 @@ function CharacterEditor({
           rows={3}
           value={character.identityPrompt}
           onChange={(event) => onChange({ identityPrompt: event.target.value })}
+        />
+      </label>
+      {character.lifecycleStages?.length ? (
+        <div
+          className="storyboard-lifecycle-stack"
+          aria-label={`${character.name} lifecycle stages`}
+        >
+          <h4>Lifecycle stages</h4>
+          {character.lifecycleStages.map((stage) => (
+            <LifecycleStageEditor
+              key={stage.stageId}
+              stage={stage}
+              onChange={(patch) => onStageChange(stage, patch)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function LifecycleStageEditor({
+  stage,
+  onChange,
+}: {
+  stage: CharacterLifecycleStage;
+  onChange(patch: Partial<Omit<CharacterLifecycleStage, "stageId">>): void;
+}) {
+  return (
+    <div className="storyboard-editor-group lifecycle">
+      <div className="storyboard-group-heading">
+        <strong>{stage.label}</strong>
+        <span>{stage.stageId}</span>
+      </div>
+      <label className="field-label">
+        <span>Stage label</span>
+        <input
+          name={`stage-${stage.stageId}-label`}
+          value={stage.label}
+          onChange={(event) => onChange({ label: event.target.value })}
+        />
+      </label>
+      <label className="field-label">
+        <span>Age range</span>
+        <input
+          name={`stage-${stage.stageId}-age-range`}
+          value={stage.ageRange ?? ""}
+          onChange={(event) => onChange({ ageRange: textToOptional(event.target.value) })}
+        />
+      </label>
+      <label className="field-label">
+        <span>Costume</span>
+        <input
+          name={`stage-${stage.stageId}-costume`}
+          value={stage.costume ?? ""}
+          onChange={(event) => onChange({ costume: textToOptional(event.target.value) })}
+        />
+      </label>
+      <label className="field-label">
+        <span>Identity prompt</span>
+        <textarea
+          name={`stage-${stage.stageId}-identity-prompt`}
+          rows={2}
+          value={stage.identityPrompt ?? ""}
+          onChange={(event) => onChange({ identityPrompt: textToOptional(event.target.value) })}
         />
       </label>
     </div>

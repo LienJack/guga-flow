@@ -65,13 +65,66 @@ export type CanvasSnapshotJson =
   | boolean
   | null
   | CanvasSnapshotJson[]
-  | { [key: string]: CanvasSnapshotJson };
+  | { [key: string]: CanvasSnapshotJson | undefined };
+
+export interface StoryEventTraceData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  eventId: string;
+  title?: string;
+  orderIndex?: number;
+  chapterIndex?: number;
+  sourceExcerpt?: string;
+  summary?: string;
+  characters?: string[];
+  locationName?: string;
+  emotion?: string;
+  conflict?: string;
+  result?: string;
+  estimatedDurationSec?: number;
+}
+
+export interface CharacterRelationshipTraceData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  relationshipId: string;
+  characterTempIds: string[];
+  type?: string;
+  summary?: string;
+  status?: string;
+}
+
+export interface StoryBlueprintNodeData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  worldSummary?: string;
+  timelineEvents?: StoryEventTraceData[];
+  characterRelationships?: CharacterRelationshipTraceData[];
+  themes?: string[];
+  adaptationNotes?: string;
+}
+
+export interface CharacterLifecycleStageData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  stageId: string;
+  label: string;
+  ageRange?: string;
+  appearance?: string;
+  costume?: string;
+  hairstyle?: string;
+  emotionalState?: string;
+  identityPrompt?: string;
+}
+
+export interface CharacterStageReferenceData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  characterTempId: string;
+  stageId: string;
+}
 
 export interface NovelNodeData {
   sourceText?: string;
   synopsis?: string;
   language?: string;
   storyboardTitle?: string;
+  storyBlueprint?: StoryBlueprintNodeData;
 }
 
 export interface SceneFrameNodeData {
@@ -82,6 +135,8 @@ export interface SceneFrameNodeData {
   locationTempId?: string;
   collapsed?: boolean;
   shotNodeIds?: string[];
+  storyEventIds?: string[];
+  storyEvents?: StoryEventTraceData[];
 }
 
 export interface SceneNodeData {
@@ -93,6 +148,8 @@ export interface SceneNodeData {
   sourceExcerpt?: string;
   characterTempIds?: string[];
   locationTempId?: string;
+  storyEventIds?: string[];
+  storyEvents?: StoryEventTraceData[];
 }
 
 export interface ShotNodeData {
@@ -113,6 +170,9 @@ export interface ShotNodeData {
   narration?: string;
   soundEffect?: string;
   sourceExcerpt?: string;
+  storyEventIds?: string[];
+  storyEvents?: StoryEventTraceData[];
+  characterStageRefs?: CharacterStageReferenceData[];
   characterTempIds?: string[];
   locationTempId?: string;
   characterAssetIds?: string[];
@@ -129,6 +189,10 @@ export interface CharacterAssetNodeData {
   wardrobe?: string;
   consistencyPrompt?: string;
   identityPrompt?: string;
+  lifecycleStages?: CharacterLifecycleStageData[];
+  activeStageId?: string;
+  locked?: boolean;
+  lockedFields?: string[];
   referenceAssetIds?: string[];
   assetKey?: string;
 }

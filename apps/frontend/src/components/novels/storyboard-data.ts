@@ -2,6 +2,7 @@ import type {
   CanvasEdgeRecord,
   CanvasNodeRecord,
   CharacterDraft,
+  CharacterLifecycleStage,
   ImportStoryboardToCanvasResult,
   LocationDraft,
   SceneDraft,
@@ -22,9 +23,13 @@ export interface StoryboardSummary {
   shotCount: number;
   characterCount: number;
   locationCount: number;
+  eventCount: number;
+  relationshipCount: number;
+  lifecycleStageCount: number;
   durationSec: number;
   firstSceneTitle: string;
   firstShotPrompt: string;
+  firstEventSummary: string;
 }
 
 export interface StoryboardDraftUiState {
@@ -44,6 +49,7 @@ export interface StoryboardImportGraphState {
 
 export type StoryboardOverviewPatch = Partial<Pick<StoryboardResult, "title" | "logline">>;
 export type CharacterDraftPatch = Partial<Omit<CharacterDraft, "tempId">>;
+export type CharacterLifecycleStagePatch = Partial<Omit<CharacterLifecycleStage, "stageId">>;
 export type LocationDraftPatch = Partial<Omit<LocationDraft, "tempId">>;
 export type SceneDraftPatch = Partial<Omit<SceneDraft, "tempId" | "shots">>;
 export type ShotDraftPatch = Partial<Omit<ShotDraft, "tempId">>;
@@ -57,14 +63,23 @@ export function summarizeStoryboard(storyboard: StoryboardResult | undefined): S
       shotCount: 0,
       characterCount: 0,
       locationCount: 0,
+      eventCount: 0,
+      relationshipCount: 0,
+      lifecycleStageCount: 0,
       durationSec: 0,
       firstSceneTitle: "",
       firstShotPrompt: "",
+      firstEventSummary: "",
     };
   }
 
   const shots = storyboard.scenes.flatMap((scene) => scene.shots);
   const firstShot = shots[0];
+  const timelineEvents = storyboard.storyBlueprint?.timelineEvents ?? [];
+  const lifecycleStageCount = storyboard.characters.reduce(
+    (total, character) => total + (character.lifecycleStages?.length ?? 0),
+    0,
+  );
 
   return {
     title: storyboard.title,
@@ -73,9 +88,13 @@ export function summarizeStoryboard(storyboard: StoryboardResult | undefined): S
     shotCount: shots.length,
     characterCount: storyboard.characters.length,
     locationCount: storyboard.locations.length,
+    eventCount: timelineEvents.length,
+    relationshipCount: storyboard.storyBlueprint?.characterRelationships?.length ?? 0,
+    lifecycleStageCount,
     durationSec: shots.reduce((total, shot) => total + shot.durationSec, 0),
     firstSceneTitle: storyboard.scenes[0]?.title ?? "",
     firstShotPrompt: firstShot?.imagePrompt || firstShot?.videoPrompt || "",
+    firstEventSummary: timelineEvents[0]?.summary ?? "",
   };
 }
 
@@ -210,6 +229,27 @@ export function updateStoryboardCharacter<TStoryboard extends StoryboardResult>(
   };
 }
 
+export function updateStoryboardCharacterLifecycleStage<TStoryboard extends StoryboardResult>(
+  storyboard: TStoryboard,
+  characterTempId: string,
+  stageId: string,
+  patch: CharacterLifecycleStagePatch,
+): TStoryboard {
+  return {
+    ...storyboard,
+    characters: storyboard.characters.map((character) => {
+      if (character.tempId !== characterTempId) {
+        return character;
+      }
+
+      return {
+        ...character,
+        lifecycleStages: updateByStageId(character.lifecycleStages ?? [], stageId, patch),
+      };
+    }),
+  };
+}
+
 export function updateStoryboardLocation<TStoryboard extends StoryboardResult>(
   storyboard: TStoryboard,
   tempId: string,
@@ -260,6 +300,21 @@ function updateByTempId<TItem extends { tempId: string }>(
 ): TItem[] {
   return items.map((item) =>
     item.tempId === tempId
+      ? ({
+          ...item,
+          ...compactPatch(patch as MutableStoryboardObject),
+        } as TItem)
+      : item,
+  );
+}
+
+function updateByStageId<TItem extends { stageId: string }>(
+  items: readonly TItem[],
+  stageId: string,
+  patch: Partial<Omit<TItem, "stageId">>,
+): TItem[] {
+  return items.map((item) =>
+    item.stageId === stageId
       ? ({
           ...item,
           ...compactPatch(patch as MutableStoryboardObject),

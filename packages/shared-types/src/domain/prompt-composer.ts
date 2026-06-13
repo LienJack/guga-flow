@@ -3,9 +3,12 @@ import type {
   CanvasEdgeRecord,
   CanvasNodeRecord,
   CharacterAssetNodeData,
+  CharacterLifecycleStageData,
+  CharacterStageReferenceData,
   LocationAssetNodeData,
   SceneNodeData,
   ShotNodeData,
+  StoryEventTraceData,
 } from "./canvas";
 
 export const PROMPT_COMPOSITION_CHANNELS = ["image", "video"] as const;
@@ -14,8 +17,10 @@ export type PromptCompositionChannel = (typeof PROMPT_COMPOSITION_CHANNELS)[numb
 export const PROMPT_DEBUG_PART_KINDS = [
   "global_style",
   "scene",
+  "story_event",
   "location",
   "character",
+  "character_lifecycle",
   "shot",
   "model_suffix",
   "negative_prompt",
@@ -25,7 +30,9 @@ export type PromptDebugPartKind = (typeof PROMPT_DEBUG_PART_KINDS)[number];
 export const PROMPT_MISSING_CONTEXT_KINDS = [
   "shot",
   "scene",
+  "story_event",
   "character",
+  "character_lifecycle",
   "location",
   "reference_asset",
   "image_prompt",
@@ -109,6 +116,8 @@ export function composeShotPrompt(input: ComposeShotPromptInput): ShotPromptComp
   const sceneNode = findSceneNode(input.edges ?? [], nodesById, shotNode.id);
   const characterNodes = findCharacterNodes(input.edges ?? [], nodesById, shotNode);
   const locationNode = findLocationNode(input.edges ?? [], nodesById, shotNode);
+  const storyEventParts = storyEventPartsForShot(shotNode, sceneNode, missingContext);
+  const lifecycleParts = characterLifecyclePartsForShot(shotNode, characterNodes, missingContext);
 
   if (!sceneNode) {
     missingContext.push({
@@ -149,9 +158,11 @@ export function composeShotPrompt(input: ComposeShotPromptInput): ShotPromptComp
       text: optionalText(input.globalStylePrompt),
       channels: ["image", "video"],
     }),
+    ...storyEventParts,
     scenePart(sceneNode),
     locationPart(locationNode),
     ...characterNodes.map((node) => characterPart(node)),
+    ...lifecycleParts,
   ].filter(isPromptDebugPart);
   const imageShotPart = shotPart("image", shotNode);
   const videoShotPart = shotPart("video", shotNode);
@@ -282,6 +293,110 @@ function findLocationNode(
   ]);
   const node = linkedIds.map((nodeId) => nodesById.get(nodeId)).find((candidate) => candidate?.type === "location_asset");
   return node as CanvasNodeRecord<LocationAssetNodeData> | undefined;
+}
+
+function storyEventPartsForShot(
+  shotNode: CanvasNodeRecord,
+  sceneNode: CanvasNodeRecord<SceneNodeData> | undefined,
+  missingContext: PromptMissingContext[],
+): PromptDebugPart[] {
+  const shotData = dataObject(shotNode) as ShotNodeData;
+  const sceneData = sceneNode ? (dataObject(sceneNode) as SceneNodeData) : undefined;
+  const shotEvents = storyEventArray(shotData.storyEvents);
+  const sceneEvents = storyEventArray(sceneData?.storyEvents);
+  const events = shotEvents.length > 0 ? shotEvents : sceneEvents;
+  const referencedEventIds = uniqueStrings([
+    ...stringArray(shotData.storyEventIds),
+    ...stringArray(sceneData?.storyEventIds),
+  ]);
+
+  if (referencedEventIds.length > 0 && events.length === 0) {
+    missingContext.push({
+      kind: "story_event",
+      label: "Story event",
+      message: "The Shot references story events, but no event trace was imported.",
+      sourceNodeId: shotNode.id,
+    });
+  }
+
+  return events.map((event) =>
+    partFromText({
+      id: `story-event:${event.eventId}:${shotNode.id}`,
+      kind: "story_event",
+      label: "Story event",
+      text: joinLines([
+        labeled("Event", event.title ?? event.eventId),
+        labeled("Summary", event.summary),
+        labeled("Source excerpt", event.sourceExcerpt),
+        labeled("Conflict", event.conflict),
+        labeled("Result", event.result),
+        labeled("Emotion", event.emotion),
+      ]),
+      channels: ["image", "video"],
+      sourceNodeIds: [shotNode.id, ...(sceneNode ? [sceneNode.id] : [])],
+    }),
+  ).filter(isPromptDebugPart);
+}
+
+function characterLifecyclePartsForShot(
+  shotNode: CanvasNodeRecord,
+  characterNodes: readonly CanvasNodeRecord<CharacterAssetNodeData>[],
+  missingContext: PromptMissingContext[],
+): PromptDebugPart[] {
+  const shotData = dataObject(shotNode) as ShotNodeData;
+  const references = characterStageReferenceArray(shotData.characterStageRefs);
+  if (references.length === 0) {
+    return [];
+  }
+
+  return references
+    .map((reference) => {
+      const characterNode = characterNodes.find(
+        (node) => characterReferenceKey(node) === reference.characterTempId || node.id === reference.characterTempId,
+      );
+      if (!characterNode) {
+        missingContext.push({
+          kind: "character_lifecycle",
+          label: "Character lifecycle",
+          message: `No linked Character node was found for lifecycle reference ${reference.characterTempId}.`,
+          sourceNodeId: shotNode.id,
+        });
+        return undefined;
+      }
+
+      const characterData = dataObject(characterNode) as CharacterAssetNodeData;
+      const stage = lifecycleStages(characterData.lifecycleStages).find(
+        (candidate) => candidate.stageId === reference.stageId,
+      );
+      if (!stage) {
+        missingContext.push({
+          kind: "character_lifecycle",
+          label: "Character lifecycle",
+          message: `Character ${characterNode.title ?? characterData.name ?? characterNode.id} does not have lifecycle stage ${reference.stageId}.`,
+          sourceNodeId: characterNode.id,
+        });
+        return undefined;
+      }
+
+      return partFromText({
+        id: `character-lifecycle:${characterNode.id}:${stage.stageId}`,
+        kind: "character_lifecycle",
+        label: "Character lifecycle",
+        text: joinLines([
+          labeled("Character", characterNode.title ?? characterData.name),
+          labeled("Stage", stage.label),
+          labeled("Age", stage.ageRange),
+          labeled("Appearance", stage.appearance),
+          labeled("Costume", stage.costume),
+          labeled("Emotion", stage.emotionalState),
+          labeled("Identity", stage.identityPrompt),
+        ]),
+        channels: ["image", "video"],
+        sourceNodeIds: [characterNode.id],
+        referenceAssetIds: stringArray(characterData.referenceAssetIds),
+      });
+    })
+    .filter(isPromptDebugPart);
 }
 
 function scenePart(node: CanvasNodeRecord<SceneNodeData> | undefined): PromptDebugPart | undefined {
@@ -500,6 +615,74 @@ function stringArray(value: unknown): string[] {
     return [];
   }
   return uniqueStrings(value.map(optionalText).filter((text): text is string => Boolean(text)));
+}
+
+function storyEventArray(value: unknown): StoryEventTraceData[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => (typeof item === "object" && item !== null && !Array.isArray(item) ? item : undefined))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => ({
+      eventId: optionalText(item.eventId) ?? "",
+      title: optionalText(item.title),
+      orderIndex: typeof item.orderIndex === "number" ? item.orderIndex : undefined,
+      chapterIndex: typeof item.chapterIndex === "number" ? item.chapterIndex : undefined,
+      sourceExcerpt: optionalText(item.sourceExcerpt),
+      summary: optionalText(item.summary),
+      characters: stringArray(item.characters),
+      locationName: optionalText(item.locationName),
+      emotion: optionalText(item.emotion),
+      conflict: optionalText(item.conflict),
+      result: optionalText(item.result),
+      estimatedDurationSec:
+        typeof item.estimatedDurationSec === "number" ? item.estimatedDurationSec : undefined,
+    }))
+    .filter((event) => Boolean(event.eventId));
+}
+
+function characterStageReferenceArray(value: unknown): CharacterStageReferenceData[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => (typeof item === "object" && item !== null && !Array.isArray(item) ? item : undefined))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => ({
+      characterTempId: optionalText(item.characterTempId) ?? "",
+      stageId: optionalText(item.stageId) ?? "",
+    }))
+    .filter((reference) => Boolean(reference.characterTempId && reference.stageId));
+}
+
+function lifecycleStages(value: unknown): CharacterLifecycleStageData[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => (typeof item === "object" && item !== null && !Array.isArray(item) ? item : undefined))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => ({
+      stageId: optionalText(item.stageId) ?? "",
+      label: optionalText(item.label) ?? "",
+      ageRange: optionalText(item.ageRange),
+      appearance: optionalText(item.appearance),
+      costume: optionalText(item.costume),
+      hairstyle: optionalText(item.hairstyle),
+      emotionalState: optionalText(item.emotionalState),
+      identityPrompt: optionalText(item.identityPrompt),
+    }))
+    .filter((stage) => Boolean(stage.stageId));
+}
+
+function characterReferenceKey(node: CanvasNodeRecord<CharacterAssetNodeData>): string | undefined {
+  const data = dataObject(node) as CharacterAssetNodeData & { storyboardImport?: unknown };
+  const provenance = data.storyboardImport;
+  if (typeof provenance !== "object" || provenance === null || Array.isArray(provenance)) {
+    return undefined;
+  }
+  return optionalText((provenance as Record<string, unknown>).sourceTempId);
 }
 
 function uniqueStrings(values: readonly string[]): string[] {

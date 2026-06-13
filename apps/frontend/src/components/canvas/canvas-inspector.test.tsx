@@ -151,6 +151,57 @@ describe("CanvasInspector", () => {
     expect(html).toContain("Reference images");
   });
 
+  it("renders imported story event and lifecycle trace in the Inspector", () => {
+    const tracedCharacter = {
+      ...characterNode,
+      dataJson: {
+        name: "Ari",
+        lifecycleStages: [
+          {
+            stageId: "stage_alert",
+            label: "Alert",
+            ageRange: "late 20s",
+            costume: "dark utility coat",
+            identityPrompt: "alert Ari stage identity",
+          },
+        ],
+        locked: true,
+        lockedFields: ["appearance", "identityPrompt"],
+      },
+    };
+    const tracedShot = {
+      ...shotNode,
+      dataJson: {
+        storyEvents: [
+          {
+            eventId: "event_opening",
+            title: "Opening signal",
+            summary: "Ari spots the hidden launch signal.",
+            emotion: "urgent focus",
+          },
+        ],
+        characterStageRefs: [{ characterTempId: "character_1", stageId: "stage_alert" }],
+      },
+    };
+    const shotHtml = renderInspector({
+      nodes: [tracedCharacter, tracedShot],
+      selection: { kind: "business-node", nodeId: tracedShot.id },
+    });
+    const characterHtml = renderInspector({
+      nodes: [tracedCharacter, tracedShot],
+      selection: { kind: "business-node", nodeId: tracedCharacter.id },
+    });
+
+    expect(shotHtml).toContain("Story trace");
+    expect(shotHtml).toContain("Opening signal");
+    expect(shotHtml).toContain("Ari spots the hidden launch signal.");
+    expect(shotHtml).toContain("Alert");
+    expect(shotHtml).toContain("alert Ari stage identity");
+    expect(characterHtml).toContain("Lifecycle");
+    expect(characterHtml).toContain("Locked identity");
+    expect(characterHtml).toContain("appearance, identityPrompt");
+  });
+
   it("renders selected edge relation and endpoints while keeping assets available", () => {
     const html = renderInspector({
       nodes: [characterNode, shotNode],

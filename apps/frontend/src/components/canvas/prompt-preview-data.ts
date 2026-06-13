@@ -29,8 +29,10 @@ export interface PromptPreviewChannelView {
 const PART_KIND_LABELS: Record<PromptDebugPartKind, string> = {
   global_style: "Global style",
   scene: "Scene",
+  story_event: "Story event",
   location: "Location",
   character: "Character",
+  character_lifecycle: "Character lifecycle",
   shot: "Shot",
   model_suffix: "Model suffix",
   negative_prompt: "Negative prompt",

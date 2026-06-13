@@ -85,6 +85,49 @@ describe("business node data helpers", () => {
     expect(model.detail).toContain("Location ref");
   });
 
+  it("surfaces imported event and lifecycle trace on cards", () => {
+    const shot = buildBusinessNodeCardModel({
+      ...baseNode,
+      type: "shot",
+      title: "Shot 003",
+      dataJson: {
+        storyEvents: [
+          {
+            eventId: "event_opening",
+            summary: "Ari spots the hidden launch signal.",
+          },
+        ],
+        characterStageRefs: [{ characterTempId: "character_1", stageId: "stage_alert" }],
+      },
+    });
+    const character = buildBusinessNodeCardModel({
+      ...baseNode,
+      type: "character_asset",
+      title: "Ari",
+      dataJson: {
+        lifecycleStages: [
+          {
+            stageId: "stage_alert",
+            label: "Alert",
+            identityPrompt: "alert Ari identity",
+          },
+          {
+            stageId: "stage_resolved",
+            label: "Resolved",
+          },
+        ],
+        activeStageId: "stage_alert",
+        lockedFields: ["appearance", "identityPrompt"],
+      },
+    });
+
+    expect(shot.summary).toContain("Ari spots the hidden launch signal");
+    expect(shot.detail).toContain("1 character stage ref");
+    expect(character.summary).toContain("2 lifecycle stages");
+    expect(character.detail).toContain("Active stage: Alert");
+    expect(character.detail).toContain("Locked: appearance, identityPrompt");
+  });
+
   it("surfaces SceneFrame location reference state", () => {
     const model = buildBusinessNodeCardModel({
       ...baseNode,

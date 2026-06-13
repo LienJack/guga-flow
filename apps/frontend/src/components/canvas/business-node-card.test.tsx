@@ -78,6 +78,38 @@ describe("BusinessNodeCard", () => {
     expect(props).not.toHaveProperty("collapsed");
   });
 
+  it("builds card props with imported story trace summaries", () => {
+    const props = buildBusinessNodeShapeProps({
+      id: "node_1",
+      projectId: "project_1",
+      canvasDocumentId: "canvas_1",
+      tldrawShapeId: "shape:shot-1",
+      type: "shot",
+      title: "Shot 001",
+      x: 10,
+      y: 20,
+      width: 360,
+      height: 220,
+      zIndex: 0,
+      status: "draft",
+      dataJson: {
+        visualDescription: "Wide shot of the launch platform.",
+        storyEvents: [
+          {
+            eventId: "event_opening",
+            summary: "Ari spots the hidden launch signal.",
+          },
+        ],
+        characterStageRefs: [{ characterTempId: "character_1", stageId: "stage_alert" }],
+      },
+      createdAt: "2026-06-12T00:00:00.000Z",
+      updatedAt: "2026-06-12T00:00:00.000Z",
+    });
+
+    expect(props.summary).toContain("Ari spots the hidden launch signal");
+    expect(props.detail).toContain("1 character stage ref");
+  });
+
   it("renders collapsed SceneFrame cards without the detail footer", () => {
     const html = renderToStaticMarkup(
       <BusinessNodeCard

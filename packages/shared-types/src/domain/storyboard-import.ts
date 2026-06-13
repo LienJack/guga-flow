@@ -12,8 +12,19 @@ import type {
   SceneFrameNodeData,
   SceneNodeData,
   ShotNodeData,
+  StoryBlueprintNodeData,
+  StoryEventTraceData,
 } from "./canvas";
-import type { CharacterDraft, LocationDraft, SceneDraft, ShotDraft, StoryboardResult } from "./storyboard";
+import type {
+  CharacterDraft,
+  CharacterLifecycleStage,
+  CharacterRelationship,
+  LocationDraft,
+  SceneDraft,
+  ShotDraft,
+  StoryboardResult,
+  StoryTimelineEvent,
+} from "./storyboard";
 
 export const STORYBOARD_IMPORT_DUPLICATE_POLICIES = ["new_version"] as const;
 export type StoryboardImportDuplicatePolicy = (typeof STORYBOARD_IMPORT_DUPLICATE_POLICIES)[number];
@@ -178,6 +189,7 @@ export function buildStoryboardImportPlan(input: BuildStoryboardImportPlanInput)
         synopsis: input.storyboard.logline,
         language: "zh",
         storyboardTitle: input.storyboard.title,
+        ...optionalStoryBlueprintData(input.storyboard),
         storyboardImport: provenance(input, "novel", version),
       },
     }),
@@ -438,6 +450,7 @@ function characterNodeData(
     wardrobe: character.costume ?? "",
     consistencyPrompt: character.identityPrompt,
     identityPrompt: character.identityPrompt,
+    ...optionalCharacterLifecycleData(character),
     assetKey: storyboardImportAssetKey("character_asset", {
       name: character.name,
       role: character.role,
@@ -482,6 +495,7 @@ function sceneFrameNodeData(
     order: sceneIndex + 1,
     description: scene.summary,
     locationTempId: scene.locationTempId ?? "",
+    ...optionalStoryEventData(input.storyboard, scene.storyEventIds),
     storyboardImport: provenance(input, "scene_frame", version, {
       sourceTempId: scene.tempId,
       sceneTempId: scene.tempId,
@@ -504,6 +518,7 @@ function sceneNodeData(
     sourceExcerpt: scene.sourceExcerpt,
     characterTempIds: uniqueStrings(scene.characterTempIds),
     locationTempId: scene.locationTempId ?? "",
+    ...optionalStoryEventData(input.storyboard, scene.storyEventIds),
     storyboardImport: provenance(input, "scene", version, {
       sourceTempId: scene.tempId,
       sceneTempId: scene.tempId,
@@ -535,6 +550,10 @@ function shotNodeData(
     narration: shot.narration ?? "",
     soundEffect: shot.soundEffect ?? "",
     sourceExcerpt: shot.sourceExcerpt ?? "",
+    ...optionalStoryEventData(input.storyboard, shot.storyEventIds),
+    ...(shot.characterStageRefs?.length
+      ? { characterStageRefs: shot.characterStageRefs.map((reference) => ({ ...reference })) }
+      : {}),
     characterTempIds: uniqueStrings(shot.characterTempIds),
     locationTempId: shot.locationTempId ?? "",
     storyboardImport: provenance(input, "shot", version, {
@@ -637,4 +656,100 @@ function uniqueStrings(values: readonly string[]): string[] {
 
 function normalizeKeyPart(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, "-");
+}
+
+function optionalStoryBlueprintData(storyboard: StoryboardResult): Partial<NovelNodeData> {
+  const blueprint = storyboard.storyBlueprint;
+  if (!blueprint) {
+    return {};
+  }
+
+  const storyBlueprint: StoryBlueprintNodeData = {};
+  if (blueprint.worldSummary) {
+    storyBlueprint.worldSummary = blueprint.worldSummary;
+  }
+  if (blueprint.timelineEvents?.length) {
+    storyBlueprint.timelineEvents = blueprint.timelineEvents.map(storyEventTrace);
+  }
+  if (blueprint.characterRelationships?.length) {
+    storyBlueprint.characterRelationships = blueprint.characterRelationships.map(characterRelationshipTrace);
+  }
+  if (blueprint.themes?.length) {
+    storyBlueprint.themes = uniqueStrings(blueprint.themes);
+  }
+  if (blueprint.adaptationNotes) {
+    storyBlueprint.adaptationNotes = blueprint.adaptationNotes;
+  }
+
+  return Object.keys(storyBlueprint).length > 0 ? { storyBlueprint } : {};
+}
+
+function optionalCharacterLifecycleData(character: CharacterDraft): Partial<CharacterAssetNodeData> {
+  return {
+    ...(character.lifecycleStages?.length
+      ? { lifecycleStages: character.lifecycleStages.map(characterLifecycleStageData) }
+      : {}),
+    ...(character.locked === undefined ? {} : { locked: character.locked }),
+    ...(character.lockedFields?.length ? { lockedFields: uniqueStrings(character.lockedFields) } : {}),
+  };
+}
+
+function optionalStoryEventData(
+  storyboard: StoryboardResult,
+  storyEventIds: readonly string[] | undefined,
+): Partial<SceneFrameNodeData & SceneNodeData & ShotNodeData> {
+  const ids = uniqueStrings(storyEventIds ?? []);
+  if (ids.length === 0) {
+    return {};
+  }
+  const eventsById = new Map(
+    (storyboard.storyBlueprint?.timelineEvents ?? []).map((event) => [event.eventId, event]),
+  );
+  return {
+    storyEventIds: ids,
+    storyEvents: ids
+      .map((eventId) => eventsById.get(eventId))
+      .filter((event): event is StoryTimelineEvent => Boolean(event))
+      .map(storyEventTrace),
+  };
+}
+
+function storyEventTrace(event: StoryTimelineEvent): StoryEventTraceData {
+  return {
+    eventId: event.eventId,
+    ...(event.title ? { title: event.title } : {}),
+    orderIndex: event.orderIndex,
+    ...(event.chapterIndex ? { chapterIndex: event.chapterIndex } : {}),
+    ...(event.sourceExcerpt ? { sourceExcerpt: event.sourceExcerpt } : {}),
+    summary: event.summary,
+    ...(event.characters?.length ? { characters: uniqueStrings(event.characters) } : {}),
+    ...(event.locationName ? { locationName: event.locationName } : {}),
+    ...(event.emotion ? { emotion: event.emotion } : {}),
+    ...(event.conflict ? { conflict: event.conflict } : {}),
+    ...(event.result ? { result: event.result } : {}),
+    ...(event.estimatedDurationSec ? { estimatedDurationSec: event.estimatedDurationSec } : {}),
+  };
+}
+
+function characterRelationshipTrace(relationship: CharacterRelationship) {
+  return {
+    relationshipId: relationship.relationshipId,
+    characterTempIds: uniqueStrings(relationship.characterTempIds),
+    type: relationship.type,
+    summary: relationship.summary,
+    ...(relationship.status ? { status: relationship.status } : {}),
+  };
+}
+
+function characterLifecycleStageData(stage: CharacterLifecycleStage) {
+  return {
+    stageId: stage.stageId,
+    label: stage.label,
+    ...(stage.ageRange ? { ageRange: stage.ageRange } : {}),
+    ...(stage.appearance ? { appearance: stage.appearance } : {}),
+    ...(stage.costume ? { costume: stage.costume } : {}),
+    ...(stage.hairstyle ? { hairstyle: stage.hairstyle } : {}),
+    ...(stage.emotionalState ? { emotionalState: stage.emotionalState } : {}),
+    ...(stage.identityPrompt ? { identityPrompt: stage.identityPrompt } : {}),
+  };
 }

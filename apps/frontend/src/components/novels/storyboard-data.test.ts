@@ -12,6 +12,7 @@ import {
   summarizeStoryboard,
   summarizeStoryboardActionError,
   updateStoryboardCharacter,
+  updateStoryboardCharacterLifecycleStage,
   updateStoryboardLocation,
   updateStoryboardOverview,
   updateStoryboardScene,
@@ -74,6 +75,63 @@ function validStoryboard(): StoryboardResult {
   };
 }
 
+function blueprintStoryboard(): StoryboardResult {
+  const storyboard = validStoryboard();
+  storyboard.storyBlueprint = {
+    worldSummary: "A city where rooftop signals reveal hidden alliances.",
+    timelineEvents: [
+      {
+        eventId: "event_opening",
+        title: "Signal discovered",
+        orderIndex: 1,
+        sourceExcerpt: "Hero watches the city.",
+        summary: "The hero notices the hidden signal and chooses to act.",
+        characters: ["char_hero"],
+        emotion: "anticipation",
+      },
+    ],
+    characterRelationships: [
+      {
+        relationshipId: "rel_hero_ally",
+        characterTempIds: ["char_hero", "char_ally"],
+        type: "allies",
+        summary: "The hero and ally trust each other.",
+      },
+    ],
+  };
+  storyboard.characters[0] = {
+    ...storyboard.characters[0]!,
+    lifecycleStages: [
+      {
+        stageId: "stage_alert",
+        label: "Alert",
+        ageRange: "late 20s",
+        costume: "dark utility coat",
+        identityPrompt: "alert hero in dark coat",
+      },
+    ],
+  };
+  storyboard.characters.push({
+    tempId: "char_ally",
+    name: "Ally",
+    role: "support",
+    appearance: "A calm companion.",
+    personality: "Practical and observant.",
+    identityPrompt: "consistent ally",
+  });
+  storyboard.scenes[0] = {
+    ...storyboard.scenes[0]!,
+    storyEventIds: ["event_opening"],
+    characterTempIds: ["char_hero", "char_ally"],
+    shots: storyboard.scenes[0]!.shots.map((shot) => ({
+      ...shot,
+      storyEventIds: ["event_opening"],
+      characterStageRefs: [{ characterTempId: "char_hero", stageId: "stage_alert" }],
+    })),
+  };
+  return storyboard;
+}
+
 function draft(overrides: Partial<StoryboardDraftRecord> = {}): StoryboardDraftRecord {
   return {
     id: "draft_1",
@@ -114,6 +172,17 @@ describe("storyboard data helpers", () => {
       canSave: true,
       canMarkReady: true,
       issueSummary: "",
+    });
+  });
+
+  it("summarizes blueprint events, relationships, and lifecycle stages", () => {
+    const summary = summarizeStoryboard(blueprintStoryboard());
+
+    expect(summary).toMatchObject({
+      eventCount: 1,
+      relationshipCount: 1,
+      lifecycleStageCount: 1,
+      firstEventSummary: "The hero notices the hidden signal and chooses to act.",
     });
   });
 
@@ -190,6 +259,16 @@ describe("storyboard data helpers", () => {
       imagePrompt: "edited image prompt",
       locationTempId: undefined,
       vendorShotId: "shot_vendor_1",
+    });
+
+    const staged = updateStoryboardCharacterLifecycleStage(blueprintStoryboard(), "char_hero", "stage_alert", {
+      costume: "white rain coat",
+      identityPrompt: "alert hero in white rain coat",
+    });
+    expect(staged.characters[0]?.lifecycleStages?.[0]).toMatchObject({
+      stageId: "stage_alert",
+      costume: "white rain coat",
+      identityPrompt: "alert hero in white rain coat",
     });
   });
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validateStoryboardResult } from "@guga-flow/shared-types";
 
 import { ProviderError, createMockProviderRegistry } from "./index";
 
@@ -30,6 +31,19 @@ describe("mock providers", () => {
     });
 
     expect(storyboard.characters[0]?.tempId).toBe("char_hero");
+    const timelineEvents = storyboard.storyBlueprint?.timelineEvents ?? [];
+
+    expect(timelineEvents.map((event) => event.eventId)).toEqual([
+      "event_opening",
+      "event_decision",
+    ]);
+    expect(storyboard.characters[0]?.lifecycleStages?.[0]?.stageId).toBe("stage_alert");
+    expect(storyboard.scenes[0]?.shots[0]?.storyEventIds).toEqual(["event_opening"]);
+    expect(storyboard.scenes[1]?.shots[0]?.characterStageRefs?.[0]).toEqual({
+      characterTempId: "char_hero",
+      stageId: "stage_resolved",
+    });
+    expect(validateStoryboardResult(storyboard).success).toBe(true);
     expect(image?.provider).toBe("mock-image");
     expect(image?.referenceAssetIds).toEqual([]);
     expect(video.provider).toBe("mock-video");

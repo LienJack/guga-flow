@@ -276,6 +276,65 @@ function stringArray(data: Record<string, unknown>, key: string): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function objectArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          typeof item === "object" && item !== null && !Array.isArray(item),
+      )
+    : [];
+}
+
+function storyEventTraceText(data: Record<string, unknown>): string {
+  const event = objectArray(data.storyEvents)
+    .map((item) =>
+      firstText(text(item, "summary"), text(item, "title"), text(item, "sourceExcerpt"), text(item, "eventId")),
+    )
+    .find(Boolean);
+
+  return event ? `Event: ${event}` : "";
+}
+
+function characterStageReferenceText(data: Record<string, unknown>): string {
+  const stageCount = objectArray(data.characterStageRefs).filter(
+    (item) => text(item, "characterTempId") && text(item, "stageId"),
+  ).length;
+  if (stageCount === 0) {
+    return "";
+  }
+
+  return `${stageCount} character stage ref${stageCount === 1 ? "" : "s"}`;
+}
+
+function lifecycleStageCountText(data: Record<string, unknown>): string {
+  const stageCount = objectArray(data.lifecycleStages).filter((item) => text(item, "stageId")).length;
+  if (stageCount === 0) {
+    return "";
+  }
+
+  return `${stageCount} lifecycle stage${stageCount === 1 ? "" : "s"}`;
+}
+
+function activeLifecycleStageText(data: Record<string, unknown>): string {
+  const activeStageId = text(data, "activeStageId");
+  if (!activeStageId) {
+    return "";
+  }
+
+  const activeStage = objectArray(data.lifecycleStages).find((stage) => text(stage, "stageId") === activeStageId);
+  const label = activeStage ? firstText(text(activeStage, "label"), activeStageId) : activeStageId;
+  return label ? `Active stage: ${label}` : "";
+}
+
+function characterLockText(data: Record<string, unknown>): string {
+  const lockedFields = stringArray(data, "lockedFields");
+  if (lockedFields.length > 0) {
+    return `Locked: ${lockedFields.join(", ")}`;
+  }
+
+  return data.locked === true ? "Identity locked" : "";
+}
+
 function shotReferenceText(data: Record<string, unknown>): string {
   const characterCount = new Set(stringArray(data, "characterAssetIds")).size;
   const locationReference = text(data, "locationAssetId") ? "Location ref" : "";
@@ -317,18 +376,19 @@ function summaryForNode(
     case "novel":
       return firstText(text(data, "synopsis"), text(data, "sourceText"), fallback);
     case "scene_frame":
-      return firstText(text(data, "description"), fallback);
+      return firstText(storyEventTraceText(data), text(data, "description"), fallback);
     case "scene":
-      return firstText(text(data, "synopsis"), text(data, "mood"), fallback);
+      return firstText(storyEventTraceText(data), text(data, "synopsis"), text(data, "mood"), fallback);
     case "shot":
       return firstText(
+        storyEventTraceText(data),
         text(data, "visualDescription"),
         text(data, "action"),
         shotReferenceText(data),
         fallback,
       );
     case "character_asset":
-      return firstText(text(data, "appearance"), text(data, "role"), fallback);
+      return firstText(lifecycleStageCountText(data), text(data, "appearance"), text(data, "role"), fallback);
     case "location_asset":
       return firstText(text(data, "environment"), text(data, "visualStyle"), fallback);
     case "image":
@@ -350,14 +410,19 @@ function detailForNode(
       return firstText(text(data, "language"), fallback);
     case "scene_frame":
       return compact(
-        [numberText(data, "order", ""), text(data, "locationAssetId") ? "Location ref" : ""],
+        [storyEventTraceText(data), numberText(data, "order", ""), text(data, "locationAssetId") ? "Location ref" : ""],
         fallback,
       );
     case "scene":
-      return compact([text(data, "location"), text(data, "timeOfDay"), text(data, "mood")], fallback);
+      return compact(
+        [storyEventTraceText(data), text(data, "location"), text(data, "timeOfDay"), text(data, "mood")],
+        fallback,
+      );
     case "shot":
       return compact(
         [
+          storyEventTraceText(data),
+          characterStageReferenceText(data),
           shotReferenceText(data),
           text(data, "cameraMovement"),
           numberText(data, "durationSeconds", "s"),
@@ -368,6 +433,9 @@ function detailForNode(
     case "character_asset":
       return compact(
         [
+          lifecycleStageCountText(data),
+          activeLifecycleStageText(data),
+          characterLockText(data),
           text(data, "role"),
           text(data, "personality"),
           text(data, "identityPrompt"),

@@ -59,6 +59,52 @@ function storyboard(): StoryboardResult {
   };
 }
 
+function blueprintStoryboard(): StoryboardResult {
+  const result = storyboard();
+  result.storyBlueprint = {
+    worldSummary: "A city where rooftop signals reveal hidden alliances.",
+    timelineEvents: [
+      {
+        eventId: "event_opening",
+        title: "Signal discovered",
+        orderIndex: 1,
+        summary: "The hero notices the hidden signal and chooses to act.",
+        characters: ["char_hero"],
+      },
+    ],
+    characterRelationships: [
+      {
+        relationshipId: "rel_hero_ally",
+        characterTempIds: ["char_hero", "char_ally"],
+        type: "allies",
+        summary: "The hero and ally trust each other.",
+      },
+    ],
+  };
+  result.characters[0] = {
+    ...result.characters[0]!,
+    lifecycleStages: [
+      {
+        stageId: "stage_alert",
+        label: "Alert",
+        ageRange: "late 20s",
+        costume: "dark utility coat",
+        identityPrompt: "alert hero in dark coat",
+      },
+    ],
+  };
+  result.scenes[0] = {
+    ...result.scenes[0]!,
+    storyEventIds: ["event_opening"],
+    shots: result.scenes[0]!.shots.map((shot) => ({
+      ...shot,
+      storyEventIds: ["event_opening"],
+      characterStageRefs: [{ characterTempId: "char_hero", stageId: "stage_alert" }],
+    })),
+  };
+  return result;
+}
+
 function draft(): StoryboardDraftRecord {
   return {
     id: "draft_1",
@@ -104,5 +150,24 @@ describe("StoryboardEditor", () => {
 
     expect(html).toContain("No storyboard draft");
     expect(html).toContain("Generate from a saved novel source.");
+  });
+
+  it("renders story blueprint and lifecycle stage fields when present", () => {
+    const html = renderToStaticMarkup(
+      <StoryboardEditor
+        draft={draft()}
+        storyboard={blueprintStoryboard()}
+        onMarkReady={vi.fn()}
+        onSave={vi.fn()}
+        onStoryboardChange={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Story blueprint");
+    expect(html).toContain("World summary");
+    expect(html).toContain("Events");
+    expect(html).toContain("Lifecycle stages");
+    expect(html).toContain("Age range");
+    expect(html).toContain("alert hero in dark coat");
   });
 });
