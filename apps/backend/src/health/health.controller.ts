@@ -35,6 +35,11 @@ export class HealthController {
             happyhorse: config.videoProviderKeysConfigured.happyhorse,
           },
         },
+        editor: {
+          selected: "local-http",
+          mockAvailable: true,
+          localEditorConfigured: Boolean(config.localEditorUrl),
+        },
       },
     };
   }

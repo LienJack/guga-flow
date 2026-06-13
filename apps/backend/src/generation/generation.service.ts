@@ -8,7 +8,12 @@ import type {
   CanvasNodeType,
   CreateBatchImagesToVideosJobInput,
   CreateBatchImagesToVideosJobResult,
+  CreateBatchShotsToImagesJobInput,
+  CreateBatchShotsToImagesJobResult,
   CreateGenerationJobInput,
+  EditorExportJobInput,
+  EditorExportJobOutput,
+  EditorExportPackageOutput,
   GeneratedMediaJobOutput,
   GeneratedMediaJobTargetOutput,
   GeneratedMediaProviderOutput,
@@ -34,6 +39,7 @@ import type {
   WorkerGenerationJobWaitInput,
 } from "@guga-flow/shared-types";
 import {
+  EDITOR_PACKAGE_MIME_TYPE,
   GENERATION_JOB_STATUSES,
   PHASE_8_GENERATION_OPERATIONS,
 } from "@guga-flow/shared-types";
@@ -48,7 +54,7 @@ import { ProvidersService } from "../providers/providers.service";
 
 type GenerationPrismaClient = Pick<
   PrismaService,
-  "generationJob" | "canvasNode" | "canvasEdge" | "asset" | "project"
+  "generationJob" | "canvasNode" | "canvasEdge" | "asset" | "project" | "editorExport"
 >;
 
 type GenerationJobModel = {
@@ -102,6 +108,10 @@ type CanvasEdgeModel = {
 
 const CANCELLABLE_JOB_STATUSES: GenerationJobStatus[] = ["queued", "running", "provider_waiting"];
 const WORKER_ACTIVE_JOB_STATUSES: GenerationJobStatus[] = ["running", "provider_waiting"];
+const WORKER_GENERATION_OPERATIONS = [
+  ...PHASE_8_GENERATION_OPERATIONS,
+  "editor_export",
+] as const;
 
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -181,7 +191,11 @@ function jsonValue<T>(value: T): Prisma.InputJsonValue {
 
 function assertJobInput(value: unknown): GenerationJobInput {
   const input = dataObject(value);
-  if (input.operation === "shot_to_image" || input.operation === "image_to_video") {
+  if (
+    input.operation === "shot_to_image" ||
+    input.operation === "image_to_video" ||
+    input.operation === "editor_export"
+  ) {
     return value as GenerationJobInput;
   }
   throw new BadRequestException("Generation job input is invalid");
@@ -295,6 +309,65 @@ export class GenerationService {
     };
   }
 
+  async createBatchShotsToImagesJobs(
+    projectId: string,
+    input: CreateBatchShotsToImagesJobInput,
+  ): Promise<CreateBatchShotsToImagesJobResult> {
+    if (input.operation !== "batch_shots_to_images") {
+      throw new BadRequestException("Batch generation operation is not supported");
+    }
+
+    const childInputs: ShotToImageJobInput[] = [];
+    const skipped: CreateBatchShotsToImagesJobResult["skipped"] = [];
+    for (const sourceNodeId of Array.from(new Set(input.sourceNodeIds))) {
+      try {
+        childInputs.push(
+          await this.buildShotToImageInput(projectId, sourceNodeId, {
+            operation: "shot_to_image",
+            sourceNodeId,
+            provider: input.provider,
+            model: input.model,
+            aspectRatio: input.aspectRatio,
+            count: input.count,
+            providerParams: input.providerParams,
+            forceFailure: input.forceFailure,
+          }),
+        );
+      } catch (error) {
+        skipped.push({
+          nodeId: sourceNodeId,
+          reason: error instanceof Error ? error.message : "Shot-to-image child job could not be created",
+        });
+      }
+    }
+
+    const jobs = await this.runTransaction(async (tx) => {
+      const createdJobs: GenerationJobModel[] = [];
+      for (const childInput of childInputs) {
+        const created = (await tx.generationJob.create({
+          data: {
+            projectId,
+            operation: childInput.operation,
+            status: "queued",
+            provider: childInput.provider,
+            model: childInput.model,
+            sourceNodeId: childInput.sourceNodeId,
+            inputJson: jsonValue(childInput),
+          },
+        })) as GenerationJobModel;
+        await this.updateNodeStatus(tx, childInput.sourceNodeId, "queued");
+        createdJobs.push(created);
+      }
+      return createdJobs;
+    });
+
+    return {
+      jobs: jobs.map((job) => this.toGenerationJobRecord<ShotToImageJobInput>(job)),
+      skipped,
+      queueSummary: await this.getQueueSummary(projectId),
+    };
+  }
+
   async listJobs(projectId: string): Promise<GenerationJobListResult> {
     const jobs = (await this.prisma.generationJob.findMany({
       where: { projectId },
@@ -331,7 +404,12 @@ export class GenerationService {
           inputJson: jsonValue(input),
         },
       });
-      if (original.sourceNodeId) {
+      if (input.operation === "editor_export") {
+        await tx.editorExport.update({
+          where: { id: input.editorExportId },
+          data: { status: "queued", errorMessage: null },
+        });
+      } else if (original.sourceNodeId) {
         await this.updateNodeStatus(tx, original.sourceNodeId, "queued");
       }
       return created as GenerationJobModel;
@@ -350,6 +428,7 @@ export class GenerationService {
       throw new BadRequestException("Only queued or active generation jobs can be cancelled");
     }
 
+    const input = assertJobInput(existing.inputJson);
     const cancelledAt = new Date().toISOString();
     const cancelled = await this.runTransaction(async (tx) => {
       const claimed = await tx.generationJob.updateMany({
@@ -373,7 +452,17 @@ export class GenerationService {
       if (!updated) {
         throw new NotFoundException("Generation job not found");
       }
-      await this.updateNodeStatus(tx, existing.targetNodeId ?? existing.sourceNodeId, "cancelled");
+      if (input.operation === "editor_export") {
+        await tx.editorExport.update({
+          where: { id: input.editorExportId },
+          data: {
+            status: "failed",
+            errorMessage: "EXPORT_CANCELLED: Editor export was cancelled",
+          },
+        });
+      } else {
+        await this.updateNodeStatus(tx, existing.targetNodeId ?? existing.sourceNodeId, "cancelled");
+      }
       return updated;
     });
 
@@ -405,7 +494,7 @@ export class GenerationService {
       const queued = (await tx.generationJob.findFirst({
         where: {
           status: { in: ["queued", "provider_waiting"] },
-          operation: { in: [...PHASE_8_GENERATION_OPERATIONS] as PrismaGenerationOperation[] },
+          operation: { in: [...WORKER_GENERATION_OPERATIONS] as PrismaGenerationOperation[] },
         },
         orderBy: { createdAt: "asc" },
       })) as GenerationJobModel | null;
@@ -429,8 +518,16 @@ export class GenerationService {
       const updated = (await tx.generationJob.findUnique({
         where: { id: queued.id },
       })) as GenerationJobModel | null;
-      if (updated?.sourceNodeId) {
-        await this.updateNodeStatus(tx, updated.sourceNodeId, "running");
+      if (updated) {
+        const input = assertJobInput(updated.inputJson);
+        if (input.operation === "editor_export") {
+          await tx.editorExport.update({
+            where: { id: input.editorExportId },
+            data: { status: "running", errorMessage: null },
+          });
+        } else if (updated.sourceNodeId) {
+          await this.updateNodeStatus(tx, updated.sourceNodeId, "running");
+        }
       }
 
       return updated ?? undefined;
@@ -499,6 +596,7 @@ export class GenerationService {
       throw new BadRequestException("Only active generation jobs can fail");
     }
 
+    const input = assertJobInput(existing.inputJson);
     const failed = await this.runTransaction(async (tx) => {
       const claimed = await tx.generationJob.updateMany({
         where: { id: existing.id, status: { in: WORKER_ACTIVE_JOB_STATUSES } },
@@ -517,7 +615,17 @@ export class GenerationService {
       if (!updated) {
         throw new NotFoundException("Generation job not found");
       }
-      await this.updateNodeStatus(tx, existing.targetNodeId ?? existing.sourceNodeId, "failed");
+      if (input.operation === "editor_export") {
+        await tx.editorExport.update({
+          where: { id: input.editorExportId },
+          data: {
+            status: "failed",
+            errorMessage: `${failure.code}: ${failure.message}`,
+          },
+        });
+      } else {
+        await this.updateNodeStatus(tx, existing.targetNodeId ?? existing.sourceNodeId, "failed");
+      }
       return updated;
     });
 
@@ -526,9 +634,10 @@ export class GenerationService {
 
   async succeedJob(
     jobId: string,
-    providerOutput: GeneratedMediaProviderOutput,
+    providerOutput?: GeneratedMediaProviderOutput,
     providerOutputs?: GeneratedMediaProviderOutput[],
-  ): Promise<GenerationJobRecord<GenerationJobInput, GeneratedMediaJobOutput>> {
+    packageOutput?: EditorExportPackageOutput,
+  ): Promise<GenerationJobRecord<GenerationJobInput, GeneratedMediaJobOutput | EditorExportJobOutput>> {
     const existing = (await this.prisma.generationJob.findUnique({
       where: { id: jobId },
     })) as GenerationJobModel | null;
@@ -540,6 +649,15 @@ export class GenerationService {
     }
 
     const input = assertJobInput(existing.inputJson);
+    if (input.operation === "editor_export") {
+      if (!packageOutput) {
+        throw new BadRequestException("Editor export completion requires package output");
+      }
+      return this.succeedEditorExportJob(existing, input, packageOutput);
+    }
+    if (!providerOutput) {
+      throw new BadRequestException("Generated media completion requires provider output");
+    }
     const completionOutputs = this.normalizeCompletionOutputs(input, providerOutput, providerOutputs);
     completionOutputs.forEach((output) => this.validateProviderOutput(existing, input, output));
 
@@ -645,6 +763,162 @@ export class GenerationService {
     });
 
     return this.toGenerationJobRecord(completed);
+  }
+
+  private async succeedEditorExportJob(
+    existing: GenerationJobModel,
+    input: EditorExportJobInput,
+    packageOutput: EditorExportPackageOutput,
+  ): Promise<GenerationJobRecord<EditorExportJobInput, EditorExportJobOutput>> {
+    if (packageOutput.mimeType !== EDITOR_PACKAGE_MIME_TYPE) {
+      throw new BadRequestException("Editor export completion requires a zip package");
+    }
+    if (packageOutput.timeline.editorExportId !== input.editorExportId) {
+      throw new BadRequestException("Editor export package does not match the claimed job");
+    }
+    this.validateEditorExportPackageOutput(input, packageOutput);
+
+    const completed = await this.runTransaction(async (tx) => {
+      const claimed = await tx.generationJob.updateMany({
+        where: { id: existing.id, status: { in: WORKER_ACTIVE_JOB_STATUSES } },
+        data: { errorMessage: null },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException("Only active generation jobs can succeed");
+      }
+
+      const videoNodes = (await tx.canvasNode.findMany({
+        where: {
+          projectId: existing.projectId,
+          id: { in: input.videoNodeIds },
+          type: "video",
+        },
+      })) as CanvasNodeModel[];
+      if (videoNodes.length !== input.videoNodeIds.length) {
+        throw new BadRequestException("Editor export selected VideoNodes are no longer valid");
+      }
+      const orderedVideoNodes = input.videoNodeIds.map((nodeId) => {
+        const node = videoNodes.find((candidate) => candidate.id === nodeId);
+        if (!node) {
+          throw new BadRequestException(`Editor export selected VideoNode ${nodeId} is missing`);
+        }
+        return node;
+      });
+      const anchorNode = orderedVideoNodes[0];
+      if (!anchorNode) {
+        throw new BadRequestException("Editor export requires at least one VideoNode");
+      }
+
+      const packageAsset = await this.assetsService.createPackageAsset(
+        existing.projectId,
+        {
+          packageOutput,
+          metadataJson: {
+            generationJobId: existing.id,
+            editorExportId: input.editorExportId,
+            selectedVideoNodeIds: input.videoNodeIds,
+            sortMode: input.sortMode,
+          },
+        },
+        tx,
+      );
+      const packageNode = await this.createEditorPackageNode(
+        tx,
+        existing,
+        input,
+        packageOutput,
+        packageAsset,
+        orderedVideoNodes,
+      );
+      const edges: CanvasEdgeModel[] = [];
+      for (const videoNode of orderedVideoNodes) {
+        edges.push(
+          (await tx.canvasEdge.create({
+            data: {
+              projectId: existing.projectId,
+              canvasDocumentId: anchorNode.canvasDocumentId,
+              sourceNodeId: videoNode.id,
+              targetNodeId: packageNode.id,
+              sourceShapeId: videoNode.tldrawShapeId,
+              targetShapeId: packageNode.tldrawShapeId,
+              relation: "sent_to_editor",
+              dataJson: jsonValue({
+                generationJobId: existing.id,
+                editorExportId: input.editorExportId,
+                packageAssetId: packageAsset.id,
+              }),
+            },
+          })) as CanvasEdgeModel,
+        );
+      }
+
+      const output: EditorExportJobOutput = {
+        operation: "editor_export",
+        editorExportId: input.editorExportId,
+        packageAssetId: packageAsset.id,
+        packageNodeId: packageNode.id,
+        edgeIds: edges.map((edge) => edge.id),
+        selectedVideoNodeIds: input.videoNodeIds,
+        sortMode: input.sortMode,
+        timeline: packageOutput.timeline,
+        storyboardCsv: packageOutput.storyboardCsv,
+        clips: packageOutput.clips,
+        completedAt: new Date().toISOString(),
+      };
+
+      await tx.editorExport.update({
+        where: { id: input.editorExportId },
+        data: {
+          status: "succeeded",
+          packageAssetId: packageAsset.id,
+          timelineJson: jsonValue(packageOutput.timeline),
+          storyboardCsv: packageOutput.storyboardCsv,
+          errorMessage: null,
+        },
+      });
+
+      return (await tx.generationJob.update({
+        where: { id: existing.id },
+        data: {
+          status: "succeeded",
+          targetNodeId: packageNode.id,
+          outputJson: jsonValue(output),
+          errorMessage: null,
+        },
+      })) as GenerationJobModel;
+    });
+
+    return this.toGenerationJobRecord<EditorExportJobInput, EditorExportJobOutput>(completed);
+  }
+
+  private validateEditorExportPackageOutput(
+    input: EditorExportJobInput,
+    packageOutput: EditorExportPackageOutput,
+  ): void {
+    if (packageOutput.timeline.projectId !== input.projectId) {
+      throw new BadRequestException("Editor export package project does not match the claimed job");
+    }
+    if (packageOutput.timeline.sortMode !== input.sortMode) {
+      throw new BadRequestException("Editor export package sort mode does not match the claimed job");
+    }
+    if (packageOutput.clips.length !== input.clips.length) {
+      throw new BadRequestException("Editor export package clip count does not match the claimed job");
+    }
+
+    for (let index = 0; index < input.clips.length; index += 1) {
+      const expected = input.clips[index];
+      const actual = packageOutput.clips[index];
+      if (!expected || !actual) {
+        throw new BadRequestException("Editor export package clip list is incomplete");
+      }
+      if (
+        actual.videoNodeId !== expected.videoNodeId ||
+        actual.videoAssetId !== expected.videoAssetId ||
+        actual.filename !== expected.filename
+      ) {
+        throw new BadRequestException("Editor export package clips do not match the claimed job");
+      }
+    }
   }
 
   private async buildShotToImageInput(
@@ -804,6 +1078,9 @@ export class GenerationService {
         throw new BadRequestException("Image video generation supports only one provider output");
       }
       return [providerOutput];
+    }
+    if (input.operation !== "shot_to_image") {
+      throw new BadRequestException("Generated media completion requires a media generation input");
     }
 
     const outputs = providerOutputs?.length ? providerOutputs : [providerOutput];
@@ -1028,6 +1305,52 @@ export class GenerationService {
     })) as CanvasNodeModel;
   }
 
+  private async createEditorPackageNode(
+    tx: GenerationPrismaClient,
+    job: GenerationJobModel,
+    input: EditorExportJobInput,
+    packageOutput: EditorExportPackageOutput,
+    packageAsset: AssetDetail,
+    videoNodes: CanvasNodeModel[],
+  ): Promise<CanvasNodeModel> {
+    const anchorNode = videoNodes[0];
+    if (!anchorNode) {
+      throw new BadRequestException("Editor package node requires at least one source VideoNode");
+    }
+    const maxX = Math.max(...videoNodes.map((node) => node.x + node.width));
+    const minY = Math.min(...videoNodes.map((node) => node.y));
+    const maxZ = Math.max(...videoNodes.map((node) => node.zIndex));
+
+    return (await tx.canvasNode.create({
+      data: {
+        projectId: job.projectId,
+        canvasDocumentId: anchorNode.canvasDocumentId,
+        tldrawShapeId: `shape:editor-package-${input.editorExportId}`,
+        type: "editor_package",
+        title: `Editor Package ${input.editorExportId}`,
+        x: maxX + 140,
+        y: minY,
+        width: 340,
+        height: 180,
+        zIndex: maxZ + 1,
+        status: "succeeded",
+        dataJson: jsonValue({
+          packageName: `Editor Package ${input.editorExportId}`,
+          format: "zip",
+          assetId: packageAsset.id,
+          editorExportId: input.editorExportId,
+          packageAssetId: packageAsset.id,
+          selectedVideoNodeIds: input.videoNodeIds,
+          sortMode: input.sortMode,
+          clipCount: packageOutput.clips.length,
+          exportedAt: new Date().toISOString(),
+          inputJson: input,
+          timeline: packageOutput.timeline,
+        }),
+      },
+    })) as CanvasNodeModel;
+  }
+
   private async createGeneratedEdge(
     tx: GenerationPrismaClient,
     job: GenerationJobModel,
@@ -1099,6 +1422,9 @@ export class GenerationService {
         ...input.sourceNodeIds.characterNodeIds,
         input.sourceNodeIds.locationNodeId,
       ]);
+    }
+    if (input.operation === "editor_export") {
+      return uniqueStrings(input.videoNodeIds);
     }
 
     return uniqueStrings(input.sourceNodeIds);

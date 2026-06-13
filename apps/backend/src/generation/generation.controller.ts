@@ -1,6 +1,10 @@
 import { Body, Controller, Get, Inject, Param, Post } from "@nestjs/common";
 
-import { CreateBatchImagesToVideosJobDto, CreateGenerationJobDto } from "./dto";
+import {
+  CreateBatchImagesToVideosJobDto,
+  CreateBatchShotsToImagesJobDto,
+  CreateGenerationJobDto,
+} from "./dto";
 import { GenerationService } from "./generation.service";
 
 @Controller("projects/:projectId/generation/jobs")
@@ -18,6 +22,14 @@ export class GenerationController {
     @Body() body: CreateBatchImagesToVideosJobDto,
   ) {
     return this.generationService.createBatchImagesToVideosJobs(projectId, body);
+  }
+
+  @Post("batch-shots-to-images")
+  createBatchShotsToImagesJob(
+    @Param("projectId") projectId: string,
+    @Body() body: CreateBatchShotsToImagesJobDto,
+  ) {
+    return this.generationService.createBatchShotsToImagesJobs(projectId, body);
   }
 
   @Get()

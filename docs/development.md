@@ -467,6 +467,74 @@ Optional live smoke:
 - Generate a short low-resolution Image -> Video job from the Inspector, run the worker loop until completion, and confirm the resulting Asset preview is served by the backend.
 - Remove keys after the smoke if the environment is shared. Live video provider calls can incur cost.
 
+## Editor Export Package Workflow
+
+Phase 11 turns selected VideoNodes into a downloadable editor package while preserving canvas traceability.
+
+Backend EditorExport API:
+
+- `POST /api/v1/projects/:projectId/editor-exports` validates selected VideoNodes, creates an `EditorExport`, and queues an `editor_export` `GenerationJob`.
+- `GET /api/v1/projects/:projectId/editor-exports` lists project export records.
+- `GET /api/v1/projects/:projectId/editor-exports/:exportId` reads one export record.
+- `GET /api/v1/projects/:projectId/editor-exports/:exportId/download` streams the succeeded ZIP package from backend-owned storage.
+- `POST /api/v1/projects/:projectId/editor-exports/:exportId/send` optionally posts package metadata to server-side `LOCAL_EDITOR_URL`.
+
+Package behavior:
+
+- Multi-select VideoNodes with bound video `assetId` values in the canvas Inspector.
+- Choose `shot_index`, `canvas_x`, or `manual` sort mode and queue export.
+- Run the worker once or in polling mode. The worker claims `editor_export`, fetches clip bytes through backend asset preview routes, builds a ZIP containing `timeline.json`, `storyboard.csv`, and ordered `clips/shot_###` files, then reports package output to the backend.
+- Backend completion persists the ZIP as an `editor_package` Asset, updates `EditorExport`, creates an `editor_package` canvas node, and connects each selected VideoNode to it with `sent_to_editor` edges.
+- Local editor send is post-completion only. Missing or failing `LOCAL_EDITOR_URL` returns a readable handoff error while the package remains downloadable.
+
+Optional local editor env:
+
+```text
+LOCAL_EDITOR_URL=http://localhost:4300/editor-exports
+```
+
+Keep `LOCAL_EDITOR_URL` in backend and worker env files only. The browser never posts directly to the local editor and never sees the configured URL.
+
+Phase 11 browser/API smoke checklist:
+
+- Create or open a project with at least two succeeded VideoNodes backed by video Assets.
+- Multi-select the VideoNodes and confirm the Inspector shows Editor Export controls and sort-mode buttons.
+- Queue an export, run `BACKEND_INTERNAL_URL=http://localhost:3002/api/v1 pnpm --filter @guga-flow/worker run worker:once`, and confirm the export job succeeds.
+- Download the package and inspect that it contains `timeline.json`, `storyboard.csv`, and clip entries under `clips/`.
+- Refresh the canvas and confirm the Editor Package node and `sent_to_editor` edges restore from backend graph facts.
+- With no `LOCAL_EDITOR_URL`, use Send and confirm the UI reports the handoff failure while Download remains available.
+- Optionally run a local HTTP receiver, set `LOCAL_EDITOR_URL`, restart backend, send again, and confirm the backend posts package metadata server-side.
+
+## Canvas Productivity Workflow
+
+Phase 12 adds large-canvas production controls without changing the normalized graph boundary.
+
+Backend generation and graph behavior:
+
+- `POST /api/v1/projects/:projectId/generation/jobs/batch-shots-to-images` accepts selected Shot node ids and creates one queued `shot_to_image` child job per valid Shot.
+- Batch Shot image creation reuses normal Shot prompt composition and provider settings. Invalid or missing Shot ids are returned in `skipped` with readable reasons.
+- Existing batch Image -> Video remains available at `batch-images-to-videos`.
+- Public canvas edge creation accepts `derived_from` when source and target nodes are distinct nodes of the same type.
+
+Workbench behavior:
+
+- Multi-select Shot nodes in the canvas Inspector to queue batch keyframe image jobs.
+- Multi-select ImageNodes with assets to queue batch video jobs as before.
+- The left Navigator searches node title, type, ids, and common business/media metadata, then selects/focuses a matching node on the canvas.
+- Shortcuts: `/` or `Cmd/Ctrl+K` focuses Navigator search; `F` fits the canvas. These shortcuts skip text-entry fields and contenteditable targets.
+- Selecting a SceneFrame shows a collapse/expand action. Collapse persists on `CanvasNode.dataJson.collapsed` and renders the SceneFrame card compactly without deleting child nodes or edges.
+- Selecting a Shot shows preferred Image/Video selectors derived from existing `generated_image` and `generated_video` edges. The selected ids persist on the Shot node.
+- Duplicate Variant creates a new nearby node with copied data and a `derived_from` edge back to the source.
+
+Phase 12 browser/API smoke checklist:
+
+- Import or create a storyboard with several Shot nodes, multi-select them, and confirm Batch Image shows the selected count.
+- Queue batch Shot images and confirm each valid Shot receives an ordinary `shot_to_image` job while invalid selections are skipped.
+- Search by shot number, character/location metadata, or media asset id and confirm selecting a result updates the canvas selection and focus.
+- Collapse a SceneFrame, refresh, and confirm the compact card returns while graph children remain present.
+- Generate multiple Image/Video candidates for a Shot, choose preferred media in the Inspector, refresh, and confirm selected ids remain on the Shot data.
+- Duplicate a Shot or media node as a variant and confirm a new node plus `derived_from` edge survives reload.
+
 ## Mock Workflow Verification
 
 Run the worker-owned mock media workflow:
@@ -541,6 +609,16 @@ Included:
 - backend-owned remote generated video persistence into project Assets
 - batch ImageNode -> VideoNode generation child jobs
 - compact ImageNode video generation settings and multi-select batch controls in the Inspector
+- selected VideoNode editor export workflow
+- downloadable editor package ZIPs with timeline, storyboard CSV, and clip entries
+- backend-owned package Asset persistence and EditorPackageNode graph trace
+- optional server-side local editor handoff with non-blocking failure state
+- batch ShotNode -> ImageNode generation child jobs
+- sidebar Navigator search and outline for large canvas navigation
+- shortcut-safe search focus and fit-to-content commands
+- persisted SceneFrame collapse state with compact card rendering
+- Shot preferred generated Image/Video selection persisted on node data
+- duplicate-as-variant action with durable `derived_from` edges
 - selection-aware Inspector with type-specific business forms
 - worker mock workflow
 - shared types and provider contracts
@@ -549,5 +627,5 @@ Included:
 Deferred:
 
 - StyleAsset and PropAsset reference workflows
-- editor package zip export
-- selected VideoNode editor export workflow
+- timeline editing UI and manual drag-reorder for exports
+- graphical minimap and PNG canvas export

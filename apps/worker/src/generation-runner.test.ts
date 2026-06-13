@@ -1,5 +1,6 @@
 import { ProviderError, type ImageProvider, type VideoProvider } from "@guga-flow/provider-contracts";
 import type {
+  EditorExportJobInput,
   GenerationJobInput,
   GenerationJobRecord,
   ImageToVideoJobInput,
@@ -14,7 +15,12 @@ import { runOneGenerationJob } from "./generation-runner";
 function createClientMock(): GenerationWorkerClient {
   return {
     claimNextJob: vi.fn(async () => ({})),
+    getAssetBytes: vi.fn(async (_projectId: string, assetId: string) => ({
+      body: Buffer.from(`clip:${assetId}`),
+      mimeType: "video/mp4",
+    })),
     succeedJob: vi.fn(async () => jobRecord("job_done", shotInput())),
+    succeedEditorExportJob: vi.fn(async () => jobRecord("job_export_done", editorExportInput())),
     waitJob: vi.fn(async () => jobRecord("job_waiting", videoInput(), { status: "provider_waiting" })),
     failJob: vi.fn(async () => jobRecord("job_failed", shotInput(), { status: "failed" })),
   };
@@ -252,6 +258,39 @@ describe("generation worker runner", () => {
     expect(result).toEqual({ status: "succeeded", jobId: "job_video" });
   });
 
+  it("packages claimed editor export jobs without provider calls", async () => {
+    vi.mocked(client.claimNextJob).mockResolvedValue({
+      job: jobRecord("job_export", editorExportInput(), {
+        operation: "editor_export",
+        provider: "mock-editor",
+        model: "zip-v1",
+      }),
+    });
+
+    const result = await runOneGenerationJob({ client, registry });
+
+    expect(client.getAssetBytes).toHaveBeenCalledTimes(2);
+    expect(client.getAssetBytes).toHaveBeenCalledWith("project_1", "asset_video_1");
+    expect(client.succeedEditorExportJob).toHaveBeenCalledWith(
+      "job_export",
+      expect.objectContaining({
+        mimeType: "application/zip",
+        timeline: expect.objectContaining({
+          editorExportId: "export_1",
+        }),
+        clips: expect.arrayContaining([
+          expect.objectContaining({
+            videoNodeId: "video_1",
+            videoAssetId: "asset_video_1",
+          }),
+        ]),
+      }),
+    );
+    expect(registry.imageProviders.get).not.toHaveBeenCalled();
+    expect(registry.videoProviders.get).not.toHaveBeenCalled();
+    expect(result).toEqual({ status: "succeeded", jobId: "job_export" });
+  });
+
   it("reports provider failures back to the backend fail endpoint", async () => {
     vi.mocked(client.claimNextJob).mockResolvedValue({
       job: jobRecord("job_image", shotInput()),
@@ -371,6 +410,36 @@ function videoInput(): ImageToVideoJobInput {
   };
 }
 
+function editorExportInput(): EditorExportJobInput {
+  return {
+    operation: "editor_export",
+    projectId: "project_1",
+    editorExportId: "export_1",
+    videoNodeIds: ["video_1", "video_2"],
+    sortMode: "manual",
+    includeStoryboardCsv: true,
+    includeSubtitles: false,
+    fps: 24,
+    aspectRatio: "16:9",
+    clips: [
+      {
+        videoNodeId: "video_1",
+        videoAssetId: "asset_video_1",
+        filename: "clips/shot_001.mp4",
+        mimeType: "video/mp4",
+        durationMs: 4000,
+      },
+      {
+        videoNodeId: "video_2",
+        videoAssetId: "asset_video_2",
+        filename: "clips/shot_002.mp4",
+        mimeType: "video/mp4",
+        durationMs: 5000,
+      },
+    ],
+  };
+}
+
 function jobRecord(
   id: string,
   inputJson: GenerationJobInput,
@@ -381,9 +450,9 @@ function jobRecord(
     projectId: "project_1",
     operation: inputJson.operation,
     status: "running",
-    provider: inputJson.provider,
-    model: inputJson.model,
-    sourceNodeId: inputJson.sourceNodeId,
+    provider: inputJson.operation === "editor_export" ? "mock-editor" : inputJson.provider,
+    model: inputJson.operation === "editor_export" ? "zip-v1" : inputJson.model,
+    sourceNodeId: inputJson.operation === "editor_export" ? undefined : inputJson.sourceNodeId,
     inputJson,
     createdAt: "2026-06-12T00:00:00.000Z",
     updatedAt: "2026-06-12T00:00:00.000Z",

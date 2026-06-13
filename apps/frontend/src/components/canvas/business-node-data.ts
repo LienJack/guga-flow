@@ -23,6 +23,7 @@ export interface BusinessNodeCardModel {
   status: NodeStatus;
   summary: string;
   detail: string;
+  collapsed?: boolean;
   w: number;
   h: number;
 }
@@ -127,6 +128,7 @@ export function createDefaultBusinessNodeData<TType extends Phase3CanvasNodeType
         label: "",
         order: 1,
         description: "",
+        collapsed: false,
       } as Phase3CanvasNodeData<TType>;
     case "scene":
       return {
@@ -226,6 +228,7 @@ export function buildBusinessNodeCardModel(node: CanvasNodeRecord): BusinessNode
   const data = objectData(node.dataJson);
   const summary = summaryForNode(node.type, data, definition.summaryFallback);
   const detail = detailForNode(node.type, data, definition.detailFallback);
+  const collapsed = node.type === "scene_frame" && data.collapsed === true;
 
   return {
     nodeId: node.id,
@@ -234,8 +237,9 @@ export function buildBusinessNodeCardModel(node: CanvasNodeRecord): BusinessNode
     status: node.status,
     summary,
     detail,
+    collapsed,
     w: node.width,
-    h: node.height,
+    h: collapsed ? Math.min(node.height, 112) : node.height,
   };
 }
 

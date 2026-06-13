@@ -4,6 +4,7 @@ import { ConfigModule } from "@nestjs/config";
 import { AssetsModule } from "./assets/assets.module";
 import { CanvasModule } from "./canvas/canvas.module";
 import { readAppConfig } from "./config/app-config";
+import { EditorExportsModule } from "./editor-exports/editor-exports.module";
 import { GenerationModule } from "./generation/generation.module";
 import { HealthController } from "./health/health.controller";
 import { NovelsModule } from "./novels/novels.module";
@@ -26,6 +27,7 @@ import { ProjectsModule } from "./projects/projects.module";
     PromptModule,
     GenerationModule,
     ProvidersModule,
+    EditorExportsModule,
   ],
   controllers: [HealthController],
 })

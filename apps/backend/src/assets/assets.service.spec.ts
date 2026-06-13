@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { EDITOR_PACKAGE_MIME_TYPE, type EditorExportPackageOutput } from "@guga-flow/shared-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PrismaService } from "../prisma/prisma.service";
@@ -224,6 +225,86 @@ describe("AssetsService", () => {
       buffer: Buffer.from("real-image-bytes"),
     });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("creates editor package asset records from worker zip bytes", async () => {
+    prisma.asset.create.mockResolvedValue(
+      asset({
+        type: "package",
+        purpose: "editor_package",
+        storageKey: "project_1/editor-exports/export_1.zip",
+        mimeType: EDITOR_PACKAGE_MIME_TYPE,
+        originalFilename: "export_1.zip",
+        metadataJson: {
+          previewKind: "metadata",
+          editorExportId: "export_1",
+          clipCount: 2,
+        },
+      }),
+    );
+    const packageOutput: EditorExportPackageOutput = {
+      storageKey: "project_1/editor-exports/export_1.zip",
+      mimeType: EDITOR_PACKAGE_MIME_TYPE,
+      bytesBase64: Buffer.from("zip-bytes").toString("base64"),
+      timeline: {
+        version: "1.0",
+        projectId: "project_1",
+        editorExportId: "export_1",
+        title: "Export",
+        aspectRatio: "16:9",
+        fps: 24,
+        sortMode: "manual",
+        tracks: [],
+        assets: [],
+      },
+      storyboardCsv: "index,filename\n",
+      clips: [
+        {
+          index: 1,
+          filename: "clips/shot_001.mp4",
+          videoNodeId: "video_1",
+          videoAssetId: "asset_video_1",
+          durationMs: 5000,
+        },
+        {
+          index: 2,
+          filename: "clips/shot_002.mp4",
+          videoNodeId: "video_2",
+          videoAssetId: "asset_video_2",
+          durationMs: 4000,
+        },
+      ],
+    };
+
+    const result = await service.createPackageAsset("project_1", {
+      packageOutput,
+      metadataJson: { generationJobId: "job_export_1" },
+    });
+
+    expect(storage.writeObject).toHaveBeenCalledWith({
+      storageKey: "project_1/editor-exports/export_1.zip",
+      buffer: Buffer.from("zip-bytes"),
+    });
+    expect(prisma.asset.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        type: "package",
+        purpose: "editor_package",
+        storageKey: "project_1/editor-exports/export_1.zip",
+        mimeType: EDITOR_PACKAGE_MIME_TYPE,
+        metadataJson: expect.objectContaining({
+          previewKind: "metadata",
+          editorExportId: "export_1",
+          clipCount: 2,
+          generationJobId: "job_export_1",
+        }),
+      }),
+    });
+    expect(result).toMatchObject({
+      id: "asset_1",
+      purpose: "editor_package",
+      previewKind: "metadata",
+    });
   });
 
   it("downloads remote generated asset bytes server-side before creating the asset", async () => {

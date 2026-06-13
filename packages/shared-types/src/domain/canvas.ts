@@ -80,6 +80,8 @@ export interface SceneFrameNodeData {
   description?: string;
   locationAssetId?: string;
   locationTempId?: string;
+  collapsed?: boolean;
+  shotNodeIds?: string[];
 }
 
 export interface SceneNodeData {
@@ -115,6 +117,8 @@ export interface ShotNodeData {
   locationTempId?: string;
   characterAssetIds?: string[];
   locationAssetId?: string;
+  selectedImageNodeId?: string;
+  selectedVideoNodeId?: string;
 }
 
 export interface CharacterAssetNodeData {
@@ -170,6 +174,15 @@ export interface EditorPackageNodeData {
   packageName?: string;
   format?: string;
   assetId?: string;
+  editorExportId?: string;
+  packageAssetId?: string;
+  selectedVideoNodeIds?: string[];
+  sortMode?: "shot_index" | "canvas_x" | "manual";
+  clipCount?: number;
+  downloadUrl?: string;
+  localEditorUrl?: string;
+  localEditorError?: string;
+  exportedAt?: string;
   notes?: string;
 }
 

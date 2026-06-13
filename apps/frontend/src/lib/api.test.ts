@@ -3,17 +3,24 @@ import type { StoryboardResult } from "@guga-flow/shared-types";
 
 import {
   composeShotPrompt,
+  createBatchImagesToVideosJobs,
+  createBatchShotsToImagesJobs,
+  createEditorExport,
   createGenerationJob,
   createCanvasEdge,
   createNovelDocument,
+  editorExportDownloadUrl,
   generateStoryboardDraft,
   getActiveStoryboardDraft,
+  getEditorExport,
   getImageProviderCatalog,
   importStoryboardToCanvas,
   importNovelSource,
+  listEditorExports,
   listGenerationJobs,
   markStoryboardDraftReady,
   retryGenerationJob,
+  sendEditorExportToLocalEditor,
   updateStoryboardDraft,
 } from "./api";
 
@@ -200,6 +207,83 @@ describe("frontend api client", () => {
     );
   });
 
+  it("calls project-scoped batch generation endpoints", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        jobs: [],
+        skipped: [],
+        queueSummary: {
+          queued: 0,
+          running: 0,
+          failed: 0,
+          counts: {
+            queued: 0,
+            running: 0,
+            provider_waiting: 0,
+            succeeded: 0,
+            failed: 0,
+            cancelled: 0,
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createBatchShotsToImagesJobs("project_1", {
+      operation: "batch_shots_to_images",
+      sourceNodeIds: ["shot_1", "shot_2"],
+      provider: "mock-image",
+      model: "mock-image-v1",
+      aspectRatio: "16:9",
+      count: 1,
+      providerParams: {},
+    });
+    await createBatchImagesToVideosJobs("project_1", {
+      operation: "batch_images_to_videos",
+      sourceNodeIds: ["image_1"],
+      videoProvider: "mock-video",
+      videoModel: "mock-video-v1",
+      videoAspectRatio: "16:9",
+      durationSeconds: 4,
+      resolution: "720p",
+      videoProviderParams: {},
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:3002/api/v1/projects/project_1/generation/jobs/batch-shots-to-images",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          operation: "batch_shots_to_images",
+          sourceNodeIds: ["shot_1", "shot_2"],
+          provider: "mock-image",
+          model: "mock-image-v1",
+          aspectRatio: "16:9",
+          count: 1,
+          providerParams: {},
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:3002/api/v1/projects/project_1/generation/jobs/batch-images-to-videos",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          operation: "batch_images_to_videos",
+          sourceNodeIds: ["image_1"],
+          videoProvider: "mock-video",
+          videoModel: "mock-video-v1",
+          videoAspectRatio: "16:9",
+          durationSeconds: 4,
+          resolution: "720p",
+          videoProviderParams: {},
+        }),
+      }),
+    );
+  });
+
   it("passes API error messages through the shared request wrapper", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       Response.json(
@@ -216,6 +300,87 @@ describe("frontend api client", () => {
         relation: "references_character",
       }),
     ).rejects.toThrow("Invalid semantic relation, Target node not found");
+  });
+
+  it("calls project-scoped editor export endpoints", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        export: {
+          id: "export_1",
+          projectId: "project_1",
+          status: "queued",
+          timelineJson: { selectedVideoNodeIds: ["video_1", "video_2"], sortMode: "canvas_x" },
+          createdAt: "2026-06-13T00:00:00.000Z",
+          updatedAt: "2026-06-13T00:00:00.000Z",
+        },
+        exports: [],
+        job: {
+          id: "job_export_1",
+          projectId: "project_1",
+          operation: "editor_export",
+          status: "queued",
+          provider: "mock-editor",
+          model: "zip-v1",
+          inputJson: {},
+          createdAt: "2026-06-13T00:00:00.000Z",
+          updatedAt: "2026-06-13T00:00:00.000Z",
+        },
+        queueSummary: {
+          queued: 1,
+          running: 0,
+          failed: 0,
+          counts: {
+            queued: 1,
+            running: 0,
+            provider_waiting: 0,
+            succeeded: 0,
+            failed: 0,
+            cancelled: 0,
+          },
+        },
+        sent: false,
+        errorMessage: "LOCAL_EDITOR_URL is not configured",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createEditorExport("project_1", {
+      videoNodeIds: ["video_1", "video_2"],
+      sortMode: "canvas_x",
+    });
+    await listEditorExports("project_1");
+    await getEditorExport("project_1", "export_1");
+    await sendEditorExportToLocalEditor("project_1", "export_1");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:3002/api/v1/projects/project_1/editor-exports",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          videoNodeIds: ["video_1", "video_2"],
+          sortMode: "canvas_x",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:3002/api/v1/projects/project_1/editor-exports",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:3002/api/v1/projects/project_1/editor-exports/export_1",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:3002/api/v1/projects/project_1/editor-exports/export_1/send",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(editorExportDownloadUrl("project_1", "export_1")).toBe(
+      "http://localhost:3002/api/v1/projects/project_1/editor-exports/export_1/download",
+    );
   });
 
   it("calls project-scoped novel source endpoints", async () => {

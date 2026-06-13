@@ -9,6 +9,10 @@ import type {
   CreateCanvasNodeResult,
   CreateBatchImagesToVideosJobInput,
   CreateBatchImagesToVideosJobResult,
+  CreateBatchShotsToImagesJobInput,
+  CreateBatchShotsToImagesJobResult,
+  CreateEditorExportInput,
+  CreateEditorExportResult,
   CreateGenerationJobInput,
   CreateGenerationJobResult,
   CreateNovelDocumentInput,
@@ -19,6 +23,9 @@ import type {
   DeleteNovelDocumentResult,
   ComposeShotPromptInput,
   GenerateStoryboardResult,
+  EditorExportDetailResult,
+  EditorExportListResult,
+  EditorExportSendResult,
   GenerationJobListResult,
   GenerationJobRecord,
   ImageProviderCatalogResult,
@@ -383,6 +390,19 @@ export function createBatchImagesToVideosJobs(
   );
 }
 
+export function createBatchShotsToImagesJobs(
+  projectId: string,
+  input: CreateBatchShotsToImagesJobInput,
+): Promise<CreateBatchShotsToImagesJobResult> {
+  return requestJson<CreateBatchShotsToImagesJobResult>(
+    `/projects/${projectId}/generation/jobs/batch-shots-to-images`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 export function listGenerationJobs(projectId: string): Promise<GenerationJobListResult> {
   return requestJson<GenerationJobListResult>(`/projects/${projectId}/generation/jobs`);
 }
@@ -402,4 +422,41 @@ export function cancelGenerationJob(projectId: string, jobId: string): Promise<G
     `/projects/${projectId}/generation/jobs/${jobId}/cancel`,
     { method: "POST" },
   );
+}
+
+export function createEditorExport(
+  projectId: string,
+  input: CreateEditorExportInput,
+): Promise<CreateEditorExportResult> {
+  return requestJson<CreateEditorExportResult>(`/projects/${projectId}/editor-exports`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function listEditorExports(projectId: string): Promise<EditorExportListResult> {
+  return requestJson<EditorExportListResult>(`/projects/${projectId}/editor-exports`);
+}
+
+export function getEditorExport(
+  projectId: string,
+  exportId: string,
+): Promise<EditorExportDetailResult> {
+  return requestJson<EditorExportDetailResult>(
+    `/projects/${projectId}/editor-exports/${exportId}`,
+  );
+}
+
+export function sendEditorExportToLocalEditor(
+  projectId: string,
+  exportId: string,
+): Promise<EditorExportSendResult> {
+  return requestJson<EditorExportSendResult>(
+    `/projects/${projectId}/editor-exports/${exportId}/send`,
+    { method: "POST" },
+  );
+}
+
+export function editorExportDownloadUrl(projectId: string, exportId: string): string {
+  return apiUrl(`/projects/${projectId}/editor-exports/${exportId}/download`);
 }

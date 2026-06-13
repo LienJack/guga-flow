@@ -25,6 +25,8 @@ describe("mock providers", () => {
     const editorPackage = await registry.editor.createPackage({
       projectId: "project_1",
       videoAssetIds: [video.assetId],
+      selectedVideoNodeIds: ["video_node_1"],
+      sortMode: "manual",
     });
 
     expect(storyboard.characters[0]?.tempId).toBe("char_hero");
@@ -32,6 +34,9 @@ describe("mock providers", () => {
     expect(image?.referenceAssetIds).toEqual([]);
     expect(video.provider).toBe("mock-video");
     expect(editorPackage.videoAssetIds).toEqual([video.assetId]);
+    expect(editorPackage.selectedVideoNodeIds).toEqual(["video_node_1"]);
+    expect(editorPackage.storageKey).toMatch(/mock\/editor-packages\/asset_package_/);
+    expect(editorPackage.mimeType).toBe("application/zip");
   });
 
   it("supports async video task lifecycle contracts", async () => {

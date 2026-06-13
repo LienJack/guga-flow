@@ -1,7 +1,9 @@
 import type {
   CreateGenerationJobInput,
   CreateBatchImagesToVideosJobInput,
+  CreateBatchShotsToImagesJobInput,
   CanvasSnapshotJson,
+  EditorExportPackageOutput,
   GeneratedMediaProviderOutput,
   ImageProviderId,
   Phase8GenerationOperation,
@@ -147,6 +149,47 @@ export class CreateBatchImagesToVideosJobDto implements CreateBatchImagesToVideo
   videoProviderParams?: CanvasSnapshotJson;
 }
 
+export class CreateBatchShotsToImagesJobDto implements CreateBatchShotsToImagesJobInput {
+  @IsIn(["batch_shots_to_images"])
+  operation!: "batch_shots_to_images";
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  @MaxLength(160, { each: true })
+  sourceNodeIds!: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  forceFailure?: boolean;
+
+  @IsOptional()
+  @IsIn(IMAGE_PROVIDER_IDS)
+  @MaxLength(80)
+  provider?: ImageProviderId;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  model?: string;
+
+  @IsOptional()
+  @IsIn(PROJECT_ASPECT_RATIOS)
+  aspectRatio?: ProjectAspectRatio;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(4)
+  count?: number;
+
+  @IsOptional()
+  @IsObject()
+  providerParams?: CanvasSnapshotJson;
+}
+
 export class WorkerGenerationJobFailDto implements WorkerGenerationJobFailInput {
   @IsObject()
   error!: ProviderFailure;
@@ -174,11 +217,16 @@ export class WorkerGenerationJobWaitDto implements WorkerGenerationJobWaitInput 
 }
 
 export class WorkerGenerationJobSucceedDto implements WorkerGenerationJobSucceedInput {
+  @IsOptional()
   @IsObject()
-  providerOutput!: GeneratedMediaProviderOutput;
+  providerOutput?: GeneratedMediaProviderOutput;
 
   @IsOptional()
   @IsArray()
   @IsObject({ each: true })
   providerOutputs?: GeneratedMediaProviderOutput[];
+
+  @IsOptional()
+  @IsObject()
+  packageOutput?: EditorExportPackageOutput;
 }

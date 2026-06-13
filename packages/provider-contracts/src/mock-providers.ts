@@ -291,6 +291,11 @@ export class MockEditorProvider implements EditorProvider {
       packageAssetId,
       manifestAssetId: `${packageAssetId}_manifest`,
       videoAssetIds: input.videoAssetIds,
+      selectedVideoNodeIds: input.selectedVideoNodeIds ?? [],
+      storageKey: `mock/editor-packages/${packageAssetId}.zip`,
+      mimeType: "application/zip",
+      timeline: input.timeline,
+      storyboardCsv: input.storyboardCsv,
     };
   }
 }

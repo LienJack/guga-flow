@@ -9,13 +9,21 @@ import { deleteCanvasEdgeSelection } from "./canvas-edge-inspector";
 vi.mock("../../lib/api", () => ({
   assetPreviewUrl: vi.fn((projectId: string, assetId: string) => `/assets/${projectId}/${assetId}`),
   composeShotPrompt: vi.fn(),
+  createBatchImagesToVideosJobs: vi.fn(),
+  createBatchShotsToImagesJobs: vi.fn(),
+  createCanvasEdge: vi.fn(),
+  createCanvasNode: vi.fn(),
+  createEditorExport: vi.fn(),
   createGenerationJob: vi.fn(),
   deleteAsset: vi.fn(),
   deleteCanvasEdge: vi.fn(),
+  editorExportDownloadUrl: vi.fn((projectId: string, exportId: string) => `/exports/${projectId}/${exportId}.zip`),
   getAsset: vi.fn(),
   getImageProviderCatalog: vi.fn(async () => ({ providers: [] })),
   listAssets: vi.fn(async () => []),
+  listEditorExports: vi.fn(async () => ({ exports: [] })),
   retryGenerationJob: vi.fn(),
+  sendEditorExportToLocalEditor: vi.fn(),
   updateCanvasNode: vi.fn(),
   uploadAsset: vi.fn(),
 }));
@@ -48,6 +56,23 @@ const characterNode: CanvasNodeRecord = {
   type: "character_asset",
   title: "Ari",
   dataJson: { name: "Ari" },
+};
+
+const videoNode: CanvasNodeRecord = {
+  ...shotNode,
+  id: "video_1",
+  tldrawShapeId: "shape:video-1",
+  type: "video",
+  title: "Shot 001 Video",
+  dataJson: { assetId: "asset_video_1", durationSeconds: 5 },
+};
+
+const secondVideoNode: CanvasNodeRecord = {
+  ...videoNode,
+  id: "video_2",
+  tldrawShapeId: "shape:video-2",
+  title: "Shot 002 Video",
+  dataJson: { assetId: "asset_video_2", durationSeconds: 4 },
 };
 
 const edge: CanvasEdgeRecord = {
@@ -137,6 +162,35 @@ describe("CanvasInspector", () => {
     expect(html).toContain("Ari");
     expect(html).toContain("Shot 001");
     expect(html).toContain("Delete");
+    expect(html).toContain("Assets");
+  });
+
+  it("renders editor export controls for selected VideoNodes", () => {
+    const html = renderInspector({
+      nodes: [videoNode, secondVideoNode],
+      selection: { kind: "multi", count: 2, nodeIds: ["video_1", "video_2"] },
+    });
+
+    expect(html).toContain("Editor Export");
+    expect(html).toContain("2 videos selected");
+    expect(html).toContain("Queue Export");
+    expect(html).toContain("Assets");
+  });
+
+  it("renders batch image controls for selected Shot nodes", () => {
+    const secondShotNode = {
+      ...shotNode,
+      id: "node_2",
+      tldrawShapeId: "shape:shot-2",
+      title: "Shot 002",
+    };
+    const html = renderInspector({
+      nodes: [shotNode, secondShotNode],
+      selection: { kind: "multi", count: 2, nodeIds: ["node_1", "node_2"] },
+    });
+
+    expect(html).toContain("Batch Image");
+    expect(html).toContain("2/2");
     expect(html).toContain("Assets");
   });
 

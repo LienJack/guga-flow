@@ -4,7 +4,9 @@ import type {
   GenerationJobRecord,
   GenerationQueueSummary,
   ImageNodeData,
+  ShotNodeData,
   UpdateCanvasNodeInput,
+  VideoNodeData,
 } from "@guga-flow/shared-types";
 import React from "react";
 
@@ -14,6 +16,8 @@ import { type CanvasGraphState } from "./canvas-edge-data";
 import { CanvasEdgeInspector } from "./canvas-edge-inspector";
 import type { CanvasSelectionState } from "./canvas-selection";
 import { BusinessNodeForm } from "./business-node-form";
+import { CanvasProductivityActions } from "./canvas-productivity-actions";
+import { EditorExportActions, isExportableVideoNode } from "./editor-export-actions";
 import { GenerationActions, GenerationBatchActions } from "./generation-actions";
 import { NodeReferenceAssets } from "./node-reference-assets";
 import { buildPromptPreviewRefreshKey, ShotPromptPreview } from "./shot-prompt-preview";
@@ -61,6 +65,21 @@ export function CanvasInspector({
             return typeof (node.dataJson as ImageNodeData | undefined)?.assetId === "string";
           })
       : [];
+  const selectedBatchShotNodes =
+    selection.kind === "multi"
+      ? selection.nodeIds
+          .map((nodeId) => nodes.find((node) => node.id === nodeId))
+          .filter(
+            (node): node is CanvasNodeRecord<ShotNodeData> =>
+              Boolean(node && node.type === "shot"),
+          )
+      : [];
+  const selectedExportVideoNodes =
+    selection.kind === "multi"
+      ? selection.nodeIds
+          .map((nodeId) => nodes.find((node) => node.id === nodeId))
+          .filter((node): node is CanvasNodeRecord<VideoNodeData> => isExportableVideoNode(node))
+      : [];
 
   return (
     <div className="canvas-inspector">
@@ -100,6 +119,17 @@ export function CanvasInspector({
           />
         ) : null}
         {selectedNode ? (
+          <CanvasProductivityActions
+            edges={edges}
+            node={selectedNode}
+            nodes={nodes}
+            projectId={projectId}
+            onGraphUpdated={onGraphUpdated}
+            onNodeUpdated={onNodeUpdated}
+            onSelectionChange={onSelectionChange}
+          />
+        ) : null}
+        {selectedNode ? (
           <NodeReferenceAssets
             projectId={projectId}
             node={selectedNode}
@@ -119,6 +149,15 @@ export function CanvasInspector({
             generationJobs={generationJobs}
             imageNodes={selectedBatchImageNodes}
             projectId={projectId}
+            shotNodes={selectedBatchShotNodes}
+            onGenerationChanged={onGenerationChanged}
+          />
+        ) : null}
+        {selection.kind === "multi" ? (
+          <EditorExportActions
+            generationJobs={generationJobs}
+            projectId={projectId}
+            videoNodes={selectedExportVideoNodes}
             onGenerationChanged={onGenerationChanged}
           />
         ) : null}

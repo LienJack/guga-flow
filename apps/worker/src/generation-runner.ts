@@ -1,5 +1,6 @@
 import type { ProviderFailure } from "@guga-flow/shared-types";
 
+import { buildEditorExportPackage } from "./editor-export-package";
 import type { GenerationWorkerClient } from "./generation-client";
 import {
   createGenerationExecutorRegistry,
@@ -39,6 +40,15 @@ export async function runOneGenerationJob(
   }
 
   try {
+    if (job.inputJson.operation === "editor_export") {
+      const packageOutput = await buildEditorExportPackage(job.inputJson, {
+        readClip: (clip) => options.client.getAssetBytes(job.projectId, clip.videoAssetId),
+      });
+      await options.client.succeedEditorExportJob(job.id, packageOutput);
+      options.logger?.info(`Editor export job ${job.id} succeeded.`);
+      return { status: "succeeded", jobId: job.id };
+    }
+
     const result = job.providerTaskId
       ? await pollGenerationJob(job, registry)
       : await executeGenerationJob(job, registry);

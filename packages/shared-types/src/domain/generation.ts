@@ -51,6 +51,12 @@ export const VIDEO_PROVIDER_TASK_STATUSES = [
 ] as const;
 export type VideoProviderTaskStatus = (typeof VIDEO_PROVIDER_TASK_STATUSES)[number];
 
+export const EDITOR_EXPORT_SORT_MODES = ["shot_index", "canvas_x", "manual"] as const;
+export type EditorExportSortMode = (typeof EDITOR_EXPORT_SORT_MODES)[number];
+
+export const EDITOR_EXPORT_STATUSES = ["queued", "running", "succeeded", "failed"] as const;
+export type EditorExportStatus = (typeof EDITOR_EXPORT_STATUSES)[number];
+
 export type GenerationJobStatusCounts = Record<GenerationJobStatus, number>;
 
 export interface ImageProviderModelOption {
@@ -184,6 +190,20 @@ export interface CreateBatchImagesToVideosJobInput extends VideoGenerationSettin
   forceFailure?: boolean;
 }
 
+export interface CreateBatchShotsToImagesJobInput extends ImageGenerationSettings {
+  operation: "batch_shots_to_images";
+  sourceNodeIds: string[];
+  forceFailure?: boolean;
+}
+
+export interface CreateEditorExportInput {
+  videoNodeIds: string[];
+  sortMode: EditorExportSortMode;
+  includeStoryboardCsv?: boolean;
+  includeSubtitles?: boolean;
+  forceFailure?: boolean;
+}
+
 export interface CreateGenerationJobResult<TInput = GenerationJobInput> {
   job: GenerationJobRecord<TInput>;
   queueSummary: GenerationQueueSummary;
@@ -194,10 +214,44 @@ export interface BatchImagesToVideosSkippedNode {
   reason: string;
 }
 
+export type BatchShotsToImagesSkippedNode = BatchImagesToVideosSkippedNode;
+
 export interface CreateBatchImagesToVideosJobResult {
   jobs: Array<GenerationJobRecord<ImageToVideoJobInput>>;
   skipped: BatchImagesToVideosSkippedNode[];
   queueSummary: GenerationQueueSummary;
+}
+
+export interface CreateBatchShotsToImagesJobResult {
+  jobs: Array<GenerationJobRecord<ShotToImageJobInput>>;
+  skipped: BatchShotsToImagesSkippedNode[];
+  queueSummary: GenerationQueueSummary;
+}
+
+export interface CreateEditorExportResult {
+  export: EditorExportRecord;
+  job: GenerationJobRecord<EditorExportJobInput>;
+  queueSummary: GenerationQueueSummary;
+}
+
+export interface EditorExportListResult {
+  exports: EditorExportRecord[];
+}
+
+export interface EditorExportDetailResult {
+  export: EditorExportRecord;
+}
+
+export interface EditorExportDownloadResult {
+  downloadUrl: string;
+  packageAssetId: string;
+}
+
+export interface EditorExportSendResult {
+  export: EditorExportRecord;
+  sent: boolean;
+  editorUrl?: string;
+  errorMessage?: string;
 }
 
 export interface GenerationJobListResult<TInput = GenerationJobInput, TOutput = GeneratedMediaJobOutput> {
@@ -216,8 +270,13 @@ export interface ClaimGenerationJobResult<TInput = GenerationJobInput> {
 }
 
 export interface WorkerGenerationJobSucceedInput {
-  providerOutput: GeneratedMediaProviderOutput;
+  providerOutput?: GeneratedMediaProviderOutput;
   providerOutputs?: GeneratedMediaProviderOutput[];
+  packageOutput?: EditorExportPackageOutput;
+}
+
+export interface WorkerEditorExportJobSucceedInput {
+  packageOutput: EditorExportPackageOutput;
 }
 
 export interface WorkerGenerationJobFailInput {
@@ -236,7 +295,7 @@ export interface WorkerGenerationJobCancelInput {
   rawJson?: CanvasSnapshotJson;
 }
 
-export type GenerationJobInput = ShotToImageJobInput | ImageToVideoJobInput;
+export type GenerationJobInput = ShotToImageJobInput | ImageToVideoJobInput | EditorExportJobInput;
 
 export interface ShotToImageJobInput {
   operation: "shot_to_image";
@@ -291,6 +350,157 @@ export interface BatchImagesToVideosJobInput {
   resolution?: VideoProviderResolution;
   providerParams?: CanvasSnapshotJson;
   forceFailure?: boolean;
+}
+
+export interface BatchShotsToImagesJobInput {
+  operation: "batch_shots_to_images";
+  projectId: string;
+  sourceNodeIds: string[];
+  childJobIds: string[];
+  provider: string;
+  model?: string;
+  aspectRatio?: ProjectAspectRatio;
+  count?: number;
+  providerParams?: CanvasSnapshotJson;
+  forceFailure?: boolean;
+}
+
+export interface EditorExportClipSource {
+  videoNodeId: string;
+  videoNodeTitle?: string;
+  videoAssetId: string;
+  storageKey?: string;
+  mimeType?: string;
+  filename: string;
+  durationMs?: number;
+  durationSeconds?: number;
+  shotNodeId?: string;
+  shotTitle?: string;
+  shotNumber?: string;
+  canvasX?: number;
+  canvasY?: number;
+  manualIndex?: number;
+}
+
+export interface EditorExportJobInput {
+  operation: "editor_export";
+  projectId: string;
+  editorExportId: string;
+  videoNodeIds: string[];
+  sortMode: EditorExportSortMode;
+  includeStoryboardCsv: boolean;
+  includeSubtitles: boolean;
+  fps: 24 | 25 | 30;
+  aspectRatio: ProjectAspectRatio;
+  clips: EditorExportClipSource[];
+  forceFailure?: boolean;
+}
+
+export interface TimelineManifest {
+  version: "1.0";
+  projectId: string;
+  editorExportId: string;
+  title: string;
+  aspectRatio: ProjectAspectRatio;
+  fps: 24 | 25 | 30;
+  sortMode: EditorExportSortMode;
+  tracks: TimelineTrack[];
+  assets: TimelineAsset[];
+  metadata?: CanvasSnapshotJson;
+}
+
+export interface TimelineTrack {
+  id: string;
+  type: "video" | "audio" | "subtitle" | "image";
+  items: TimelineItem[];
+}
+
+export interface TimelineItem {
+  id: string;
+  assetId: string;
+  sourceNodeId: string;
+  startMs: number;
+  durationMs: number;
+  trimStartMs?: number;
+  trimEndMs?: number;
+  text?: string;
+  metadata?: CanvasSnapshotJson;
+}
+
+export interface TimelineAsset {
+  id: string;
+  type: "video" | "image" | "audio" | "subtitle";
+  url: string;
+  localPath?: string;
+  mimeType?: string;
+  durationMs?: number;
+  width?: number;
+  height?: number;
+}
+
+export interface EditorExportStoryboardRow {
+  index: number;
+  filename: string;
+  videoNodeId: string;
+  videoNodeTitle?: string;
+  assetId: string;
+  shotNodeId?: string;
+  shotTitle?: string;
+  shotNumber?: string;
+  durationMs?: number;
+}
+
+export interface EditorExportClipOutput {
+  index: number;
+  filename: string;
+  videoNodeId: string;
+  videoAssetId: string;
+  durationMs: number;
+}
+
+export interface EditorExportPackageOutput {
+  storageKey: string;
+  mimeType: "application/zip";
+  bytesBase64?: string;
+  sizeBytes?: number;
+  timeline: TimelineManifest;
+  storyboardCsv: string;
+  clips: EditorExportClipOutput[];
+  rawJson?: CanvasSnapshotJson;
+}
+
+export interface EditorExportJobOutput {
+  operation: "editor_export";
+  editorExportId: string;
+  packageAssetId: string;
+  packageNodeId: string;
+  edgeIds: string[];
+  selectedVideoNodeIds: string[];
+  sortMode: EditorExportSortMode;
+  timeline: TimelineManifest;
+  storyboardCsv: string;
+  clips: EditorExportClipOutput[];
+  completedAt: string;
+  localEditor?: EditorExportLocalEditorResult;
+}
+
+export interface EditorExportLocalEditorResult {
+  attemptedAt: string;
+  sent: boolean;
+  editorUrl?: string;
+  errorMessage?: string;
+}
+
+export interface EditorExportRecord<TTimeline = TimelineManifest | CanvasSnapshotJson> {
+  id: string;
+  projectId: string;
+  packageAssetId?: string;
+  status: EditorExportStatus;
+  timelineJson: TTimeline;
+  storyboardCsv?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface GeneratedMediaProviderOutput {

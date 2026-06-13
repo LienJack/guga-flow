@@ -15,6 +15,7 @@ const STATUS_LABELS: Record<BusinessNodeShapeProps["status"], string> = {
 
 export function BusinessNodeCard({
   detail,
+  collapsed,
   nodeType,
   status,
   summary,
@@ -30,7 +31,7 @@ export function BusinessNodeCard({
 
   return (
     <article
-      className={`business-node-card tone-${definition.tone} type-${nodeType} status-${status} ${semanticRoleClass}`}
+      className={`business-node-card tone-${definition.tone} type-${nodeType} status-${status} ${semanticRoleClass}${collapsed ? " collapsed" : ""}`}
       aria-label={`${definition.label}: ${title}`}
     >
       <header className="business-node-card-header">
@@ -39,7 +40,7 @@ export function BusinessNodeCard({
       </header>
       <h3>{title}</h3>
       <p>{summary}</p>
-      <footer>{detail}</footer>
+      {collapsed ? null : <footer>{detail}</footer>}
     </article>
   );
 }

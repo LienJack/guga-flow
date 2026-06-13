@@ -17,6 +17,10 @@ import { mergeStoryboardImportGraph } from "../novels/storyboard-data";
 import { type CanvasSelectionState, EMPTY_CANVAS_SELECTION } from "./canvas-selection";
 import { CanvasEditor } from "./canvas-editor";
 import { CanvasInspector } from "./canvas-inspector";
+import {
+  CanvasProductivityPanel,
+  isEditableShortcutTarget,
+} from "./canvas-productivity-panel";
 import { CanvasSaveStatusBadge } from "./canvas-save-status";
 
 interface ProjectCanvasWorkspaceProps {
@@ -40,7 +44,10 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
   });
   const [selection, setSelection] = useState<CanvasSelectionState>(EMPTY_CANVAS_SELECTION);
   const [fitRequestKey, setFitRequestKey] = useState(0);
+  const [searchFocusRequestKey, setSearchFocusRequestKey] = useState<number | undefined>(undefined);
+  const [focusRequest, setFocusRequest] = useState<{ nodeId: string; key: number } | undefined>();
   const generationSignatureRef = useRef("");
+  const focusRequestSequenceRef = useRef(0);
 
   const handleSaveStatusChange = useCallback((status: CanvasSaveStatus, error: string | null) => {
     setSaveStatus(status);
@@ -127,6 +134,38 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
     setFitRequestKey((current) => current + 1);
   }, []);
 
+  const handleFitToContent = useCallback(() => {
+    setFitRequestKey((current) => current + 1);
+  }, []);
+
+  const handleSelectCanvasNode = useCallback((nodeId: string) => {
+    focusRequestSequenceRef.current += 1;
+    setSelection({ kind: "business-node", nodeId });
+    setFocusRequest({ nodeId, key: focusRequestSequenceRef.current });
+  }, []);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (isEditableShortcutTarget(event.target)) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      const primaryModifier = event.metaKey || event.ctrlKey;
+      if ((primaryModifier && key === "k") || (!primaryModifier && !event.altKey && key === "/")) {
+        event.preventDefault();
+        setSearchFocusRequestKey((current) => (current ?? 0) + 1);
+        return;
+      }
+      if (!primaryModifier && !event.altKey && !event.shiftKey && key === "f") {
+        event.preventDefault();
+        handleFitToContent();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleFitToContent]);
+
   return (
     <WorkbenchShell
       projectId={projectId}
@@ -135,17 +174,27 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
       queueSummary={queueSummary}
       saveStateSlot={<CanvasSaveStatusBadge status={saveStatus} error={saveError} />}
       sidebarSlot={
-        <NovelStoryboardPanel
-          canvasNodes={canvasNodes}
-          projectId={projectId}
-          onStoryboardImported={handleStoryboardImported}
-        />
+        <>
+          <CanvasProductivityPanel
+            nodes={canvasNodes}
+            selectedNodeId={selection.kind === "business-node" ? selection.nodeId : undefined}
+            searchFocusRequestKey={searchFocusRequestKey}
+            onFitToContent={handleFitToContent}
+            onSelectNode={handleSelectCanvasNode}
+          />
+          <NovelStoryboardPanel
+            canvasNodes={canvasNodes}
+            projectId={projectId}
+            onStoryboardImported={handleStoryboardImported}
+          />
+        </>
       }
       canvasSlot={
         <CanvasEditor
           projectId={projectId}
           canvasEdges={canvasEdges}
           canvasNodes={canvasNodes}
+          focusRequest={focusRequest}
           fitRequestKey={fitRequestKey}
           onCanvasEdgesChange={setCanvasEdges}
           onCanvasNodesChange={setCanvasNodes}

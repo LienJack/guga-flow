@@ -1,5 +1,7 @@
 import type {
   CanvasSnapshotJson,
+  EditorExportSortMode,
+  TimelineManifest,
   ProjectAspectRatio,
   StoryboardResult,
   VideoProviderMode,
@@ -81,6 +83,11 @@ export interface VideoGenerationInput {
 export interface EditorPackageInput {
   projectId: string;
   videoAssetIds: string[];
+  selectedVideoNodeIds?: string[];
+  sortMode?: EditorExportSortMode;
+  timeline?: TimelineManifest;
+  storyboardCsv?: string;
+  packageName?: string;
   forceFailure?: boolean;
 }
 
@@ -118,6 +125,11 @@ export interface MockEditorPackageOutput {
   packageAssetId: string;
   manifestAssetId: string;
   videoAssetIds: string[];
+  selectedVideoNodeIds: string[];
+  storageKey: string;
+  mimeType: "application/zip";
+  timeline?: TimelineManifest;
+  storyboardCsv?: string;
 }
 
 export interface LlmProvider {

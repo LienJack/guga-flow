@@ -1,5 +1,6 @@
 import type {
   ClaimGenerationJobResult,
+  EditorExportPackageOutput,
   GeneratedMediaProviderOutput,
   GenerationJobInput,
   GenerationJobRecord,
@@ -9,10 +10,15 @@ import type {
 
 export interface GenerationWorkerClient {
   claimNextJob(): Promise<ClaimGenerationJobResult<GenerationJobInput>>;
+  getAssetBytes(projectId: string, assetId: string): Promise<{ body: Buffer; mimeType: string }>;
   succeedJob(
     jobId: string,
     providerOutput: GeneratedMediaProviderOutput,
     providerOutputs?: GeneratedMediaProviderOutput[],
+  ): Promise<GenerationJobRecord>;
+  succeedEditorExportJob(
+    jobId: string,
+    packageOutput: EditorExportPackageOutput,
   ): Promise<GenerationJobRecord>;
   waitJob(jobId: string, input: WorkerGenerationJobWaitInput): Promise<GenerationJobRecord>;
   failJob(jobId: string, error: ProviderFailure): Promise<GenerationJobRecord>;
@@ -31,6 +37,21 @@ export class HttpGenerationWorkerClient implements GenerationWorkerClient {
     return this.post("/worker/generation/jobs/claim");
   }
 
+  async getAssetBytes(projectId: string, assetId: string): Promise<{ body: Buffer; mimeType: string }> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(assetId)}/preview`,
+    );
+    if (!response.ok) {
+      const responseText = await response.text();
+      throw new Error(`Worker asset fetch failed with ${response.status}: ${responseText}`);
+    }
+
+    return {
+      body: Buffer.from(await response.arrayBuffer()),
+      mimeType: response.headers.get("content-type") ?? "application/octet-stream",
+    };
+  }
+
   succeedJob(
     jobId: string,
     providerOutput: GeneratedMediaProviderOutput,
@@ -39,6 +60,15 @@ export class HttpGenerationWorkerClient implements GenerationWorkerClient {
     return this.post(`/worker/generation/jobs/${encodeURIComponent(jobId)}/succeed`, {
       providerOutput,
       providerOutputs,
+    });
+  }
+
+  succeedEditorExportJob(
+    jobId: string,
+    packageOutput: EditorExportPackageOutput,
+  ): Promise<GenerationJobRecord> {
+    return this.post(`/worker/generation/jobs/${encodeURIComponent(jobId)}/succeed`, {
+      packageOutput,
     });
   }
 

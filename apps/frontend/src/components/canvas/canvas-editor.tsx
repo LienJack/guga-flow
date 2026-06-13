@@ -73,6 +73,7 @@ interface CanvasEditorProps {
   projectId: string;
   canvasEdges?: CanvasEdgeRecord[];
   canvasNodes?: CanvasNodeRecord[];
+  focusRequest?: { nodeId: string; key: number };
   fitRequestKey?: number;
   onCanvasEdgesChange?: (edges: CanvasEdgeRecord[]) => void;
   onCanvasNodesChange?: (nodes: CanvasNodeRecord[]) => void;
@@ -180,6 +181,7 @@ function createSemanticArrowShapeId(sourceNodeId: string, targetNodeId: string):
 
 export function CanvasEditor({
   canvasEdges = [],
+  focusRequest,
   fitRequestKey,
   projectId,
   canvasNodes = [],
@@ -207,6 +209,7 @@ export function CanvasEditor({
   > | null>(null);
   const knownEdgeShapeIdsRef = useRef(new Set<string>());
   const lastFitRequestKeyRef = useRef<number | undefined>(undefined);
+  const lastFocusRequestKeyRef = useRef<number | undefined>(undefined);
   const ignoredRemovedShapeIdsRef = useRef(new Set<string>());
   const ignoredRemovedEdgeShapeIdsRef = useRef(new Set<string>());
   const deletingNodeIdsRef = useRef(new Set<string>());
@@ -366,6 +369,32 @@ export function CanvasEditor({
       editor.zoomToFit();
     });
   }, [canvasEdges, canvasNodes, fitRequestKey, loading]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || loading || !focusRequest) {
+      return;
+    }
+    if (lastFocusRequestKeyRef.current === focusRequest.key) {
+      return;
+    }
+
+    const node = canvasNodes.find((candidate) => candidate.id === focusRequest.nodeId);
+    if (!node || !isPhase3CanvasNodeType(node.type)) {
+      return;
+    }
+
+    lastFocusRequestKeyRef.current = focusRequest.key;
+    const shapeId = nodeShapeId(node);
+    if (!editor.getShape(shapeId)) {
+      restoreBusinessNodeShape(editor, node);
+    }
+    editor.setSelectedShapes([shapeId]);
+    publishSelection({ kind: "business-node", nodeId: node.id });
+    window.requestAnimationFrame(() => {
+      editor.zoomToFit();
+    });
+  }, [canvasNodes, focusRequest, loading, publishSelection]);
 
   const loadCanvas = useCallback(() => {
     const requestId = loadRequestIdRef.current + 1;

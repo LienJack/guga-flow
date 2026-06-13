@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { backendWorkerBaseUrlFromEnv } from "./generation-client";
+import { HttpGenerationWorkerClient, backendWorkerBaseUrlFromEnv } from "./generation-client";
 
 describe("generation worker client configuration", () => {
   it("defaults to the backend development API port", () => {
@@ -14,5 +14,58 @@ describe("generation worker client configuration", () => {
         BACKEND_URL: "http://localhost:3002/api/v1",
       }),
     ).toBe("http://backend:3002/api/v1");
+  });
+
+  it("fetches asset preview bytes for worker-side packaging", async () => {
+    const fetchImpl = vi.fn(async () => new Response("clip-bytes", {
+      headers: { "content-type": "video/mp4" },
+    }));
+    const client = new HttpGenerationWorkerClient(
+      "http://localhost:3002/api/v1",
+      fetchImpl as unknown as typeof fetch,
+    );
+
+    const result = await client.getAssetBytes("project_1", "asset_video_1");
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:3002/api/v1/projects/project_1/assets/asset_video_1/preview",
+    );
+    expect(result.body.toString("utf8")).toBe("clip-bytes");
+    expect(result.mimeType).toBe("video/mp4");
+  });
+
+  it("posts editor export package success payloads", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ id: "job_export_1" })));
+    const client = new HttpGenerationWorkerClient(
+      "http://localhost:3002/api/v1",
+      fetchImpl as unknown as typeof fetch,
+    );
+
+    await client.succeedEditorExportJob("job_export_1", {
+      storageKey: "project_1/editor-exports/export_1.zip",
+      mimeType: "application/zip",
+      bytesBase64: "UEsDBAo=",
+      timeline: {
+        version: "1.0",
+        projectId: "project_1",
+        editorExportId: "export_1",
+        title: "Export",
+        aspectRatio: "16:9",
+        fps: 24,
+        sortMode: "manual",
+        tracks: [],
+        assets: [],
+      },
+      storyboardCsv: "index,filename\n",
+      clips: [],
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:3002/api/v1/worker/generation/jobs/job_export_1/succeed",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("packageOutput"),
+      }),
+    );
   });
 });

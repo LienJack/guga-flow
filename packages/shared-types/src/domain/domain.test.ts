@@ -5,6 +5,9 @@ import {
   CANVAS_EDGE_RELATIONS,
   CANVAS_NODE_TYPES,
   CANVAS_SAVE_STATUSES,
+  EDITOR_EXPORT_SORT_MODES,
+  EDITOR_EXPORT_STATUSES,
+  EDITOR_PACKAGE_MIME_TYPE,
   GENERATION_JOB_STATUSES,
   GENERATION_OPERATIONS,
   IMAGE_PROVIDER_IDS,
@@ -27,6 +30,7 @@ import {
   hasStoryboardImportProvenance,
   type AssetListItem,
   type BatchImagesToVideosJobInput,
+  type BatchShotsToImagesJobInput,
   type CharacterAssetNodeData,
   type CanvasEdgeData,
   type CanvasEdgeRecord,
@@ -34,14 +38,24 @@ import {
   type CanvasNodeRecord,
   type CreateBatchImagesToVideosJobInput,
   type CreateBatchImagesToVideosJobResult,
+  type CreateBatchShotsToImagesJobInput,
+  type CreateBatchShotsToImagesJobResult,
   type CreateCanvasEdgeInput,
   type CreateCanvasEdgeResult,
+  type CreateEditorExportInput,
+  type CreateEditorExportResult,
   type CreateGenerationJobInput,
   type CreateCanvasNodeInput,
   type CreateNovelDocumentInput,
   type DeleteCanvasEdgeResult,
   type DeleteCanvasNodeResult,
   type DeleteNovelDocumentResult,
+  type EditorExportJobInput,
+  type EditorExportJobOutput,
+  type EditorExportPackageOutput,
+  type EditorExportRecord,
+  type EditorExportSendResult,
+  type EditorPackageNodeData,
   type GeneratedMediaJobOutput,
   type ImageProviderCatalogItem,
   type ImageProviderCatalogResult,
@@ -54,11 +68,13 @@ import {
   type LocationAssetNodeData,
   type Phase3CanvasNodeRecord,
   type SaveCanvasSnapshotInput,
+  type SceneFrameNodeData,
   type SceneNodeData,
   type ShotToImageJobInput,
   type ShotNodeData,
   type StoryboardDraftRecord,
   type StoryboardResult,
+  type TimelineManifest,
   type UpdateCanvasNodeGeometryInput,
   type UpdateCanvasNodeInput,
   type UpdateNovelDocumentInput,
@@ -103,6 +119,8 @@ describe("shared domain constants", () => {
       "failed",
       "cancelled",
     ]);
+    expect(EDITOR_EXPORT_SORT_MODES).toEqual(["shot_index", "canvas_x", "manual"]);
+    expect(EDITOR_EXPORT_STATUSES).toEqual(["queued", "running", "succeeded", "failed"]);
   });
 
   it("includes Phase 1 project and upload asset contracts", () => {
@@ -113,6 +131,7 @@ describe("shared domain constants", () => {
       expect.arrayContaining(["image/png", "video/mp4", "text/markdown"]),
     );
     expect(ASSET_PREVIEW_KINDS).toEqual(["image", "video", "text", "metadata"]);
+    expect(EDITOR_PACKAGE_MIME_TYPE).toBe("application/zip");
   });
 
   it("exports Phase 2 canvas persistence contracts", () => {
@@ -166,6 +185,12 @@ describe("shared domain constants", () => {
       negativePromptNotes: "no logos",
       characterAssetIds: ["node_character_1"],
       locationAssetId: "node_location_1",
+      selectedImageNodeId: "image_1",
+      selectedVideoNodeId: "video_1",
+    };
+    const sceneFrameData: SceneFrameNodeData = {
+      collapsed: true,
+      shotNodeIds: ["shot_1"],
     };
     const characterData: CharacterAssetNodeData = {
       name: "Ari",
@@ -219,6 +244,8 @@ describe("shared domain constants", () => {
     const deleteResult: DeleteCanvasNodeResult = { deleted: true, nodeId: node.id };
 
     expect(node.dataJson.visualDescription).toContain("launch platform");
+    expect(shotData.selectedImageNodeId).toBe("image_1");
+    expect(sceneFrameData.collapsed).toBe(true);
     expect(characterData.consistencyPrompt).toContain("same face");
     expect(locationData.visualStyle).toBe("clean hard sci-fi");
     expect(updateInput.status).toBe("draft");
@@ -681,6 +708,17 @@ describe("shared domain constants", () => {
         motionStrength: "medium",
       },
     };
+    const batchShotsCreateInput: CreateBatchShotsToImagesJobInput = {
+      operation: "batch_shots_to_images",
+      sourceNodeIds: ["shot_1", "shot_missing"],
+      provider: "image2",
+      model: "gpt-image-2",
+      aspectRatio: "16:9",
+      count: 2,
+      providerParams: {
+        quality: "medium",
+      },
+    };
     const batchParentInput: BatchImagesToVideosJobInput = {
       operation: "batch_images_to_videos",
       projectId: "project_1",
@@ -692,6 +730,17 @@ describe("shared domain constants", () => {
       aspectRatio: batchCreateInput.videoAspectRatio,
       resolution: batchCreateInput.resolution,
       providerParams: batchCreateInput.videoProviderParams,
+    };
+    const batchShotsParentInput: BatchShotsToImagesJobInput = {
+      operation: "batch_shots_to_images",
+      projectId: "project_1",
+      sourceNodeIds: batchShotsCreateInput.sourceNodeIds,
+      childJobIds: ["job_4"],
+      provider: batchShotsCreateInput.provider ?? "mock-image",
+      model: batchShotsCreateInput.model,
+      aspectRatio: batchShotsCreateInput.aspectRatio,
+      count: batchShotsCreateInput.count,
+      providerParams: batchShotsCreateInput.providerParams,
     };
     const output: GeneratedMediaJobOutput = {
       operation: "shot_to_image",
@@ -833,6 +882,29 @@ describe("shared domain constants", () => {
       ],
       queueSummary,
     };
+    const batchShotsResult: CreateBatchShotsToImagesJobResult = {
+      jobs: [
+        {
+          id: "job_4",
+          projectId: "project_1",
+          operation: "shot_to_image",
+          status: "queued",
+          provider: shotInput.provider,
+          model: shotInput.model,
+          sourceNodeId: "shot_1",
+          inputJson: shotInput,
+          createdAt: "2026-06-12T00:00:04.000Z",
+          updatedAt: "2026-06-12T00:00:04.000Z",
+        },
+      ],
+      skipped: [
+        {
+          nodeId: "shot_missing",
+          reason: "Shot node not found",
+        },
+      ],
+      queueSummary,
+    };
     const imageNodeData: ImageNodeData = {
       assetId: output.assetId,
       prompt: output.prompt,
@@ -869,7 +941,9 @@ describe("shared domain constants", () => {
     expect(videoTaskResult.status).toBe("provider_waiting");
     expect(cancelInput.reason).toContain("cancelled");
     expect(batchParentInput.childJobIds).toEqual(["job_2"]);
+    expect(batchShotsParentInput.childJobIds).toEqual(["job_4"]);
     expect(batchResult.skipped[0]?.reason).toContain("source image");
+    expect(batchShotsResult.skipped[0]?.reason).toContain("Shot node");
     expect(listResult.jobs.map((job) => job.operation)).toEqual([
       "shot_to_image",
       "image_to_video",
@@ -890,6 +964,182 @@ describe("shared domain constants", () => {
       targets: expect.arrayContaining([
         expect.objectContaining({ targetNodeId: "image_2", assetId: "asset_image_2" }),
       ]),
+    });
+  });
+
+  it("exports Phase 11 editor export inputs, package outputs, and canvas package data", () => {
+    const createInput: CreateEditorExportInput = {
+      videoNodeIds: ["video_1", "video_2", "video_3"],
+      sortMode: "manual",
+      includeStoryboardCsv: true,
+      includeSubtitles: false,
+    };
+    const manifest: TimelineManifest = {
+      version: "1.0",
+      projectId: "project_1",
+      editorExportId: "export_1",
+      title: "Rain Night Chase",
+      aspectRatio: "16:9",
+      fps: 24,
+      sortMode: createInput.sortMode,
+      assets: [
+        {
+          id: "asset_video_1",
+          type: "video",
+          url: "clips/shot_001.mp4",
+          mimeType: "video/mp4",
+          durationMs: 4000,
+        },
+      ],
+      tracks: [
+        {
+          id: "track_video_1",
+          type: "video",
+          items: [
+            {
+              id: "item_video_1",
+              assetId: "asset_video_1",
+              sourceNodeId: "video_1",
+              startMs: 0,
+              durationMs: 4000,
+              metadata: {
+                shotNumber: "001",
+              },
+            },
+          ],
+        },
+      ],
+      metadata: {
+        selectedVideoNodeIds: createInput.videoNodeIds,
+      },
+    };
+    const jobInput: EditorExportJobInput = {
+      operation: "editor_export",
+      projectId: "project_1",
+      editorExportId: "export_1",
+      videoNodeIds: createInput.videoNodeIds,
+      sortMode: createInput.sortMode,
+      includeStoryboardCsv: true,
+      includeSubtitles: false,
+      fps: 24,
+      aspectRatio: "16:9",
+      clips: [
+        {
+          videoNodeId: "video_1",
+          videoNodeTitle: "Shot 001 video",
+          videoAssetId: "asset_video_1",
+          filename: "clips/shot_001.mp4",
+          durationMs: 4000,
+          shotNodeId: "shot_1",
+          shotNumber: "001",
+          manualIndex: 0,
+        },
+      ],
+    };
+    const packageOutput: EditorExportPackageOutput = {
+      storageKey: "project_1/editor-exports/export_1.zip",
+      mimeType: "application/zip",
+      bytesBase64: "UEsDBAoAAAA=",
+      sizeBytes: 128,
+      timeline: manifest,
+      storyboardCsv: "index,filename,videoNodeId,assetId\n1,clips/shot_001.mp4,video_1,asset_video_1\n",
+      clips: [
+        {
+          index: 1,
+          filename: "clips/shot_001.mp4",
+          videoNodeId: "video_1",
+          videoAssetId: "asset_video_1",
+          durationMs: 4000,
+        },
+      ],
+    };
+    const exportRecord: EditorExportRecord = {
+      id: "export_1",
+      projectId: "project_1",
+      packageAssetId: "asset_package_1",
+      status: "succeeded",
+      timelineJson: manifest,
+      storyboardCsv: packageOutput.storyboardCsv,
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:01.000Z",
+    };
+    const createResult: CreateEditorExportResult = {
+      export: exportRecord,
+      job: {
+        id: "job_export_1",
+        projectId: "project_1",
+        operation: "editor_export",
+        status: "queued",
+        provider: "mock-editor",
+        model: "zip-v1",
+        inputJson: jobInput,
+        createdAt: "2026-06-13T00:00:00.000Z",
+        updatedAt: "2026-06-13T00:00:00.000Z",
+      },
+      queueSummary: {
+        counts: {
+          queued: 1,
+          running: 0,
+          provider_waiting: 0,
+          succeeded: 0,
+          failed: 0,
+          cancelled: 0,
+        },
+        queued: 1,
+        running: 0,
+        failed: 0,
+      },
+    };
+    const jobOutput: EditorExportJobOutput = {
+      operation: "editor_export",
+      editorExportId: "export_1",
+      packageAssetId: "asset_package_1",
+      packageNodeId: "node_package_1",
+      edgeIds: ["edge_sent_1"],
+      selectedVideoNodeIds: createInput.videoNodeIds,
+      sortMode: createInput.sortMode,
+      timeline: manifest,
+      storyboardCsv: packageOutput.storyboardCsv,
+      clips: packageOutput.clips,
+      completedAt: "2026-06-13T00:00:02.000Z",
+      localEditor: {
+        attemptedAt: "2026-06-13T00:00:03.000Z",
+        sent: true,
+        editorUrl: "http://localhost:4300/open/export_1",
+      },
+    };
+    const sendResult: EditorExportSendResult = {
+      export: exportRecord,
+      sent: false,
+      errorMessage: "LOCAL_EDITOR_URL is not configured",
+    };
+    const packageNodeData: EditorPackageNodeData = {
+      packageName: "Rain Night Chase export",
+      format: "zip",
+      assetId: exportRecord.packageAssetId,
+      editorExportId: exportRecord.id,
+      packageAssetId: exportRecord.packageAssetId,
+      selectedVideoNodeIds: createInput.videoNodeIds,
+      sortMode: createInput.sortMode,
+      clipCount: 3,
+      localEditorError: sendResult.errorMessage,
+      exportedAt: jobOutput.completedAt,
+    };
+
+    expect(createInput.sortMode).toBe("manual");
+    expect(jobInput.operation).toBe("editor_export");
+    expect(manifest.tracks[0]?.items[0]).toMatchObject({
+      sourceNodeId: "video_1",
+      durationMs: 4000,
+    });
+    expect(packageOutput.mimeType).toBe(EDITOR_PACKAGE_MIME_TYPE);
+    expect(createResult.job.inputJson.videoNodeIds).toEqual(["video_1", "video_2", "video_3"]);
+    expect(jobOutput.edgeIds).toEqual(["edge_sent_1"]);
+    expect(sendResult.errorMessage).toContain("LOCAL_EDITOR_URL");
+    expect(packageNodeData).toMatchObject({
+      editorExportId: "export_1",
+      packageAssetId: "asset_package_1",
+      sortMode: "manual",
     });
   });
 });

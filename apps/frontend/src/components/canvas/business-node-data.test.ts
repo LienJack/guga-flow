@@ -100,6 +100,23 @@ describe("business node data helpers", () => {
     expect(model.detail).toContain("Location ref");
   });
 
+  it("builds compact card props for collapsed SceneFrames", () => {
+    const data = createDefaultBusinessNodeData("scene_frame");
+    const model = buildBusinessNodeCardModel({
+      ...baseNode,
+      type: "scene_frame",
+      title: "Frame 1",
+      dataJson: {
+        ...data,
+        collapsed: true,
+      },
+    });
+
+    expect(data.collapsed).toBe(false);
+    expect(model.collapsed).toBe(true);
+    expect(model.h).toBeLessThan(baseNode.height);
+  });
+
   it("keeps Character and Location consistency fields available", () => {
     const character = createDefaultBusinessNodeData("character_asset");
     const location = createDefaultBusinessNodeData("location_asset");

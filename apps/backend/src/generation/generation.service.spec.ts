@@ -3,6 +3,8 @@ import type {
   CanvasEdgeRecord,
   CanvasLoadResult,
   CanvasNodeRecord,
+  EditorExportJobInput,
+  EditorExportPackageOutput,
   ImageProviderCatalogResult,
   ImageNodeData,
   ImageToVideoJobInput,
@@ -10,6 +12,7 @@ import type {
   ShotPromptCompositionResult,
   ShotNodeData,
   ShotToImageJobInput,
+  VideoNodeData,
   VideoProviderCatalogResult,
 } from "@guga-flow/shared-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -74,6 +77,7 @@ function createPrismaMock() {
         generationJob({
           id: args.where.id,
           status: args.data.status,
+          targetNodeId: args.data.targetNodeId ?? null,
           errorMessage: args.data.errorMessage ?? null,
           outputJson: args.data.outputJson ?? null,
         }),
@@ -88,6 +92,7 @@ function createPrismaMock() {
     canvasNode: {
       update: vi.fn(async (_args: MockUpdateArgs) => ({})),
       findFirst: vi.fn(async (_args?: MockFindArgs): Promise<CanvasNodeRecord | null> => null),
+      findMany: vi.fn(async (_args?: MockFindArgs): Promise<CanvasNodeRecord[]> => []),
       create: vi.fn(async (_args: MockCreateArgs): Promise<CanvasNodeRecord> =>
         canvasNode<ImageNodeData>("image_1", "image", "Generated Image", {}),
       ),
@@ -96,6 +101,9 @@ function createPrismaMock() {
       create: vi.fn(async (_args: MockCreateArgs): Promise<CanvasEdgeRecord> =>
         canvasEdge("edge_1", "shot_1", "image_1", "generated_image"),
       ),
+    },
+    editorExport: {
+      update: vi.fn(async (_args: MockUpdateArgs) => ({})),
     },
   };
 
@@ -115,7 +123,10 @@ function createCanvasServiceMock() {
 
 function createPromptServiceMock() {
   return {
-    composeShotPrompt: vi.fn(async (): Promise<ShotPromptCompositionResult> => composedShotPrompt()),
+    composeShotPrompt: vi.fn(
+      async (_projectId: string, _shotNodeId: string): Promise<ShotPromptCompositionResult> =>
+        composedShotPrompt(),
+    ),
   };
 }
 
@@ -143,6 +154,20 @@ function createAssetsServiceMock() {
         };
       },
     ),
+    createPackageAsset: vi.fn(async (_projectId: string, input: { packageOutput: EditorExportPackageOutput }) => ({
+      id: "asset_package_1",
+      projectId: "project_1",
+      type: "package",
+      purpose: "editor_package",
+      storageKey: input.packageOutput.storageKey,
+      mimeType: input.packageOutput.mimeType,
+      originalFilename: input.packageOutput.storageKey.split("/").pop() ?? "export.zip",
+      sizeBytes: input.packageOutput.sizeBytes ?? 256,
+      metadataJson: {},
+      previewKind: "metadata",
+      previewUrl: `/api/v1/projects/project_1/assets/asset_package_1/preview`,
+      createdAt: createdAt.toISOString(),
+    })),
   };
 }
 
@@ -499,6 +524,54 @@ describe("GenerationService", () => {
     ]);
   });
 
+  it("creates batch shot-to-image child jobs and reports skipped nodes", async () => {
+    promptService.composeShotPrompt.mockImplementation(async (_projectId, shotNodeId) => {
+      if (shotNodeId === "missing_shot") {
+        throw new NotFoundException("Shot node not found");
+      }
+      return composedShotPrompt();
+    });
+
+    const result = await service.createBatchShotsToImagesJobs("project_1", {
+      operation: "batch_shots_to_images",
+      sourceNodeIds: ["shot_1", "missing_shot", "shot_1"],
+      provider: "mock-image",
+      aspectRatio: "16:9",
+      count: 1,
+      providerParams: {},
+    });
+
+    expect(promptService.composeShotPrompt).toHaveBeenCalledTimes(2);
+    expect(prisma.generationJob.create).toHaveBeenCalledTimes(1);
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        operation: "shot_to_image",
+        status: "queued",
+        provider: "mock-image",
+        model: "mock-image-v1",
+        sourceNodeId: "shot_1",
+        inputJson: expect.objectContaining({
+          operation: "shot_to_image",
+          shotNodeId: "shot_1",
+          prompt: "Image prompt: hero at console",
+          aspectRatio: "16:9",
+          count: 1,
+        }),
+      }),
+    });
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "shot_1" },
+      data: { status: "queued" },
+    });
+    expect(result.jobs).toHaveLength(1);
+    expect(result.skipped).toEqual([
+      expect.objectContaining({
+        nodeId: "missing_shot",
+        reason: expect.stringContaining("Shot node not found"),
+      }),
+    ]);
+  });
+
   it("lists project jobs with queue summary counts", async () => {
     prisma.generationJob.findMany.mockResolvedValueOnce([
       generationJob({ id: "job_2", status: "running" }),
@@ -533,7 +606,7 @@ describe("GenerationService", () => {
     expect(prisma.generationJob.findFirst).toHaveBeenCalledWith({
       where: {
         status: { in: ["queued", "provider_waiting"] },
-        operation: { in: ["shot_to_image", "image_to_video"] },
+        operation: { in: ["shot_to_image", "image_to_video", "editor_export"] },
       },
       orderBy: { createdAt: "asc" },
     });
@@ -549,6 +622,42 @@ describe("GenerationService", () => {
       where: { id: "shot_1" },
       data: { status: "running" },
     });
+    expect(result.job?.status).toBe("running");
+  });
+
+  it("claims queued editor export jobs and marks the export running", async () => {
+    prisma.generationJob.findFirst.mockResolvedValue(
+      generationJob({
+        operation: "editor_export",
+        status: "queued",
+        provider: "mock-editor",
+        model: "zip-v1",
+        sourceNodeId: null,
+        inputJson: editorExportInput(),
+      }),
+    );
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "editor_export",
+        status: "running",
+        provider: "mock-editor",
+        model: "zip-v1",
+        sourceNodeId: null,
+        inputJson: editorExportInput(),
+      }),
+    );
+
+    const result = await service.claimNextJob();
+
+    expect(prisma.editorExport.update).toHaveBeenCalledWith({
+      where: { id: "export_1" },
+      data: { status: "running", errorMessage: null },
+    });
+    expect(prisma.canvasNode.update).not.toHaveBeenCalledWith({
+      where: { id: expect.any(String) },
+      data: { status: "running" },
+    });
+    expect(result.job?.operation).toBe("editor_export");
     expect(result.job?.status).toBe("running");
   });
 
@@ -649,6 +758,41 @@ describe("GenerationService", () => {
     expect(result.status).toBe("cancelled");
   });
 
+  it("cancels editor export jobs and marks the export failed without touching media nodes", async () => {
+    prisma.generationJob.findFirst.mockResolvedValue(
+      generationJob({
+        operation: "editor_export",
+        status: "running",
+        provider: "mock-editor",
+        model: "zip-v1",
+        sourceNodeId: null,
+        inputJson: editorExportInput(),
+      }),
+    );
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "editor_export",
+        status: "cancelled",
+        provider: "mock-editor",
+        model: "zip-v1",
+        sourceNodeId: null,
+        inputJson: editorExportInput(),
+      }),
+    );
+
+    const result = await service.cancelJob("project_1", "job_1");
+
+    expect(prisma.editorExport.update).toHaveBeenCalledWith({
+      where: { id: "export_1" },
+      data: {
+        status: "failed",
+        errorMessage: "EXPORT_CANCELLED: Editor export was cancelled",
+      },
+    });
+    expect(prisma.canvasNode.update).not.toHaveBeenCalled();
+    expect(result.status).toBe("cancelled");
+  });
+
   it("does not cancel jobs that leave active state before the cancel transaction", async () => {
     prisma.generationJob.findFirst.mockResolvedValue(
       generationJob({
@@ -700,6 +844,53 @@ describe("GenerationService", () => {
     });
     expect(prisma.canvasNode.update).toHaveBeenCalledWith({
       where: { id: "shot_1" },
+      data: { status: "failed" },
+    });
+    expect(result.status).toBe("failed");
+  });
+
+  it("marks editor export jobs failed without touching media node state", async () => {
+    const failure: ProviderFailure = {
+      provider: "mock-editor",
+      code: "ZIP_FAILED",
+      message: "zip failed",
+      retryable: false,
+    };
+    prisma.generationJob.findUnique
+      .mockResolvedValueOnce(
+        generationJob({
+          operation: "editor_export",
+          status: "running",
+          provider: "mock-editor",
+          model: "zip-v1",
+          sourceNodeId: null,
+          inputJson: editorExportInput(),
+        }),
+      )
+      .mockResolvedValueOnce(
+        generationJob({
+          operation: "editor_export",
+          status: "failed",
+          provider: "mock-editor",
+          model: "zip-v1",
+          sourceNodeId: null,
+          errorMessage: "ZIP_FAILED: zip failed",
+          inputJson: editorExportInput(),
+          outputJson: { error: failure },
+        }),
+      );
+
+    const result = await service.failJob("job_1", failure);
+
+    expect(prisma.editorExport.update).toHaveBeenCalledWith({
+      where: { id: "export_1" },
+      data: {
+        status: "failed",
+        errorMessage: "ZIP_FAILED: zip failed",
+      },
+    });
+    expect(prisma.canvasNode.update).not.toHaveBeenCalledWith({
+      where: { id: expect.any(String) },
       data: { status: "failed" },
     });
     expect(result.status).toBe("failed");
@@ -821,6 +1012,168 @@ describe("GenerationService", () => {
     });
     expect(result.status).toBe("succeeded");
     expect(result.targetNodeId).toBe("image_1");
+  });
+
+  it("completes editor export jobs with package asset, package node, and editor edges", async () => {
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "editor_export",
+        status: "running",
+        provider: "mock-editor",
+        model: "zip-v1",
+        sourceNodeId: null,
+        inputJson: editorExportInput(),
+      }),
+    );
+    prisma.canvasNode.findMany.mockResolvedValue([
+      {
+        ...canvasNode<VideoNodeData>("video_1", "video", "Shot 001 video", {
+          assetId: "asset_video_1",
+        }),
+        x: 120,
+        y: 40,
+        width: 320,
+        height: 180,
+        zIndex: 2,
+      },
+      {
+        ...canvasNode<VideoNodeData>("video_2", "video", "Shot 002 video", {
+          assetId: "asset_video_2",
+        }),
+        x: 480,
+        y: 80,
+        width: 320,
+        height: 180,
+        zIndex: 3,
+      },
+    ]);
+    prisma.canvasNode.create.mockResolvedValue(
+      canvasNode("package_node_1", "editor_package", "Editor Package export_1", {
+        packageAssetId: "asset_package_1",
+      }),
+    );
+    prisma.canvasEdge.create
+      .mockResolvedValueOnce(canvasEdge("edge_editor_1", "video_1", "package_node_1", "sent_to_editor"))
+      .mockResolvedValueOnce(canvasEdge("edge_editor_2", "video_2", "package_node_1", "sent_to_editor"));
+    prisma.generationJob.update.mockImplementation(async (args: MockUpdateArgs) =>
+      generationJob({
+        id: args.where.id,
+        operation: "editor_export",
+        status: args.data.status,
+        provider: "mock-editor",
+        model: "zip-v1",
+        targetNodeId: args.data.targetNodeId,
+        inputJson: editorExportInput(),
+        outputJson: args.data.outputJson,
+      }),
+    );
+
+    const result = await service.succeedJob("job_1", undefined, undefined, editorExportPackageOutput());
+
+    expect(assetsService.createPackageAsset).toHaveBeenCalledWith(
+      "project_1",
+      expect.objectContaining({
+        packageOutput: expect.objectContaining({
+          storageKey: "project_1/editor-exports/export_1.zip",
+          mimeType: "application/zip",
+        }),
+        metadataJson: expect.objectContaining({
+          generationJobId: "job_1",
+          editorExportId: "export_1",
+          selectedVideoNodeIds: ["video_1", "video_2"],
+          sortMode: "manual",
+        }),
+      }),
+      expect.any(Object),
+    );
+    expect(prisma.canvasNode.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "editor_package",
+        status: "succeeded",
+        x: 940,
+        y: 40,
+        dataJson: expect.objectContaining({
+          editorExportId: "export_1",
+          packageAssetId: "asset_package_1",
+          selectedVideoNodeIds: ["video_1", "video_2"],
+          clipCount: 2,
+        }),
+      }),
+    });
+    expect(prisma.canvasEdge.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sourceNodeId: "video_1",
+          targetNodeId: "package_node_1",
+          relation: "sent_to_editor",
+        }),
+      }),
+    );
+    expect(prisma.editorExport.update).toHaveBeenCalledWith({
+      where: { id: "export_1" },
+      data: expect.objectContaining({
+        status: "succeeded",
+        packageAssetId: "asset_package_1",
+        storyboardCsv: "index,filename\n1,clips/shot_001.mp4\n2,clips/shot_002.mp4\n",
+        errorMessage: null,
+      }),
+    });
+    expect(prisma.generationJob.update).toHaveBeenCalledWith({
+      where: { id: "job_1" },
+      data: expect.objectContaining({
+        status: "succeeded",
+        targetNodeId: "package_node_1",
+        outputJson: expect.objectContaining({
+          operation: "editor_export",
+          editorExportId: "export_1",
+          packageAssetId: "asset_package_1",
+          edgeIds: ["edge_editor_1", "edge_editor_2"],
+        }),
+        errorMessage: null,
+      }),
+    });
+    expect(result.status).toBe("succeeded");
+    expect(result.targetNodeId).toBe("package_node_1");
+  });
+
+  it("rejects editor export completion when package clips do not match the claimed input", async () => {
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "editor_export",
+        status: "running",
+        provider: "mock-editor",
+        model: "zip-v1",
+        sourceNodeId: null,
+        inputJson: editorExportInput(),
+      }),
+    );
+    const badPackage = editorExportPackageOutput({
+      clips: [
+        {
+          index: 1,
+          filename: "clips/shot_001.mp4",
+          videoNodeId: "video_other",
+          videoAssetId: "asset_video_1",
+          durationMs: 5000,
+        },
+        {
+          index: 2,
+          filename: "clips/shot_002.mp4",
+          videoNodeId: "video_2",
+          videoAssetId: "asset_video_2",
+          durationMs: 4000,
+        },
+      ],
+    });
+
+    await expect(service.succeedJob("job_1", undefined, undefined, badPackage)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+
+    expect(assetsService.createPackageAsset).not.toHaveBeenCalled();
+    expect(prisma.canvasNode.create).not.toHaveBeenCalled();
+    expect(prisma.editorExport.update).not.toHaveBeenCalled();
   });
 
   it("completes multi-output shot-to-image jobs with one asset, node, and edge per output", async () => {
@@ -1032,6 +1385,54 @@ describe("GenerationService", () => {
     expect(result.retryJob.id).toBe("retry_job");
     expect(result.retryJob.status).toBe("queued");
   });
+
+  it("retries failed editor export jobs and restores the export queue state", async () => {
+    const failedInput = editorExportInput({ sortMode: "canvas_x" });
+    prisma.generationJob.findFirst.mockResolvedValue(
+      generationJob({
+        id: "failed_export_job",
+        operation: "editor_export",
+        status: "failed",
+        provider: "mock-editor",
+        model: "zip-v1",
+        sourceNodeId: null,
+        inputJson: failedInput,
+        errorMessage: "zip failed",
+      }),
+    );
+    prisma.generationJob.create.mockResolvedValue(
+      generationJob({
+        id: "retry_export_job",
+        operation: "editor_export",
+        status: "queued",
+        provider: "mock-editor",
+        model: "zip-v1",
+        sourceNodeId: null,
+        inputJson: failedInput,
+      }),
+    );
+
+    const result = await service.retryJob("project_1", "failed_export_job");
+
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        operation: "editor_export",
+        status: "queued",
+        sourceNodeId: null,
+        inputJson: expect.objectContaining({
+          operation: "editor_export",
+          editorExportId: "export_1",
+          sortMode: "canvas_x",
+        }),
+      }),
+    });
+    expect(prisma.editorExport.update).toHaveBeenCalledWith({
+      where: { id: "export_1" },
+      data: { status: "queued", errorMessage: null },
+    });
+    expect(result.retryJob.id).toBe("retry_export_job");
+  });
 });
 
 function shotToImageInput(overrides: Partial<ShotToImageJobInput> = {}): ShotToImageJobInput {
@@ -1076,6 +1477,127 @@ function videoInput(overrides: Partial<ImageToVideoJobInput> = {}): ImageToVideo
     provider: "mock-video",
     model: "mock-video-v1",
     providerParams: {},
+    ...overrides,
+  };
+}
+
+function editorExportInput(overrides: Partial<EditorExportJobInput> = {}): EditorExportJobInput {
+  return {
+    operation: "editor_export",
+    projectId: "project_1",
+    editorExportId: "export_1",
+    videoNodeIds: ["video_1", "video_2"],
+    sortMode: "manual",
+    includeStoryboardCsv: true,
+    includeSubtitles: false,
+    fps: 24,
+    aspectRatio: "16:9",
+    clips: [
+      {
+        videoNodeId: "video_1",
+        videoNodeTitle: "Shot 001 video",
+        videoAssetId: "asset_video_1",
+        storageKey: "project_1/clips/shot_001.mp4",
+        mimeType: "video/mp4",
+        filename: "clips/shot_001.mp4",
+        durationMs: 5000,
+        shotNodeId: "shot_1",
+        shotNumber: "001",
+        canvasX: 120,
+        canvasY: 40,
+      },
+      {
+        videoNodeId: "video_2",
+        videoNodeTitle: "Shot 002 video",
+        videoAssetId: "asset_video_2",
+        storageKey: "project_1/clips/shot_002.mp4",
+        mimeType: "video/mp4",
+        filename: "clips/shot_002.mp4",
+        durationMs: 4000,
+        shotNodeId: "shot_2",
+        shotNumber: "002",
+        canvasX: 480,
+        canvasY: 80,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function editorExportPackageOutput(
+  overrides: Partial<EditorExportPackageOutput> = {},
+): EditorExportPackageOutput {
+  return {
+    storageKey: "project_1/editor-exports/export_1.zip",
+    mimeType: "application/zip",
+    bytesBase64: Buffer.from("zip-bytes").toString("base64"),
+    sizeBytes: 256,
+    timeline: {
+      version: "1.0",
+      projectId: "project_1",
+      editorExportId: "export_1",
+      title: "Rain Night Chase",
+      aspectRatio: "16:9",
+      fps: 24,
+      sortMode: "manual",
+      tracks: [
+        {
+          id: "track_video_1",
+          type: "video",
+          items: [
+            {
+              id: "item_video_1",
+              assetId: "asset_video_1",
+              sourceNodeId: "video_1",
+              startMs: 0,
+              durationMs: 5000,
+            },
+            {
+              id: "item_video_2",
+              assetId: "asset_video_2",
+              sourceNodeId: "video_2",
+              startMs: 5000,
+              durationMs: 4000,
+            },
+          ],
+        },
+      ],
+      assets: [
+        {
+          id: "asset_video_1",
+          type: "video",
+          url: "clips/shot_001.mp4",
+          localPath: "clips/shot_001.mp4",
+          mimeType: "video/mp4",
+          durationMs: 5000,
+        },
+        {
+          id: "asset_video_2",
+          type: "video",
+          url: "clips/shot_002.mp4",
+          localPath: "clips/shot_002.mp4",
+          mimeType: "video/mp4",
+          durationMs: 4000,
+        },
+      ],
+    },
+    storyboardCsv: "index,filename\n1,clips/shot_001.mp4\n2,clips/shot_002.mp4\n",
+    clips: [
+      {
+        index: 1,
+        filename: "clips/shot_001.mp4",
+        videoNodeId: "video_1",
+        videoAssetId: "asset_video_1",
+        durationMs: 5000,
+      },
+      {
+        index: 2,
+        filename: "clips/shot_002.mp4",
+        videoNodeId: "video_2",
+        videoAssetId: "asset_video_2",
+        durationMs: 4000,
+      },
+    ],
     ...overrides,
   };
 }

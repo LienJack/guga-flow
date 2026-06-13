@@ -10,6 +10,7 @@ describe("HealthController", () => {
 
     expect(health.status).toBe("ok");
     expect(health.providerMode.llm.selected).toBe("mock");
+    expect(health.providerMode.editor.localEditorConfigured).toBe(false);
     expect(JSON.stringify(health)).not.toContain("API_KEY");
   });
 
@@ -35,6 +36,20 @@ describe("HealthController", () => {
     expect(JSON.stringify(config)).not.toContain("sk-test-gemini");
     expect(JSON.stringify(config)).not.toContain("sk-test-seedance");
     expect(JSON.stringify(config)).not.toContain("sk-test-fal");
+  });
+
+  it("keeps local editor URL server-side while reporting configured state", () => {
+    const config = readAppConfig({
+      LOCAL_EDITOR_URL: "http://localhost:4300/editor-exports",
+    });
+
+    expect(Boolean(config.localEditorUrl)).toBe(true);
+    expect(JSON.stringify(config)).toContain("localEditorUrl");
+
+    const controller = new HealthController();
+    const health = controller.getHealth();
+    expect(health.providerMode.editor).toHaveProperty("localEditorConfigured");
+    expect(JSON.stringify(health)).not.toContain("4300/editor-exports");
   });
 
   it("fails fast for invalid numeric configuration", () => {

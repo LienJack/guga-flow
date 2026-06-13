@@ -736,6 +736,82 @@ describe("CanvasService", () => {
     expect(prisma.canvasNode.update).not.toHaveBeenCalled();
   });
 
+  it("creates derived-from variant edges between matching node types", async () => {
+    const sourceShot = canvasNode({
+      id: "shot_1",
+      tldrawShapeId: "shape:shot-1",
+      type: "shot",
+    });
+    const variantShot = canvasNode({
+      id: "shot_2",
+      tldrawShapeId: "shape:shot-2",
+      type: "shot",
+    });
+    prisma.canvasNode.findFirst.mockImplementation(async ({ where }) => {
+      if (where.id === "shot_1") {
+        return sourceShot;
+      }
+      if (where.id === "shot_2") {
+        return variantShot;
+      }
+      return null;
+    });
+    prisma.canvasEdge.create.mockResolvedValue(
+      canvasEdge({
+        id: "edge_variant",
+        sourceNodeId: "shot_1",
+        targetNodeId: "shot_2",
+        relation: "derived_from",
+      }),
+    );
+
+    const result = await service.createEdge("project_1", {
+      sourceNodeId: "shot_1",
+      targetNodeId: "shot_2",
+      relation: "derived_from",
+    });
+
+    expect(result.edge.relation).toBe("derived_from");
+    expect(result.updatedNodes).toEqual([]);
+    expect(prisma.canvasNode.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid derived-from variant edges", async () => {
+    const shotNode = canvasNode({
+      id: "shot_1",
+      type: "shot",
+    });
+    const imageNode = canvasNode({
+      id: "image_1",
+      type: "image",
+    });
+    prisma.canvasNode.findFirst.mockImplementation(async ({ where }) => {
+      if (where.id === "shot_1") {
+        return shotNode;
+      }
+      if (where.id === "image_1") {
+        return imageNode;
+      }
+      return null;
+    });
+
+    await expect(
+      service.createEdge("project_1", {
+        sourceNodeId: "shot_1",
+        targetNodeId: "shot_1",
+        relation: "derived_from",
+      }),
+    ).rejects.toThrow("Variant edges cannot reference the same node");
+
+    await expect(
+      service.createEdge("project_1", {
+        sourceNodeId: "shot_1",
+        targetNodeId: "image_1",
+        relation: "derived_from",
+      }),
+    ).rejects.toThrow("Variant edges must connect nodes of the same type");
+  });
+
   it("deletes semantic edges and rolls back shot references", async () => {
     const characterNode = canvasNode({
       id: "character_1",

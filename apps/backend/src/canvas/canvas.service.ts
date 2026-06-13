@@ -668,6 +668,16 @@ export class CanvasService {
     targetNode: CanvasNodeModel,
     relation: CanvasEdgeRelation,
   ): void {
+    if (relation === "derived_from") {
+      if (sourceNode.id === targetNode.id) {
+        throw new BadRequestException("Variant edges cannot reference the same node");
+      }
+      if (sourceNode.type !== targetNode.type) {
+        throw new BadRequestException("Variant edges must connect nodes of the same type");
+      }
+      return;
+    }
+
     if (relation === "references_character") {
       if (sourceNode.type !== "character_asset" || targetNode.type !== "shot") {
         throw new BadRequestException("Character references must connect a character asset to a shot");

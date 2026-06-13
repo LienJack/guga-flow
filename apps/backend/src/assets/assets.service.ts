@@ -12,9 +12,11 @@ import {
   type AssetPreviewKind,
   type AssetPurpose,
   type AssetType,
+  type EditorExportPackageOutput,
   type GeneratedMediaProviderOutput,
   type UploadableAssetMimeType,
 } from "@guga-flow/shared-types";
+import { EDITOR_PACKAGE_MIME_TYPE } from "@guga-flow/shared-types";
 
 import { PrismaService } from "../prisma/prisma.service";
 import { LocalStorageService } from "../storage/local-storage.service";
@@ -50,6 +52,11 @@ export interface AssetPreviewPayload {
 export interface CreateGeneratedAssetInput {
   providerOutput: GeneratedMediaProviderOutput;
   purpose: Extract<AssetPurpose, "shot_keyframe" | "shot_clip">;
+  metadataJson?: Record<string, unknown>;
+}
+
+export interface CreatePackageAssetInput {
+  packageOutput: EditorExportPackageOutput;
   metadataJson?: Record<string, unknown>;
 }
 
@@ -208,6 +215,47 @@ export class AssetsService {
           referenceAssetIds: output.referenceAssetIds,
           providerAssetId: output.assetId,
           providerTaskId: output.providerTaskId,
+          ...(input.metadataJson ?? {}),
+        },
+      },
+    });
+
+    return this.toAssetRecord(asset);
+  }
+
+  async createPackageAsset(
+    projectId: string,
+    input: CreatePackageAssetInput,
+    client: AssetPrismaClient = this.prisma,
+  ): Promise<AssetDetail> {
+    await this.ensureProjectExists(projectId, client);
+
+    const output = input.packageOutput;
+    if (output.mimeType !== EDITOR_PACKAGE_MIME_TYPE) {
+      throw new BadRequestException("Editor package asset must be a zip file");
+    }
+    if (!output.bytesBase64) {
+      throw new BadRequestException("Editor package asset requires package bytes");
+    }
+
+    const buffer = this.validateGeneratedBytes(base64ToBuffer(output.bytesBase64));
+    const stored = await this.storage.writeObject({
+      storageKey: output.storageKey,
+      buffer,
+    });
+    const asset = await client.asset.create({
+      data: {
+        projectId,
+        type: "package",
+        purpose: "editor_package",
+        storageKey: stored.storageKey,
+        mimeType: output.mimeType,
+        originalFilename: originalFilenameFromStorageKey(stored.storageKey),
+        sizeBytes: stored.sizeBytes,
+        metadataJson: {
+          previewKind: "metadata",
+          editorExportId: output.timeline.editorExportId,
+          clipCount: output.clips.length,
           ...(input.metadataJson ?? {}),
         },
       },

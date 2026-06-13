@@ -75,4 +75,24 @@ describe("BusinessNodeCard", () => {
       h: 220,
     });
   });
+
+  it("renders collapsed SceneFrame cards without the detail footer", () => {
+    const html = renderToStaticMarkup(
+      <BusinessNodeCard
+        nodeId="frame_1"
+        nodeType="scene_frame"
+        title="Frame 1"
+        status="draft"
+        summary="Opening sequence"
+        detail="Location ref"
+        collapsed
+        w={360}
+        h={112}
+      />,
+    );
+
+    expect(html).toContain("collapsed");
+    expect(html).toContain("Opening sequence");
+    expect(html).not.toContain("Location ref");
+  });
 });

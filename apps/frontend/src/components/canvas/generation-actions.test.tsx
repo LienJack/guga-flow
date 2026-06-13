@@ -3,16 +3,23 @@ import type {
   GenerationJobRecord,
   ImageNodeData,
   ImageProviderCatalogResult,
+  ShotNodeData,
 } from "@guga-flow/shared-types";
 import { renderToStaticMarkup } from "react-dom/server";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { buildGenerationJobInputForOperation, GenerationActions } from "./generation-actions";
+import {
+  buildBatchShotsToImagesJobInput,
+  buildGenerationJobInputForOperation,
+  GenerationActions,
+  GenerationBatchActions,
+} from "./generation-actions";
 
 vi.mock("../../lib/api", () => ({
   cancelGenerationJob: vi.fn(),
   createBatchImagesToVideosJobs: vi.fn(),
+  createBatchShotsToImagesJobs: vi.fn(),
   createGenerationJob: vi.fn(),
   getImageProviderCatalog: vi.fn(),
   getVideoProviderCatalog: vi.fn(),
@@ -132,6 +139,60 @@ describe("GenerationActions", () => {
       durationSeconds: 5,
       resolution: "1080p",
       videoProviderParams: { cameraFixed: true },
+    });
+  });
+
+  it("renders batch image actions for selected Shot nodes", () => {
+    const html = renderToStaticMarkup(
+      <GenerationBatchActions
+        generationJobs={[]}
+        projectId="project_1"
+        shotNodes={[
+          node<ShotNodeData>("shot_1", "shot", { imagePrompt: "frame one" }),
+          node<ShotNodeData>("shot_2", "shot", { imagePrompt: "frame two" }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Batch Image");
+    expect(html).toContain("2/2");
+    expect(html).toContain("Mock Image");
+  });
+
+  it("renders batch video actions for selected Image nodes", () => {
+    const html = renderToStaticMarkup(
+      <GenerationBatchActions
+        generationJobs={[generationJob("job_running", "image_2", "running")]}
+        projectId="project_1"
+        imageNodes={[
+          node<ImageNodeData>("image_1", "image", { assetId: "asset_image_1" }),
+          node<ImageNodeData>("image_2", "image", { assetId: "asset_image_2" }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Batch Video");
+    expect(html).toContain("1/2");
+    expect(html).toContain("Mock Video");
+  });
+
+  it("builds batch shot image inputs with selected provider settings", () => {
+    expect(
+      buildBatchShotsToImagesJobInput(["shot_1", "shot_2"], {
+        provider: "image2",
+        model: "gpt-image-2",
+        aspectRatio: "16:9",
+        count: 2,
+        providerParams: { quality: "medium" },
+      }),
+    ).toEqual({
+      operation: "batch_shots_to_images",
+      sourceNodeIds: ["shot_1", "shot_2"],
+      provider: "image2",
+      model: "gpt-image-2",
+      aspectRatio: "16:9",
+      count: 2,
+      providerParams: { quality: "medium" },
     });
   });
 });

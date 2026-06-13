@@ -1,7 +1,17 @@
 "use client";
 
 import type { ProjectAspectRatio, ProjectListItem } from "@guga-flow/shared-types";
-import { Copy, FolderOpen, PenLine, Plus, Trash2 } from "lucide-react";
+import {
+  Clapperboard,
+  Copy,
+  FolderOpen,
+  LayoutList,
+  PenLine,
+  Plus,
+  Settings,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
 
@@ -137,131 +147,175 @@ export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectD
   return (
     <main className="project-dashboard" aria-label="Project dashboard">
       <header className="dashboard-topbar">
-        <div>
-          <div className="brand">guga-flow</div>
-          <h1>Projects</h1>
+        <div className="brand-cluster">
+          <div className="brand-mark" aria-hidden="true">
+            <Sparkles size={16} />
+          </div>
+          <div>
+            <div className="brand">GugaFlow</div>
+            <div className="project-title">AI short-drama factory</div>
+          </div>
         </div>
-        <div className="save-state">Mock-ready</div>
+        <div className="window-dots" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
       </header>
 
-      <section className="dashboard-grid">
-        <form className="project-form" onSubmit={handleSubmit}>
-          <h2>{editingProject ? "Edit project" : "New project"}</h2>
-          <label>
-            <span>Title</span>
-            <input
-              name="title"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Novel video project"
-              required
-            />
-          </label>
-          <label>
-            <span>Description</span>
-            <textarea
-              name="description"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              rows={4}
-            />
-          </label>
-          <label>
-            <span>Default aspect</span>
-            <select
-              name="defaultAspectRatio"
-              value={defaultAspectRatio}
-              onChange={(event) => setDefaultAspectRatio(event.target.value as ProjectAspectRatio)}
-            >
-              <option value="9:16">9:16</option>
-              <option value="16:9">16:9</option>
-              <option value="1:1">1:1</option>
-            </select>
-          </label>
-          {error ? <p className="form-error">{error}</p> : null}
-          <div className="form-actions">
-            <button className="primary-action" type="submit" disabled={busy}>
-              <Plus size={16} aria-hidden="true" />
-              {editingProject ? "Save project" : "Create project"}
+      <section className="dashboard-shell">
+        <aside className="app-rail dashboard-rail" aria-label="Application sections">
+          <div className="rail-logo" aria-hidden="true">
+            <Clapperboard size={22} />
+          </div>
+          <div className="rail-actions">
+            <button className="rail-button active" type="button" title="Projects">
+              <FolderOpen size={21} aria-hidden="true" />
             </button>
-            {editingProject ? (
-              <button className="ghost-action" type="button" onClick={resetForm}>
-                Cancel
-              </button>
-            ) : null}
+            <button className="rail-button" type="button" title="Scripts">
+              <LayoutList size={21} aria-hidden="true" />
+            </button>
+            <button className="rail-button" type="button" title="Settings">
+              <Settings size={21} aria-hidden="true" />
+            </button>
           </div>
-        </form>
+        </aside>
 
-        <section className="project-list-panel" aria-label="Project list">
-          <div className="panel-heading">
-            <h2>Recent work</h2>
-            <span>{projects.length} projects</span>
-          </div>
-          {projects.length === 0 ? (
-            <div className="empty-state">
-              <strong>No projects yet</strong>
-              <span>Create one to open the canvas workspace.</span>
+        <section className="dashboard-workspace">
+          <div className="dashboard-heading">
+            <div>
+              <h1>Projects</h1>
+              <p>管理你的短剧项目、分镜画布和素材生产。</p>
             </div>
-          ) : (
-            <ul className="project-list">
-              {projects.map((project) => (
-                <li className="project-row" key={project.id}>
-                  <div className="project-row-main">
-                    <strong>{project.title}</strong>
-                    <span>
-                      {project.defaultAspectRatio} · {project.assetCount} assets
-                    </span>
-                  </div>
-                  <div className="project-row-actions">
-                    <button
-                      className="icon-action"
-                      type="button"
-                      title="Open canvas"
-                      onClick={() => router.push(`/projects/${project.id}/canvas`)}
-                    >
-                      <FolderOpen size={16} aria-hidden="true" />
-                    </button>
-                    <button
-                      className="icon-action"
-                      type="button"
-                      title="Edit project"
-                      onClick={() => startEdit(project)}
-                    >
-                      <PenLine size={16} aria-hidden="true" />
-                    </button>
-                    <button
-                      className="icon-action"
-                      type="button"
-                      title="Duplicate project"
-                      onClick={() => void handleDuplicate(project.id)}
-                      disabled={busy}
-                    >
-                      <Copy size={16} aria-hidden="true" />
-                    </button>
-                    {pendingDeleteProjectId === project.id ? (
-                      <button
-                        className="danger-action"
-                        type="button"
-                        onClick={() => void handleDelete(project.id)}
-                        disabled={busy}
-                      >
-                        Confirm
-                      </button>
-                    ) : (
-                      <button
-                        className="icon-action danger"
-                        type="button"
-                        title="Delete project"
-                        onClick={() => setPendingDeleteProjectId(project.id)}
-                      >
-                        <Trash2 size={16} aria-hidden="true" />
-                      </button>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+            <div className="save-state">Mock-ready</div>
+          </div>
+
+          <section className="dashboard-grid">
+            <form className="project-form" onSubmit={handleSubmit}>
+              <div>
+                <div className="panel-kicker">Project setup</div>
+                <h2>{editingProject ? "Edit project" : "New project"}</h2>
+              </div>
+              <label>
+                <span>Title</span>
+                <input
+                  name="title"
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder="Novel video project"
+                  required
+                />
+              </label>
+              <label>
+                <span>Description</span>
+                <textarea
+                  name="description"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  rows={4}
+                />
+              </label>
+              <label>
+                <span>Default aspect</span>
+                <select
+                  name="defaultAspectRatio"
+                  value={defaultAspectRatio}
+                  onChange={(event) => setDefaultAspectRatio(event.target.value as ProjectAspectRatio)}
+                >
+                  <option value="9:16">9:16</option>
+                  <option value="16:9">16:9</option>
+                  <option value="1:1">1:1</option>
+                </select>
+              </label>
+              {error ? <p className="form-error">{error}</p> : null}
+              <div className="form-actions">
+                <button className="primary-action" type="submit" disabled={busy}>
+                  <Plus size={16} aria-hidden="true" />
+                  {editingProject ? "Save project" : "Create project"}
+                </button>
+                {editingProject ? (
+                  <button className="ghost-action" type="button" onClick={resetForm}>
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+            </form>
+
+            <section className="project-list-panel" aria-label="Project list">
+              <div className="panel-heading">
+                <div>
+                  <div className="panel-kicker">Studio board</div>
+                  <h2>Recent work</h2>
+                </div>
+                <span>{projects.length} projects</span>
+              </div>
+              {projects.length === 0 ? (
+                <div className="empty-state">
+                  <strong>No projects yet</strong>
+                  <span>Create one to open the canvas workspace.</span>
+                </div>
+              ) : (
+                <ul className="project-list">
+                  {projects.map((project) => (
+                    <li className="project-row" key={project.id}>
+                      <div className="project-row-main">
+                        <strong>{project.title}</strong>
+                        <span>
+                          {project.defaultAspectRatio} · {project.assetCount} assets
+                        </span>
+                      </div>
+                      <div className="project-row-actions">
+                        <button
+                          className="icon-action"
+                          type="button"
+                          title="Open canvas"
+                          onClick={() => router.push(`/projects/${project.id}/canvas`)}
+                        >
+                          <FolderOpen size={16} aria-hidden="true" />
+                        </button>
+                        <button
+                          className="icon-action"
+                          type="button"
+                          title="Edit project"
+                          onClick={() => startEdit(project)}
+                        >
+                          <PenLine size={16} aria-hidden="true" />
+                        </button>
+                        <button
+                          className="icon-action"
+                          type="button"
+                          title="Duplicate project"
+                          onClick={() => void handleDuplicate(project.id)}
+                          disabled={busy}
+                        >
+                          <Copy size={16} aria-hidden="true" />
+                        </button>
+                        {pendingDeleteProjectId === project.id ? (
+                          <button
+                            className="danger-action"
+                            type="button"
+                            onClick={() => void handleDelete(project.id)}
+                            disabled={busy}
+                          >
+                            Confirm
+                          </button>
+                        ) : (
+                          <button
+                            className="icon-action danger"
+                            type="button"
+                            title="Delete project"
+                            onClick={() => setPendingDeleteProjectId(project.id)}
+                          >
+                            <Trash2 size={16} aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </section>
         </section>
       </section>
     </main>

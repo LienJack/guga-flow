@@ -7,6 +7,7 @@ import type {
   ImageProviderCatalogItem,
   ImageProviderCatalogResult,
   ImageNodeData,
+  ShotNodeData,
   VideoProviderCatalogItem,
   VideoProviderCatalogResult,
 } from "@guga-flow/shared-types";
@@ -16,6 +17,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   cancelGenerationJob,
   createBatchImagesToVideosJobs,
+  createBatchShotsToImagesJobs,
   createGenerationJob,
   getImageProviderCatalog,
   getVideoProviderCatalog,
@@ -319,22 +321,34 @@ export function GenerationActions({
 
 export function GenerationBatchActions({
   generationJobs,
-  imageNodes,
+  imageNodes = [],
   onGenerationChanged,
   projectId,
+  shotNodes = [],
 }: {
   generationJobs: GenerationJobRecord[];
-  imageNodes: Array<CanvasNodeRecord<ImageNodeData>>;
+  imageNodes?: Array<CanvasNodeRecord<ImageNodeData>>;
   projectId: string;
+  shotNodes?: Array<CanvasNodeRecord<ShotNodeData>>;
   onGenerationChanged?(queueSummary?: GenerationQueueSummary): void;
 }) {
+  const [imageCatalog, setImageCatalog] = useState<ImageProviderCatalogResult | null>(null);
   const [videoCatalog, setVideoCatalog] = useState<VideoProviderCatalogResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<string | null>(null);
+  const [imageSettings, setImageSettings] = useState<ImageGenerationFormSettings>(() =>
+    settingsForProvider(FALLBACK_IMAGE_PROVIDER),
+  );
   const [videoSettings, setVideoSettings] = useState<VideoGenerationFormSettings>(() =>
     videoSettingsForProvider(FALLBACK_VIDEO_PROVIDER),
   );
+  const imageProviders = imageCatalog?.providers.length ? imageCatalog.providers : [FALLBACK_IMAGE_PROVIDER];
+  const selectedImageProvider =
+    imageProviders.find((provider) => provider.id === imageSettings.provider) ??
+    imageProviders.find((provider) => provider.enabled) ??
+    FALLBACK_IMAGE_PROVIDER;
+  const normalizedImageSettings = normalizeImageSettings(imageSettings, selectedImageProvider);
   const videoProviders = videoCatalog?.providers.length ? videoCatalog.providers : [FALLBACK_VIDEO_PROVIDER];
   const selectedVideoProvider =
     videoProviders.find((provider) => provider.id === videoSettings.videoProvider) ??
@@ -346,7 +360,27 @@ export function GenerationBatchActions({
       .filter((job) => job.sourceNodeId && ACTIVE_STATUSES.has(job.status))
       .map((job) => job.sourceNodeId as string),
   );
+  const availableShotNodes = shotNodes.filter((node) => !activeSourceNodeIds.has(node.id));
   const availableImageNodes = imageNodes.filter((node) => !activeSourceNodeIds.has(node.id));
+
+  useEffect(() => {
+    let cancelled = false;
+    getImageProviderCatalog()
+      .then((result) => {
+        if (!cancelled) {
+          setImageCatalog(result);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setImageCatalog({ providers: [FALLBACK_IMAGE_PROVIDER] });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -367,11 +401,35 @@ export function GenerationBatchActions({
     };
   }, []);
 
-  if (!imageNodes.length) {
+  if (!shotNodes.length && !imageNodes.length) {
     return null;
   }
 
-  async function handleBatchGenerate() {
+  async function handleBatchGenerateImages() {
+    setBusy(true);
+    setError(null);
+    setLastResult(null);
+
+    try {
+      const result = await createBatchShotsToImagesJobs(
+        projectId,
+        buildBatchShotsToImagesJobInput(
+          availableShotNodes.map((node) => node.id),
+          normalizedImageSettings,
+        ),
+      );
+      setLastResult(
+        `${result.jobs.length} images queued${result.skipped.length ? `, ${result.skipped.length} skipped` : ""}`,
+      );
+      onGenerationChanged?.(result.queueSummary);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Batch image request failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleBatchGenerateVideos() {
     setBusy(true);
     setError(null);
     setLastResult(null);
@@ -398,35 +456,66 @@ export function GenerationBatchActions({
     }
   }
 
-  const disabled = busy || !selectedVideoProvider.enabled || availableImageNodes.length === 0;
+  const imageDisabled = busy || !selectedImageProvider.enabled || availableShotNodes.length === 0;
+  const videoDisabled = busy || !selectedVideoProvider.enabled || availableImageNodes.length === 0;
 
   return (
-    <section className="generation-panel" aria-label="Batch generation">
-      <div className="section-heading-row">
-        <h3>Batch Video</h3>
-        <span className="status-chip">{availableImageNodes.length}/{imageNodes.length}</span>
-      </div>
-      <VideoGenerationSettings
-        busy={busy}
-        providers={videoProviders}
-        selectedProvider={selectedVideoProvider}
-        settings={normalizedVideoSettings}
-        onSettingsChange={setVideoSettings}
-      />
-      <div className="generation-actions">
-        <button
-          className="primary-action compact"
-          type="button"
-          disabled={disabled}
-          onClick={() => void handleBatchGenerate()}
-        >
-          <Video size={15} aria-hidden="true" />
-          Batch Video
-        </button>
-      </div>
+    <>
+      {shotNodes.length ? (
+        <section className="generation-panel" aria-label="Batch image generation">
+          <div className="section-heading-row">
+            <h3>Batch Image</h3>
+            <span className="status-chip">{availableShotNodes.length}/{shotNodes.length}</span>
+          </div>
+          <ImageGenerationSettings
+            busy={busy}
+            providers={imageProviders}
+            selectedProvider={selectedImageProvider}
+            settings={normalizedImageSettings}
+            onSettingsChange={setImageSettings}
+          />
+          <div className="generation-actions">
+            <button
+              className="primary-action compact"
+              type="button"
+              disabled={imageDisabled}
+              onClick={() => void handleBatchGenerateImages()}
+            >
+              <ImagePlus size={15} aria-hidden="true" />
+              Batch Image
+            </button>
+          </div>
+        </section>
+      ) : null}
+      {imageNodes.length ? (
+        <section className="generation-panel" aria-label="Batch video generation">
+          <div className="section-heading-row">
+            <h3>Batch Video</h3>
+            <span className="status-chip">{availableImageNodes.length}/{imageNodes.length}</span>
+          </div>
+          <VideoGenerationSettings
+            busy={busy}
+            providers={videoProviders}
+            selectedProvider={selectedVideoProvider}
+            settings={normalizedVideoSettings}
+            onSettingsChange={setVideoSettings}
+          />
+          <div className="generation-actions">
+            <button
+              className="primary-action compact"
+              type="button"
+              disabled={videoDisabled}
+              onClick={() => void handleBatchGenerateVideos()}
+            >
+              <Video size={15} aria-hidden="true" />
+              Batch Video
+            </button>
+          </div>
+        </section>
+      ) : null}
       {lastResult ? <p className="generation-status">{lastResult}</p> : null}
       {error ? <p className="form-error">{error}</p> : null}
-    </section>
+    </>
   );
 }
 
@@ -773,6 +862,21 @@ export function buildGenerationJobInputForOperation(
   return {
     operation,
     sourceNodeId,
+    provider: imageSettings.provider,
+    model: imageSettings.model,
+    aspectRatio: imageSettings.aspectRatio,
+    count: imageSettings.count,
+    providerParams: imageSettings.providerParams,
+  };
+}
+
+export function buildBatchShotsToImagesJobInput(
+  sourceNodeIds: string[],
+  imageSettings: ImageGenerationFormSettings = settingsForProvider(FALLBACK_IMAGE_PROVIDER),
+) {
+  return {
+    operation: "batch_shots_to_images" as const,
+    sourceNodeIds,
     provider: imageSettings.provider,
     model: imageSettings.model,
     aspectRatio: imageSettings.aspectRatio,

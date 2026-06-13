@@ -26,6 +26,9 @@ export type UploadableAssetMimeType = (typeof UPLOADABLE_ASSET_MIME_TYPES)[numbe
 export const ASSET_PREVIEW_KINDS = ["image", "video", "text", "metadata"] as const;
 export type AssetPreviewKind = (typeof ASSET_PREVIEW_KINDS)[number];
 
+export const EDITOR_PACKAGE_MIME_TYPE = "application/zip" as const;
+export type EditorPackageMimeType = typeof EDITOR_PACKAGE_MIME_TYPE;
+
 export interface AssetRecord {
   id: string;
   projectId: string;
