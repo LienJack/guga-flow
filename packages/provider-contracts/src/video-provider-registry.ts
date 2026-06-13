@@ -13,6 +13,7 @@ export interface VideoProviderRegistryOptions {
   fetchImpl?: RealVideoProviderOptions["fetchImpl"];
   seedanceBaseUrl?: string;
   falBaseUrl?: string;
+  additionalProviders?: VideoProvider[];
 }
 
 class StaticVideoProviderRegistry implements VideoProviderRegistry {
@@ -58,5 +59,6 @@ export function createVideoProviderRegistry(
       baseUrl: options.falBaseUrl,
       fetchImpl: options.fetchImpl,
     }),
+    ...(options.additionalProviders ?? []),
   ]);
 }

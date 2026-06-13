@@ -189,6 +189,13 @@ export function buildStoryboardImportPlan(input: BuildStoryboardImportPlanInput)
         synopsis: input.storyboard.logline,
         language: "zh",
         storyboardTitle: input.storyboard.title,
+        ...(input.storyboard.storySeedReferences?.length
+          ? {
+              storySeedReferences: input.storyboard.storySeedReferences.map((reference) => ({
+                ...reference,
+              })),
+            }
+          : {}),
         ...optionalStoryBlueprintData(input.storyboard),
         storyboardImport: provenance(input, "novel", version),
       },
@@ -450,6 +457,9 @@ function characterNodeData(
     wardrobe: character.costume ?? "",
     consistencyPrompt: character.identityPrompt,
     identityPrompt: character.identityPrompt,
+    ...(character.referenceAssetIds?.length
+      ? { referenceAssetIds: uniqueStrings(character.referenceAssetIds) }
+      : {}),
     ...optionalCharacterLifecycleData(character),
     assetKey: storyboardImportAssetKey("character_asset", {
       name: character.name,
@@ -474,6 +484,9 @@ function locationNodeData(
     consistencyPrompt: location.locationPrompt,
     locationPrompt: location.locationPrompt,
     locationType: location.type,
+    ...(location.referenceAssetIds?.length
+      ? { referenceAssetIds: uniqueStrings(location.referenceAssetIds) }
+      : {}),
     assetKey: storyboardImportAssetKey("location_asset", {
       name: location.name,
       locationType: location.type,
@@ -556,6 +569,7 @@ function shotNodeData(
       : {}),
     characterTempIds: uniqueStrings(shot.characterTempIds),
     locationTempId: shot.locationTempId ?? "",
+    ...(shot.referenceAssetIds?.length ? { referenceAssetIds: uniqueStrings(shot.referenceAssetIds) } : {}),
     storyboardImport: provenance(input, "shot", version, {
       sourceTempId: shot.tempId,
       sceneTempId: scene.tempId,

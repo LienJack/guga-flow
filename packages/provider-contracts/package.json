@@ -18,7 +18,8 @@
     "test": "vitest run src"
   },
   "dependencies": {
-    "@guga-flow/shared-types": "workspace:*"
+    "@guga-flow/shared-types": "workspace:*",
+    "typescript": "6.0.3"
   },
   "devDependencies": {
     "typescript": "6.0.3",

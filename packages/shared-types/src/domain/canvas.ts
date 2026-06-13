@@ -1,4 +1,5 @@
 import type { AssetListItem } from "./assets";
+import type { EditorExportPreset, GenerationCreativeSettings, ResolvedGenerationSettings } from "./generation";
 
 export const CANVAS_NODE_TYPES = [
   "novel",
@@ -31,6 +32,7 @@ export type Phase3CanvasNodeType = (typeof PHASE_3_CANVAS_NODE_TYPES)[number];
 
 export const CANVAS_EDGE_RELATIONS = [
   "derived_from",
+  "story_seed",
   "belongs_to_scene",
   "references_character",
   "references_location",
@@ -101,6 +103,14 @@ export interface StoryBlueprintNodeData {
   adaptationNotes?: string;
 }
 
+export interface StorySeedReferenceData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  assetId?: string;
+  imageNodeId?: string;
+  label?: string;
+  prompt?: string;
+}
+
 export interface CharacterLifecycleStageData {
   [key: string]: CanvasSnapshotJson | undefined;
   stageId: string;
@@ -119,12 +129,21 @@ export interface CharacterStageReferenceData {
   stageId: string;
 }
 
+export interface AudioReferenceData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  assetId: string;
+  label?: string;
+  role?: "voice" | "narration" | "sound_effect" | "bgm" | "clip_audio";
+  sourceNodeId?: string;
+}
+
 export interface NovelNodeData {
   sourceText?: string;
   synopsis?: string;
   language?: string;
   storyboardTitle?: string;
   storyBlueprint?: StoryBlueprintNodeData;
+  storySeedReferences?: StorySeedReferenceData[];
 }
 
 export interface SceneFrameNodeData {
@@ -177,8 +196,12 @@ export interface ShotNodeData {
   locationTempId?: string;
   characterAssetIds?: string[];
   locationAssetId?: string;
+  referenceAssetIds?: string[];
+  audioAssetIds?: string[];
+  audioReferences?: AudioReferenceData[];
   selectedImageNodeId?: string;
   selectedVideoNodeId?: string;
+  generationSettings?: GenerationCreativeSettings;
 }
 
 export interface CharacterAssetNodeData {
@@ -194,6 +217,8 @@ export interface CharacterAssetNodeData {
   locked?: boolean;
   lockedFields?: string[];
   referenceAssetIds?: string[];
+  voiceAssetIds?: string[];
+  voiceReferences?: AudioReferenceData[];
   assetKey?: string;
 }
 
@@ -211,7 +236,7 @@ export interface LocationAssetNodeData {
 
 export interface GeneratedMediaNodeData {
   generationJobId?: string;
-  generationOperation?: "shot_to_image" | "image_to_video";
+  generationOperation?: "shot_to_image" | "image_refinement" | "image_to_video";
   generatedFromNodeId?: string;
   sourceNodeIds?: string[];
   referenceAssetIds?: string[];
@@ -219,6 +244,7 @@ export interface GeneratedMediaNodeData {
   model?: string;
   inputJson?: unknown;
   outputJson?: unknown;
+  generationSettings?: ResolvedGenerationSettings;
 }
 
 export interface ImageNodeData extends GeneratedMediaNodeData {
@@ -232,6 +258,8 @@ export interface VideoNodeData extends GeneratedMediaNodeData {
   assetId?: string;
   durationSeconds?: number;
   description?: string;
+  audioAssetIds?: string[];
+  audioReferences?: AudioReferenceData[];
 }
 
 export interface EditorPackageNodeData {
@@ -242,12 +270,16 @@ export interface EditorPackageNodeData {
   packageAssetId?: string;
   selectedVideoNodeIds?: string[];
   sortMode?: "shot_index" | "canvas_x" | "manual";
+  exportPreset?: EditorExportPreset;
+  sourceEditorExportId?: string;
   clipCount?: number;
   downloadUrl?: string;
   localEditorUrl?: string;
   localEditorError?: string;
   exportedAt?: string;
   notes?: string;
+  generationSettings?: ResolvedGenerationSettings;
+  packagingReferences?: unknown;
 }
 
 export interface Phase3CanvasNodeDataByType {

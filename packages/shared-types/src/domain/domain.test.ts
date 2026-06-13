@@ -2,22 +2,45 @@ import { describe, expect, it } from "vitest";
 
 import {
   ASSET_PREVIEW_KINDS,
+  ASSET_PURPOSES,
+  ASSET_TYPES,
+  AGENT_CANVAS_ACTION_KINDS,
+  AGENT_MEMORY_SCOPES,
+  AGENT_MEMORY_SOURCES,
   CANVAS_EDGE_RELATIONS,
   CANVAS_NODE_TYPES,
   CANVAS_SAVE_STATUSES,
   CREATIVE_AGENT_MODES,
   EDITOR_EXPORT_SORT_MODES,
+  EDITOR_EXPORT_PRESETS,
   EDITOR_EXPORT_STATUSES,
   EDITOR_PACKAGE_MIME_TYPE,
+  GENERATION_CONTINUITY_MODES,
+  GENERATION_CREATIVE_SETTING_KEYS,
   GENERATION_JOB_STATUSES,
   GENERATION_OPERATIONS,
+  GENERATION_PACKAGING_REFERENCE_STATUSES,
   IMAGE_PROVIDER_IDS,
   IMAGE_PROVIDER_MODES,
+  MANAGED_PROVIDER_KINDS,
   NOVEL_LANGUAGES,
   NOVEL_SOURCE_TYPES,
   PHASE_8_GENERATION_OPERATIONS,
   PHASE_3_CANVAS_NODE_TYPES,
+  PROVIDER_CREDENTIAL_UPDATE_ACTIONS,
+  PROVIDER_KINDS,
+  PROGRAMMABLE_PROVIDER_CREDENTIAL_INPUT_TYPES,
+  PROGRAMMABLE_PROVIDER_HTTP_METHODS,
+  PROGRAMMABLE_PROVIDER_OUTPUT_SOURCES,
+  PROGRAMMABLE_PROVIDER_VERSION_STATUSES,
+  PROVIDER_TEST_STATUSES,
   PROJECT_ASPECT_RATIOS,
+  SCRIPT_ADAPTATION_STRATEGIES,
+  SCRIPT_DRAFT_STATUSES,
+  SETTINGS_CENTER_MODULES,
+  SETTINGS_CENTER_MODULE_STATUSES,
+  SKILL_TEMPLATE_KINDS,
+  SKILL_TEMPLATE_VERSION_STATUSES,
   STORYBOARD_IMPORT_DUPLICATE_POLICIES,
   STORYBOARD_DRAFT_STATUSES,
   UPLOADABLE_ASSET_MIME_TYPES,
@@ -29,18 +52,33 @@ import {
   composeShotPrompt,
   findStoryboardImportLayoutOverlaps,
   hasStoryboardImportProvenance,
+  managedProviderId,
+  managedProviderKind,
+  normalizeGenerationCreativeSettings,
+  normalizeProviderConnectionTestInput,
+  normalizeUpdateProviderConfigInput,
+  programmableProviderId,
+  resolveGenerationSettings,
   type AssetListItem,
+  type AgentCanvasActionJobInput,
+  type AgentCanvasActionJobOutput,
+  type AgentMemoryListResult,
+  type AgentMemoryRecord,
   type BatchImagesToVideosJobInput,
   type BatchShotsToImagesJobInput,
+  type CharacterToImageJobInput,
   type CharacterAssetNodeData,
   type CanvasEdgeData,
   type CanvasEdgeRecord,
   type CanvasLoadResult,
   type CanvasNodeRecord,
+  type CanvasSnapshotJson,
   type CreateBatchImagesToVideosJobInput,
   type CreateBatchImagesToVideosJobResult,
   type CreateBatchShotsToImagesJobInput,
   type CreateBatchShotsToImagesJobResult,
+  type CreateAgentCanvasActionInput,
+  type CreateAgentCanvasActionResult,
   type CreateCanvasEdgeInput,
   type CreateCanvasEdgeResult,
   type CreateCreativeStoryboardInput,
@@ -59,34 +97,53 @@ import {
   type EditorExportRecord,
   type EditorExportSendResult,
   type EditorPackageNodeData,
+  type GenerationCreativeSettings,
   type GeneratedMediaJobOutput,
   type ImageProviderCatalogItem,
   type ImageProviderCatalogResult,
+  type ImageProviderManagementItem,
+  type ProgrammableProviderDefinitionSummary,
+  type ProgrammableProviderManifest,
   type GenerationJobListResult,
   type GenerationQueueSummary,
+  type ImageRefinementJobInput,
   type ImageNodeData,
   type ImageToVideoJobInput,
   type ImportStoryboardToCanvasInput,
   type ImportNovelSourceInput,
   type LocationAssetNodeData,
+  type LocationToImageJobInput,
   type NovelToStoryboardJobInput,
+  type NovelEventGraphRecord,
   type NovelToStoryboardJobOutput,
   type Phase3CanvasNodeRecord,
+  type ProjectListItem,
+  type ProjectRecord,
+  type RecallAgentMemoriesResult,
+  type ResolvedGenerationSettings,
   type SaveCanvasSnapshotInput,
   type SceneFrameNodeData,
   type SceneNodeData,
+  type ProjectSettingsSummaryResult,
+  type ProjectSettingsExportPayload,
+  type ProjectSettingsImportValidationResult,
   type ShotToImageJobInput,
   type ShotNodeData,
+  type ScriptDraftRecord,
+  type SkillTemplatePromptContext,
   type StoryboardDraftRecord,
   type StoryboardResult,
   type TimelineManifest,
   type UpdateCanvasNodeGeometryInput,
   type UpdateCanvasNodeInput,
+  type UndoAgentCanvasActionResult,
   type UpdateNovelDocumentInput,
   type UpdateStoryboardDraftInput,
   type VideoProviderCatalogItem,
   type VideoProviderCatalogResult,
+  type VideoProviderManagementItem,
   type VideoProviderTaskResult,
+  type VideoNodeData,
   type WorkerGenerationJobCancelInput,
   type WorkerGenerationJobWaitInput,
   validateStoryboardResult,
@@ -98,6 +155,7 @@ describe("shared domain constants", () => {
     expect(CANVAS_NODE_TYPES).toContain("editor_package");
     expect(CANVAS_EDGE_RELATIONS).toContain("generated_image");
     expect(CANVAS_EDGE_RELATIONS).toContain("generated_video");
+    expect(CANVAS_EDGE_RELATIONS).toContain("story_seed");
     expect(CANVAS_EDGE_RELATIONS).toContain("sent_to_editor");
   });
 
@@ -107,7 +165,17 @@ describe("shared domain constants", () => {
     );
     expect(GENERATION_OPERATIONS).toContain("novel_to_storyboard");
     expect(GENERATION_OPERATIONS).toContain("editor_export");
-    expect(PHASE_8_GENERATION_OPERATIONS).toEqual(["shot_to_image", "image_to_video"]);
+    expect(GENERATION_OPERATIONS).toContain("agent_canvas_action");
+    expect(AGENT_CANVAS_ACTION_KINDS).toEqual(["create_node", "update_node", "create_edge"]);
+    expect(AGENT_MEMORY_SCOPES).toEqual(["project", "agent"]);
+    expect(AGENT_MEMORY_SOURCES).toEqual(["manual", "agent_action", "system_summary"]);
+    expect(PHASE_8_GENERATION_OPERATIONS).toEqual([
+      "shot_to_image",
+      "character_to_image",
+      "location_to_image",
+      "image_refinement",
+      "image_to_video",
+    ]);
     expect(IMAGE_PROVIDER_IDS).toEqual(["mock-image", "image2", "banana"]);
     expect(IMAGE_PROVIDER_MODES).toEqual(["text_to_image", "image_to_image", "multi_reference"]);
     expect(VIDEO_PROVIDER_IDS).toEqual(["mock-video", "seedance", "happyhorse"]);
@@ -124,19 +192,535 @@ describe("shared domain constants", () => {
       "failed",
       "cancelled",
     ]);
+    expect(PROVIDER_KINDS).toEqual(["llm", "image", "video", "editor"]);
+    expect(MANAGED_PROVIDER_KINDS).toEqual(["image", "video"]);
+    expect(PROVIDER_CREDENTIAL_UPDATE_ACTIONS).toEqual(["unchanged", "set", "clear"]);
+    expect(PROVIDER_TEST_STATUSES).toEqual(["untested", "succeeded", "failed"]);
+    expect(PROGRAMMABLE_PROVIDER_VERSION_STATUSES).toEqual(["valid", "invalid"]);
+    expect(PROGRAMMABLE_PROVIDER_CREDENTIAL_INPUT_TYPES).toEqual(["password", "text", "url"]);
+    expect(PROGRAMMABLE_PROVIDER_HTTP_METHODS).toEqual(["GET", "POST"]);
+    expect(PROGRAMMABLE_PROVIDER_OUTPUT_SOURCES).toEqual(["url", "base64"]);
+    expect(SKILL_TEMPLATE_KINDS).toEqual(["story", "art", "production", "agent"]);
+    expect(SKILL_TEMPLATE_VERSION_STATUSES).toEqual(["valid", "invalid"]);
+    expect(SCRIPT_ADAPTATION_STRATEGIES).toEqual(["faithful", "short_drama", "visual_first"]);
+    expect(SCRIPT_DRAFT_STATUSES).toEqual(["draft", "selected", "exported"]);
+    expect(SETTINGS_CENTER_MODULES).toEqual([
+      "providers",
+      "prompts",
+      "project_defaults",
+      "data",
+      "files",
+      "version",
+    ]);
+    expect(SETTINGS_CENTER_MODULE_STATUSES).toEqual(["ready", "partial", "planned"]);
     expect(EDITOR_EXPORT_SORT_MODES).toEqual(["shot_index", "canvas_x", "manual"]);
+    expect(EDITOR_EXPORT_PRESETS).toEqual(["standard_zip", "gif_preview", "image_sequence", "hd_1080p"]);
     expect(EDITOR_EXPORT_STATUSES).toEqual(["queued", "running", "succeeded", "failed"]);
+    expect(GENERATION_CREATIVE_SETTING_KEYS).toEqual(
+      expect.arrayContaining([
+        "visualStyle",
+        "aspectRatio",
+        "visualManual",
+        "directorManual",
+        "subtitle",
+        "bgm",
+        "transition",
+        "stylePack",
+        "viralReference",
+        "continuity",
+        "talkingPhoto",
+        "marketing",
+      ]),
+    );
+    expect(GENERATION_CONTINUITY_MODES).toEqual(["standard", "match_cut", "one_take", "multi_image"]);
+    expect(GENERATION_PACKAGING_REFERENCE_STATUSES).toEqual([
+      "absent",
+      "requested_unresolved",
+      "available",
+    ]);
   });
 
   it("includes Phase 1 project and upload asset contracts", () => {
     expect(PROJECT_ASPECT_RATIOS).toEqual(["9:16", "16:9", "1:1"]);
     expect(NOVEL_SOURCE_TYPES).toEqual(["paste", "txt", "md"]);
     expect(NOVEL_LANGUAGES).toEqual(["zh", "en", "ja", "other"]);
-    expect(UPLOADABLE_ASSET_MIME_TYPES).toEqual(
-      expect.arrayContaining(["image/png", "video/mp4", "text/markdown"]),
+    expect(ASSET_TYPES).toEqual(["image", "video", "audio", "document", "package"]);
+    expect(ASSET_PURPOSES).toEqual(
+      expect.arrayContaining(["shot_audio", "voice_reference", "background_music"]),
     );
-    expect(ASSET_PREVIEW_KINDS).toEqual(["image", "video", "text", "metadata"]);
+    expect(UPLOADABLE_ASSET_MIME_TYPES).toEqual(
+      expect.arrayContaining(["image/png", "video/mp4", "audio/mpeg", "text/markdown"]),
+    );
+    expect(ASSET_PREVIEW_KINDS).toEqual(["image", "video", "audio", "text", "metadata"]);
     expect(EDITOR_PACKAGE_MIME_TYPE).toBe("application/zip");
+
+    const generationSettings: GenerationCreativeSettings = {
+      visualStyle: "cinematic noir",
+      aspectRatio: "9:16",
+      narrationLanguage: "zh-CN",
+      narrationAccent: "neutral",
+      visualManual: {
+        artStyle: "rainy noir short drama",
+        palette: "cyan shadows and amber signals",
+        negativeStyle: "no flat sitcom lighting",
+      },
+      directorManual: {
+        pacing: "slow-burn tension",
+        cameraLanguage: "controlled push-ins and restrained handheld",
+        performance: "quiet suspicion",
+      },
+      subtitle: { status: "requested_unresolved", label: "Burned-in captions" },
+      bgm: { status: "available", assetId: "asset_bgm_1", label: "Tense strings" },
+      transition: { status: "requested_unresolved", label: "Soft crossfade" },
+      stylePack: { status: "available", assetId: "asset_pack_1", label: "Drama cold open" },
+      viralReference: {
+        sourceSummary: "User-pasted platform-safe summary",
+        hook: "Open on an impossible choice",
+        pacing: "3-second hook, fast midpoint reversal",
+      },
+      continuity: {
+        mode: "one_take",
+        adjacentShotPrompt: "Keep the yellow coat in the same screen direction",
+      },
+      talkingPhoto: {
+        enabled: true,
+        consentConfirmed: true,
+        sourceAssetId: "asset_portrait_1",
+        scriptPrompt: "Short founder-style spoken CTA",
+      },
+      marketing: {
+        cover: { status: "requested_unresolved", label: "Vertical short-drama cover" },
+        callToAction: "Follow for the next episode",
+      },
+    };
+    const project: ProjectRecord = {
+      id: "project_1",
+      ownerUserId: "default-user",
+      title: "Rooftop Signal",
+      defaultAspectRatio: "9:16",
+      generationSettings,
+      createdAt: "2026-06-12T00:00:00.000Z",
+      updatedAt: "2026-06-12T00:00:00.000Z",
+    };
+    const createInput = {
+      title: project.title,
+      defaultAspectRatio: project.defaultAspectRatio,
+      generationSettings,
+    };
+    const listItem: ProjectListItem = {
+      ...project,
+      assetCount: 2,
+    };
+
+    expect(createInput.generationSettings.bgm?.assetId).toBe("asset_bgm_1");
+    expect(listItem.generationSettings?.stylePack?.label).toBe("Drama cold open");
+  });
+
+  it("models TF-17 settings center summary, export, and validation payloads", () => {
+    const summary: ProjectSettingsSummaryResult = {
+      project: {
+        id: "project_1",
+        title: "Rain Night",
+        defaultAspectRatio: "16:9",
+        generationSettingsCount: 3,
+      },
+      modules: [
+        {
+          module: "providers",
+          label: "Providers and Models",
+          status: "ready",
+          summary: "2 provider configs",
+          itemCount: 2,
+        },
+      ],
+      resourceCounts: {
+        canvasNodes: 4,
+        canvasEdges: 3,
+        assets: 5,
+        novelDocuments: 1,
+        storyboardDrafts: 1,
+        scriptDrafts: 1,
+        editorExports: 1,
+        skillTemplates: 4,
+        providerConfigs: 2,
+        programmableProviders: 1,
+      },
+      fileSummary: {
+        totalAssets: 5,
+        totalSizeBytes: 4096,
+        uploadStorageConfigured: true,
+        byType: [
+          { type: "image", count: 2, sizeBytes: 2048 },
+          { type: "audio", count: 1, sizeBytes: 2048 },
+        ],
+      },
+      version: {
+        service: "guga-flow",
+        appVersion: "0.1.0",
+        apiVersion: "v1",
+        generatedAt: "2026-06-13T00:00:00.000Z",
+      },
+    };
+    const settingsExport: ProjectSettingsExportPayload = {
+      version: "1.0",
+      exportedAt: "2026-06-13T00:00:00.000Z",
+      project: summary.project,
+      resourceCounts: summary.resourceCounts,
+      fileSummary: summary.fileSummary,
+      generationSettings: { visualStyle: "noir" },
+      providers: [
+        {
+          kind: "image",
+          provider: "image2",
+          enabled: true,
+          defaultModel: "gpt-image-2",
+          credentialConfigured: true,
+          credentialSource: "stored",
+          lastTestStatus: "succeeded",
+        },
+      ],
+      skillTemplates: [
+        {
+          kind: "art",
+          slug: "art-default",
+          displayName: "Art Skill",
+          enabled: true,
+          activeVersion: 2,
+          versionCount: 3,
+        },
+      ],
+    };
+    const validation: ProjectSettingsImportValidationResult = {
+      valid: true,
+      detectedVersion: "1.0",
+      issues: [],
+      summary: {
+        providers: 1,
+        skillTemplates: 1,
+        hasGenerationSettings: true,
+      },
+    };
+
+    expect(summary.modules[0]?.module).toBe("providers");
+    expect(settingsExport.providers[0]?.credentialConfigured).toBe(true);
+    expect(JSON.stringify(settingsExport)).not.toContain("sk-");
+    expect(validation.valid).toBe(true);
+  });
+
+  it("models TF-14 novel chapter event graph records", () => {
+    const graph: NovelEventGraphRecord = {
+      id: "event_graph_1",
+      projectId: "project_1",
+      novelDocumentId: "novel_1",
+      chapters: [
+        {
+          chapterIndex: 1,
+          title: "Chapter 1",
+          startOffset: 0,
+          endOffset: 120,
+          wordCount: 24,
+          summary: "The courier finds the signal.",
+        },
+      ],
+      events: [
+        {
+          eventId: "chapter_1_event_1",
+          title: "Chapter 1 event 1",
+          orderIndex: 1,
+          chapterIndex: 1,
+          sourceExcerpt: "The courier finds the signal under the overpass.",
+          summary: "The courier finds the signal under the overpass.",
+        },
+      ],
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:00.000Z",
+    };
+
+    expect(graph.events[0]?.chapterIndex).toBe(1);
+    expect(graph.events[0]?.sourceExcerpt).toContain("signal");
+  });
+
+  it("models TF-15 script draft records", () => {
+    const scriptDraft: ScriptDraftRecord = {
+      id: "script_1",
+      projectId: "project_1",
+      novelDocumentId: "novel_1",
+      version: 1,
+      title: "Rooftop Signal v1",
+      strategy: "short_drama",
+      status: "draft",
+      script: {
+        title: "Rooftop Signal v1",
+        logline: "A compact script draft.",
+        strategy: "short_drama",
+        scenes: [
+          {
+            sceneId: "script_scene_1",
+            orderIndex: 1,
+            title: "Opening",
+            summary: "Hero sees the signal.",
+            beats: [
+              {
+                beatId: "beat_1",
+                orderIndex: 1,
+                title: "Signal",
+                summary: "Hero sees the signal.",
+                eventIds: ["event_1"],
+              },
+            ],
+          },
+        ],
+      },
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:00.000Z",
+    };
+
+    expect(scriptDraft.script.scenes[0]?.beats[0]?.eventIds).toEqual(["event_1"]);
+  });
+
+  it("models TF-16 audio bindings across nodes and editor export clips", () => {
+    const character: CharacterAssetNodeData = {
+      name: "Hero",
+      voiceAssetIds: ["asset_voice_1"],
+      voiceReferences: [
+        {
+          assetId: "asset_voice_1",
+          label: "Hero voice",
+          role: "voice",
+          sourceNodeId: "character_1",
+        },
+      ],
+    };
+    const shot: ShotNodeData = {
+      shotNumber: "001",
+      audioAssetIds: ["asset_sfx_1"],
+      audioReferences: [
+        {
+          assetId: "asset_sfx_1",
+          label: "Signal tone",
+          role: "sound_effect",
+          sourceNodeId: "shot_1",
+        },
+      ],
+    };
+    const video: VideoNodeData = {
+      assetId: "asset_video_1",
+      audioAssetIds: ["asset_mix_1"],
+      audioReferences: [
+        {
+          assetId: "asset_mix_1",
+          label: "Clip mix",
+          role: "clip_audio",
+          sourceNodeId: "video_1",
+        },
+      ],
+    };
+    const jobInput: EditorExportJobInput = {
+      operation: "editor_export",
+      projectId: "project_1",
+      editorExportId: "export_audio",
+      videoNodeIds: ["video_1"],
+      sortMode: "manual",
+      exportPreset: "standard_zip",
+      includeStoryboardCsv: true,
+      includeSubtitles: false,
+      fps: 24,
+      aspectRatio: "16:9",
+      clips: [
+        {
+          videoNodeId: "video_1",
+          videoAssetId: "asset_video_1",
+          filename: "clips/shot_001.mp4",
+          audioReferences: [
+            {
+              assetId: "asset_sfx_1",
+              sourceNodeId: "shot_1",
+              sourceNodeType: "shot",
+              role: "sound_effect",
+              mimeType: "audio/mpeg",
+              durationMs: 1200,
+            },
+          ],
+        },
+      ],
+    };
+    const manifest: TimelineManifest = {
+      version: "1.0",
+      projectId: "project_1",
+      editorExportId: "export_audio",
+      title: "Audio Export",
+      aspectRatio: "16:9",
+      fps: 24,
+      sortMode: "manual",
+      exportPreset: "standard_zip",
+      assets: [
+        { id: "asset_video_1", type: "video", url: "clips/shot_001.mp4" },
+        { id: "asset_sfx_1", type: "audio", url: "asset://asset_sfx_1", mimeType: "audio/mpeg" },
+      ],
+      tracks: [
+        {
+          id: "track_video_1",
+          type: "video",
+          items: [
+            {
+              id: "item_video_1",
+              assetId: "asset_video_1",
+              sourceNodeId: "video_1",
+              startMs: 0,
+              durationMs: 4000,
+            },
+          ],
+        },
+        {
+          id: "track_audio_1",
+          type: "audio",
+          items: [
+            {
+              id: "item_audio_1",
+              assetId: "asset_sfx_1",
+              sourceNodeId: "shot_1",
+              startMs: 0,
+              durationMs: 1200,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(character.voiceAssetIds).toEqual(["asset_voice_1"]);
+    expect(shot.audioReferences?.[0]?.role).toBe("sound_effect");
+    expect(video.audioAssetIds).toEqual(["asset_mix_1"]);
+    expect(jobInput.clips[0]?.audioReferences?.[0]?.assetId).toBe("asset_sfx_1");
+    expect(manifest.assets[1]?.type).toBe("audio");
+    expect(manifest.tracks[1]?.type).toBe("audio");
+  });
+
+  it("resolves project generation defaults with Shot overrides", () => {
+    const resolved: ResolvedGenerationSettings = resolveGenerationSettings({
+      projectSettings: {
+        visualStyle: "cinematic noir",
+        aspectRatio: "9:16",
+        narrationLanguage: "zh-CN",
+        visualManual: {
+          artStyle: "rainy noir short drama",
+          palette: "cyan shadows and amber signals",
+          lighting: "motivated practicals",
+        },
+        directorManual: {
+          pacing: "slow-burn tension",
+          cameraLanguage: "controlled push-ins",
+          performance: "quiet suspicion",
+        },
+        subtitle: { status: "requested_unresolved", label: "Default subtitles" },
+        bgm: { assetId: "asset_bgm_1", label: "Default BGM" },
+        viralReference: {
+          hook: "Project hook",
+          complianceNote: "Manual summary only; no crawler import.",
+        },
+        continuity: {
+          mode: "match_cut",
+          transitionPrompt: "Match the door slam into thunder",
+        },
+        talkingPhoto: {
+          sourceAssetId: "asset_portrait_1",
+          consentConfirmed: true,
+        },
+        marketing: {
+          poster: { label: "Rainy station poster" },
+          callToAction: "Watch the full short",
+        },
+      },
+      shotSettings: {
+        aspectRatio: "16:9",
+        narrationAccent: "warm northern accent",
+        subtitle: { status: "absent", label: "No subtitles for this flashback" },
+        continuity: {
+          mode: "one_take",
+          adjacentShotPrompt: "Preserve screen direction into the next Shot",
+        },
+        visualManual: {
+          lens: "long lens compression",
+        },
+        directorManual: {
+          cameraLanguage: "locked-off surveillance angle",
+        },
+      },
+    });
+
+    expect(resolved.effective).toMatchObject({
+      visualStyle: "cinematic noir",
+      aspectRatio: "16:9",
+      narrationLanguage: "zh-CN",
+      narrationAccent: "warm northern accent",
+      visualManual: {
+        artStyle: "rainy noir short drama",
+        palette: "cyan shadows and amber signals",
+        lighting: "motivated practicals",
+        lens: "long lens compression",
+      },
+      directorManual: {
+        pacing: "slow-burn tension",
+        cameraLanguage: "locked-off surveillance angle",
+        performance: "quiet suspicion",
+      },
+      subtitle: { status: "absent" },
+      bgm: { status: "available", assetId: "asset_bgm_1" },
+      viralReference: { hook: "Project hook" },
+      continuity: { mode: "one_take", adjacentShotPrompt: "Preserve screen direction into the next Shot" },
+      talkingPhoto: { enabled: true, consentConfirmed: true, sourceAssetId: "asset_portrait_1" },
+      marketing: { poster: { status: "requested_unresolved", label: "Rainy station poster" } },
+    });
+    expect(resolved.sources).toMatchObject({
+      visualStyle: "project",
+      aspectRatio: "shot",
+      narrationAccent: "shot",
+      visualManual: "shot",
+      visualManualFields: {
+        artStyle: "project",
+        palette: "project",
+        lighting: "project",
+        lens: "shot",
+      },
+      directorManual: "shot",
+      directorManualFields: {
+        pacing: "project",
+        cameraLanguage: "shot",
+        performance: "project",
+      },
+      bgm: "project",
+      subtitle: "shot",
+      viralReference: "project",
+      continuity: "shot",
+      talkingPhoto: "project",
+      marketing: "project",
+    });
+    expect(
+      normalizeGenerationCreativeSettings({
+        aspectRatio: "4:3",
+        visualManual: {
+          artStyle: "  painterly noir  ",
+          palette: "",
+          lighting: " ",
+          composition: "wide negative space",
+        },
+        directorManual: {
+          pacing: "",
+          cameraLanguage: "  slow push-ins  ",
+          performance: " ",
+        },
+        bgm: { label: "Need music" },
+        continuity: { mode: "unsupported", transitionPrompt: "  Smooth bridge  " },
+        talkingPhoto: { enabled: false, consentConfirmed: false, voicePrompt: "  calm presenter  " },
+        marketing: { cover: { label: "  Episode cover  " }, promo: {} },
+      }),
+    ).toEqual({
+      visualManual: { artStyle: "painterly noir", composition: "wide negative space" },
+      directorManual: { cameraLanguage: "slow push-ins" },
+      bgm: { status: "requested_unresolved", label: "Need music" },
+      continuity: { transitionPrompt: "Smooth bridge" },
+      talkingPhoto: { enabled: true, voicePrompt: "calm presenter" },
+      marketing: { cover: { status: "requested_unresolved", label: "Episode cover" } },
+    });
   });
 
   it("exports Phase 2 canvas persistence contracts", () => {
@@ -385,6 +969,9 @@ describe("shared domain constants", () => {
       audience: "short drama viewers",
       stylePrompt: "rainy neon thriller",
       targetDurationSeconds: 45,
+      referenceAssetIds: ["asset_seed_1"],
+      referenceImageNodeIds: ["image_seed_1"],
+      referencePrompt: "preserve the reference subject silhouette",
     };
     const jobInput: NovelToStoryboardJobInput = {
       operation: "novel_to_storyboard",
@@ -394,6 +981,9 @@ describe("shared domain constants", () => {
       audience: creativeInput.audience,
       stylePrompt: creativeInput.stylePrompt,
       targetDurationSeconds: creativeInput.targetDurationSeconds,
+      referenceAssetIds: creativeInput.referenceAssetIds,
+      referenceImageNodeIds: creativeInput.referenceImageNodeIds,
+      referencePrompt: creativeInput.referencePrompt,
       provider: "mock-llm",
       model: "mock-storyboard",
     };
@@ -401,6 +991,8 @@ describe("shared domain constants", () => {
       operation: "novel_to_storyboard",
       novelDocumentId: "novel_1",
       storyboardDraftId: "draft_1",
+      referenceAssetIds: ["asset_seed_1"],
+      referenceImageNodeIds: ["image_seed_1"],
       provider: "mock-llm",
       model: "mock-storyboard",
       completedAt: "2026-06-12T00:01:00.000Z",
@@ -437,6 +1029,130 @@ describe("shared domain constants", () => {
     expect(updateDraftInput.storyboard.characters[0]?.tempId).toBe("char_hero");
     expect(creativeResult.job.inputJson.mode).toBe("advanced");
     expect(creativeResult.job.outputJson?.storyboardDraftId).toBe("draft_1");
+  });
+
+  it("exports TF-11 agent canvas action audit contracts", () => {
+    const createInput: CreateAgentCanvasActionInput = {
+      message: "create shot: heroine sees a glowing subway entrance",
+      selectedNodeId: "shot_previous",
+      canvasX: 480,
+      canvasY: 240,
+    };
+    const jobInput: AgentCanvasActionJobInput = {
+      operation: "agent_canvas_action",
+      projectId: "project_1",
+      provider: "local-agent",
+      model: "deterministic-canvas-actions-v1",
+      ...createInput,
+    };
+    const previous = canvasNode<Record<string, CanvasSnapshotJson>>("shot_previous", "shot", "Old title", {
+      shotNumber: "1",
+      visualDescription: "Old description",
+    });
+    const createdNode = canvasNode<Record<string, CanvasSnapshotJson>>(
+      "shot_agent_1",
+      "shot",
+      "Glowing subway entrance",
+      {
+        visualDescription: "heroine sees a glowing subway entrance",
+        agentAction: { jobId: "job_1", message: createInput.message },
+      },
+    );
+    const jobOutput: AgentCanvasActionJobOutput = {
+      operation: "agent_canvas_action",
+      actionKind: "create_node",
+      message: createInput.message,
+      summary: "Created Shot node Glowing subway entrance",
+      createdNodes: [{ nodeId: createdNode.id, type: "shot", title: createdNode.title }],
+      updatedNodes: [
+        {
+          nodeId: previous.id,
+          title: "Old title",
+          previous: {
+            nodeId: previous.id,
+            tldrawShapeId: previous.tldrawShapeId,
+            type: previous.type,
+            title: previous.title,
+            x: previous.x,
+            y: previous.y,
+            width: previous.width,
+            height: previous.height,
+            zIndex: previous.zIndex,
+            status: previous.status,
+            dataJson: previous.dataJson,
+          },
+        },
+      ],
+      completedAt: "2026-06-13T00:00:00.000Z",
+      undo: {
+        undoneAt: "2026-06-13T00:01:00.000Z",
+        deletedNodeIds: [createdNode.id],
+        deletedEdgeIds: [],
+        restoredNodeIds: [previous.id],
+      },
+    };
+    const result: CreateAgentCanvasActionResult = {
+      job: {
+        id: "job_1",
+        projectId: "project_1",
+        operation: "agent_canvas_action",
+        status: "succeeded",
+        provider: "local-agent",
+        model: "deterministic-canvas-actions-v1",
+        inputJson: jobInput,
+        outputJson: jobOutput,
+        createdAt: "2026-06-13T00:00:00.000Z",
+        updatedAt: "2026-06-13T00:00:00.000Z",
+      },
+      nodes: [createdNode],
+      edges: [],
+      focusNodeId: createdNode.id,
+    };
+    const undoResult: UndoAgentCanvasActionResult = {
+      job: result.job,
+      restoredNodes: [previous],
+      deletedNodeIds: [createdNode.id],
+      deletedEdgeIds: [],
+    };
+
+    expect(result.job.inputJson.provider).toBe("local-agent");
+    expect(result.job.outputJson?.createdNodes?.[0]?.nodeId).toBe("shot_agent_1");
+    expect(undoResult.job.outputJson?.undo?.restoredNodeIds).toEqual(["shot_previous"]);
+  });
+
+  it("exports TF-12 visible agent memory contracts", () => {
+    const memory: AgentMemoryRecord = {
+      id: "memory_1",
+      projectId: "project_1",
+      scope: "project",
+      title: "Rainy neon palette",
+      content: "Use rainy neon lighting for night chase sequences.",
+      summary: "Rainy neon lighting for night chase sequences.",
+      tags: ["style", "rain"],
+      source: "manual",
+      enabled: true,
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:00.000Z",
+    };
+    const list: AgentMemoryListResult = { memories: [memory] };
+    const recall: RecallAgentMemoriesResult = {
+      memories: [memory],
+      memoryIds: [memory.id],
+      summary: `${memory.title}: ${memory.summary}`,
+    };
+    const jobInput: AgentCanvasActionJobInput = {
+      operation: "agent_canvas_action",
+      projectId: "project_1",
+      provider: "local-agent",
+      model: "deterministic-canvas-actions-v1",
+      message: "create shot: rainy neon alley reveal",
+      memoryIds: recall.memoryIds,
+      memorySummary: recall.summary,
+    };
+
+    expect(list.memories[0]?.enabled).toBe(true);
+    expect(jobInput.memoryIds).toEqual(["memory_1"]);
+    expect(jobInput.memorySummary).toContain("Rainy neon");
   });
 
   it("rejects malformed Phase 5 storyboard drafts", () => {
@@ -564,6 +1280,54 @@ describe("shared domain constants", () => {
     expect(findStoryboardImportLayoutOverlaps(plan.nodes)).toEqual([]);
   });
 
+  it("projects reference-image story seeds into storyboard import nodes", () => {
+    const storyboard = validStoryboard();
+    storyboard.storySeedReferences = [
+      {
+        assetId: "asset_seed_1",
+        imageNodeId: "image_seed_1",
+        label: "hero seed",
+        prompt: "keep the same raincoat silhouette",
+      },
+    ];
+    storyboard.characters[0]!.referenceAssetIds = ["asset_seed_1"];
+    storyboard.locations[0]!.referenceAssetIds = ["asset_seed_1"];
+    storyboard.scenes[0]!.shots[0]!.referenceAssetIds = ["asset_seed_1"];
+
+    const validation = validateStoryboardResult(storyboard);
+    expect(validation.success).toBe(true);
+    if (!validation.success) {
+      throw new Error("Expected reference seeded storyboard to validate");
+    }
+
+    const plan = buildStoryboardImportPlan({
+      storyboard: validation.data,
+      draftId: "draft_seed",
+      novelDocumentId: "novel_1",
+      importBatchId: "import_seed_1",
+      importedAt: "2026-06-13T00:00:00.000Z",
+      version: 1,
+    });
+
+    expect(plan.nodes.find((node) => node.key === "novel")?.dataJson).toMatchObject({
+      storySeedReferences: [
+        {
+          assetId: "asset_seed_1",
+          imageNodeId: "image_seed_1",
+        },
+      ],
+    });
+    expect(plan.nodes.find((node) => node.key === "character_asset:char_hero")?.dataJson).toMatchObject({
+      referenceAssetIds: ["asset_seed_1"],
+    });
+    expect(plan.nodes.find((node) => node.key === "location_asset:loc_city")?.dataJson).toMatchObject({
+      referenceAssetIds: ["asset_seed_1"],
+    });
+    expect(plan.nodes.find((node) => node.key === "shot:shot_1")?.dataJson).toMatchObject({
+      referenceAssetIds: ["asset_seed_1"],
+    });
+  });
+
   it("projects Phase 14 story blueprint and lifecycle trace into storyboard import nodes", () => {
     const storyboard = blueprintStoryboard();
     const plan = buildStoryboardImportPlan({
@@ -609,10 +1373,56 @@ describe("shared domain constants", () => {
 
   it("composes Phase 7 shot prompts from linked graph context and reference images", () => {
     const graph = promptComposerGraph();
+    const skillTemplates: SkillTemplatePromptContext[] = [
+      {
+        id: "skill_art",
+        kind: "art",
+        slug: "art-default",
+        displayName: "Art Skill",
+        sourceText: "Use cyan highlights and keep character silhouettes consistent.",
+        versionId: "skill_version_1",
+        version: 1,
+      },
+    ];
     const result = composeShotPrompt({
       ...graph,
       shotNodeId: "shot_1",
       globalStylePrompt: "global cinematic watercolor style",
+      projectGenerationSettings: {
+        visualStyle: "project neo-noir",
+        aspectRatio: "9:16",
+        narrationLanguage: "zh-CN",
+        visualManual: {
+          artStyle: "rainy neo-noir storyboard",
+          palette: "cyan shadows and amber signals",
+          lighting: "motivated practical light",
+        },
+        directorManual: {
+          pacing: "slow-burn opening rhythm",
+          cameraLanguage: "precise dolly moves",
+          performance: "contained urgency",
+        },
+        subtitle: { status: "requested_unresolved", label: "Project subtitles" },
+        viralReference: {
+          sourceSummary: "User-pasted reference summary",
+          hook: "Open on a hidden signal",
+          complianceNote: "Manual import only",
+        },
+        continuity: {
+          mode: "match_cut",
+          transitionPrompt: "Match console flash to skyline flare",
+        },
+        talkingPhoto: {
+          sourceAssetId: "asset_presenter_ref",
+          consentConfirmed: true,
+          scriptPrompt: "Founder-style teaser read",
+        },
+        marketing: {
+          cover: { label: "Rainy signal cover" },
+          callToAction: "Watch the next episode",
+        },
+      },
+      skillTemplates,
       modelPromptSuffix: "high detail, clean composition",
     });
 
@@ -631,13 +1441,30 @@ describe("shared domain constants", () => {
     expect(result.image.prompt).toContain("Hero identity prompt");
     expect(result.image.prompt).toContain("The hero notices the hidden signal and chooses to act.");
     expect(result.image.prompt).toContain("alert hero stage identity prompt");
+    expect(result.image.prompt).toContain("Visual style: project neo-noir");
+    expect(result.image.prompt).toContain("Aspect ratio: 16:9 (shot)");
+    expect(result.image.prompt).toContain("Art style: rainy neo-noir storyboard (project)");
+    expect(result.image.prompt).toContain("Palette: cyan shadows and amber signals (project)");
+    expect(result.image.prompt).toContain("Lens: long-lens compression (shot)");
+    expect(result.image.prompt).toContain("Pacing: slow-burn opening rhythm (project)");
+    expect(result.image.prompt).toContain("Camera language: locked-off surveillance angle (shot)");
+    expect(result.image.prompt).toContain("Subtitle: requested_unresolved");
+    expect(result.image.prompt).toContain("Manual viral reference: summary User-pasted reference summary");
+    expect(result.image.prompt).toContain("Continuity strategy: mode one_take");
+    expect(result.image.prompt).toContain("Talking photo brief: enabled / consent confirmed");
+    expect(result.image.prompt).toContain("Marketing materials: cover requested_unresolved / Rainy signal cover");
     expect(result.image.prompt).toContain("Location prompt text");
+    expect(result.image.prompt).toContain("Use cyan highlights and keep character silhouettes consistent.");
     expect(result.image.prompt).toContain("Image prompt: hero and friend at the console");
     expect(result.video.prompt).toContain("Video prompt: slow dolly across the console");
     expect(result.negativePrompt).toBe("no text overlays");
     expect(result.debugParts.map((part) => part.kind)).toEqual(
       expect.arrayContaining([
         "global_style",
+        "generation_settings",
+        "visual_manual",
+        "director_manual",
+        "skill_template",
         "story_event",
         "scene",
         "location",
@@ -648,6 +1475,28 @@ describe("shared domain constants", () => {
       ]),
     );
     expect(result.missingContext).toEqual([]);
+    expect(result.resolvedGenerationSettings.sources).toMatchObject({
+      visualStyle: "project",
+      aspectRatio: "shot",
+      visualManual: "shot",
+      visualManualFields: {
+        artStyle: "project",
+        palette: "project",
+        lighting: "project",
+        lens: "shot",
+      },
+      directorManual: "shot",
+      directorManualFields: {
+        pacing: "project",
+        cameraLanguage: "shot",
+        performance: "project",
+      },
+      subtitle: "project",
+      viralReference: "project",
+      continuity: "shot",
+      talkingPhoto: "project",
+      marketing: "project",
+    });
   });
 
   it("reports missing character lifecycle context for broken stage references", () => {
@@ -750,7 +1599,7 @@ describe("shared domain constants", () => {
           default: true,
         },
       ],
-      supportedModes: ["text_to_image", "multi_reference"],
+      supportedModes: ["text_to_image", "image_to_image", "multi_reference"],
       supportsReferenceImages: true,
       maxReferenceImages: 3,
       supportsMultipleOutputs: false,
@@ -786,6 +1635,25 @@ describe("shared domain constants", () => {
       videoProviderParams: {
         cameraFixed: false,
       },
+    };
+    const characterCreateInput: CreateGenerationJobInput = {
+      operation: "character_to_image",
+      sourceNodeId: "character_1",
+      provider: "mock-image",
+      aspectRatio: "1:1",
+    };
+    const locationCreateInput: CreateGenerationJobInput = {
+      operation: "location_to_image",
+      sourceNodeId: "location_1",
+      provider: "mock-image",
+      aspectRatio: "16:9",
+    };
+    const refinementCreateInput: CreateGenerationJobInput = {
+      operation: "image_refinement",
+      sourceNodeId: "image_1",
+      refinementPrompt: "make the lighting warmer",
+      provider: "mock-image",
+      aspectRatio: "16:9",
     };
     const videoCatalogProvider: VideoProviderCatalogItem = {
       id: "happyhorse",
@@ -831,6 +1699,46 @@ describe("shared domain constants", () => {
     const videoCatalog: VideoProviderCatalogResult = {
       providers: [videoCatalogProvider],
     };
+    const imageManagementProvider: ImageProviderManagementItem = {
+      ...catalogProvider,
+      kind: "image",
+      enabled: true,
+      configuredEnabled: true,
+      credentialConfigured: true,
+      credentialSource: "stored",
+      defaultModel: "gemini-2.5-flash-image",
+      configuredDefaultModel: "gemini-2.5-flash-image",
+      lastTest: {
+        status: "succeeded",
+        testedAt: "2026-06-13T00:00:00.000Z",
+        model: "gemini-2.5-flash-image",
+        message: "Provider test succeeded",
+      },
+    };
+    const videoManagementProvider: VideoProviderManagementItem = {
+      ...videoCatalogProvider,
+      kind: "video",
+      configuredEnabled: false,
+      credentialConfigured: false,
+      lastTest: {
+        status: "failed",
+        testedAt: "2026-06-13T00:01:00.000Z",
+        model: "alibaba/happy-horse/image-to-video",
+        message: "Missing provider credential",
+      },
+    };
+    const updateProviderConfigInput = normalizeUpdateProviderConfigInput({
+      enabled: true,
+      defaultModel: "gemini-2.5-flash-image",
+      credential: { action: "set", value: "sk-secret-provider-key" },
+    });
+    const clearProviderConfigInput = normalizeUpdateProviderConfigInput({
+      credential: { action: "clear", value: "ignored" },
+    });
+    const testProviderInput = normalizeProviderConnectionTestInput({
+      model: "gemini-2.5-flash-image",
+      ignored: "not returned",
+    });
     const shotInput: ShotToImageJobInput = {
       operation: "shot_to_image",
       projectId: "project_1",
@@ -883,6 +1791,49 @@ describe("shared domain constants", () => {
       aspectRatio: videoCreateInput.videoAspectRatio,
       resolution: videoCreateInput.resolution,
       providerParams: videoCreateInput.videoProviderParams,
+    };
+    const refinementInput: ImageRefinementJobInput = {
+      operation: "image_refinement",
+      projectId: "project_1",
+      sourceNodeId: "image_1",
+      imageNodeId: "image_1",
+      sourceImageAssetId: "asset_image_1",
+      prompt: refinementCreateInput.refinementPrompt ?? "refine",
+      referenceAssetIds: ["asset_ref_1"],
+      sourceNodeIds: ["image_1", "shot_1"],
+      parentShotNodeId: "shot_1",
+      provider: refinementCreateInput.provider ?? "mock-image",
+      model: refinementCreateInput.model,
+      aspectRatio: refinementCreateInput.aspectRatio,
+      providerParams: refinementCreateInput.providerParams,
+    };
+    const characterInput: CharacterToImageJobInput = {
+      operation: "character_to_image",
+      projectId: "project_1",
+      sourceNodeId: "character_1",
+      characterNodeId: "character_1",
+      prompt: "character reference sheet prompt",
+      referenceAssetIds: ["asset_character_ref"],
+      sourceNodeIds: ["character_1"],
+      provider: characterCreateInput.provider ?? "mock-image",
+      model: characterCreateInput.model,
+      aspectRatio: characterCreateInput.aspectRatio,
+      providerParams: characterCreateInput.providerParams,
+      assetPurpose: "character_reference",
+    };
+    const locationInput: LocationToImageJobInput = {
+      operation: "location_to_image",
+      projectId: "project_1",
+      sourceNodeId: "location_1",
+      locationNodeId: "location_1",
+      prompt: "location reference sheet prompt",
+      referenceAssetIds: ["asset_location_ref"],
+      sourceNodeIds: ["location_1"],
+      provider: locationCreateInput.provider ?? "mock-image",
+      model: locationCreateInput.model,
+      aspectRatio: locationCreateInput.aspectRatio,
+      providerParams: locationCreateInput.providerParams,
+      assetPurpose: "location_reference",
     };
     const waitInput: WorkerGenerationJobWaitInput = {
       providerTaskId: "seedance_task_1",
@@ -1136,6 +2087,38 @@ describe("shared domain constants", () => {
       supportsCancel: true,
       supportedResolutions: ["720p", "1080p"],
     });
+    expect(imageManagementProvider).toMatchObject({
+      kind: "image",
+      configuredEnabled: true,
+      credentialConfigured: true,
+      credentialSource: "stored",
+    });
+    expect(videoManagementProvider).toMatchObject({
+      kind: "video",
+      credentialConfigured: false,
+      lastTest: expect.objectContaining({ status: "failed" }),
+    });
+    expect(updateProviderConfigInput).toEqual({
+      enabled: true,
+      defaultModel: "gemini-2.5-flash-image",
+      credential: { action: "set", value: "sk-secret-provider-key" },
+    });
+    expect(clearProviderConfigInput).toEqual({ credential: { action: "clear" } });
+    expect(normalizeUpdateProviderConfigInput({ credential: { action: "set", value: " " } })).toEqual(
+      {},
+    );
+    expect(testProviderInput).toEqual({ model: "gemini-2.5-flash-image" });
+    expect(managedProviderKind("image")).toBe("image");
+    expect(managedProviderKind("llm")).toBeUndefined();
+    expect(managedProviderId("image", "banana")).toBe("banana");
+    expect(managedProviderId("video", "banana")).toBeUndefined();
+    expect(programmableProviderId("CUSTOM:atlas-cloud")).toBe("custom:atlas-cloud");
+    expect(programmableProviderId("custom:image2")).toBeUndefined();
+    expect(programmableProviderId("custom:bad/path")).toBeUndefined();
+    expect(managedProviderId("image", "custom:atlas-cloud")).toBe("custom:atlas-cloud");
+    expect(JSON.stringify([imageManagementProvider, videoManagementProvider])).not.toContain(
+      "sk-secret-provider-key",
+    );
     expect(shotInput).toMatchObject({
       provider: "image2",
       model: "gpt-image-2",
@@ -1148,6 +2131,71 @@ describe("shared domain constants", () => {
       durationSeconds: 5,
       resolution: "1080p",
     });
+    expect(refinementInput).toMatchObject({
+      operation: "image_refinement",
+      sourceImageAssetId: "asset_image_1",
+      prompt: "make the lighting warmer",
+    });
+    expect(characterInput).toMatchObject({
+      operation: "character_to_image",
+      sourceNodeId: "character_1",
+      assetPurpose: "character_reference",
+    });
+    expect(locationInput).toMatchObject({
+      operation: "location_to_image",
+      sourceNodeId: "location_1",
+      assetPurpose: "location_reference",
+    });
+
+    const programmableManifest: ProgrammableProviderManifest = {
+      id: "custom:atlas-cloud",
+      kind: "image",
+      displayName: "Atlas Cloud",
+      credentials: [{ key: "apiKey", label: "API Key", type: "password", required: true }],
+      models: [{ id: "atlas-image-v1", displayName: "Atlas Image v1", default: true }],
+      defaultModel: "atlas-image-v1",
+      supportedModes: ["text_to_image"],
+      defaultAspectRatio: "16:9",
+      supportedAspectRatios: ["16:9"],
+      parameters: [],
+      image: {
+        supportsReferenceImages: false,
+        maxReferenceImages: 0,
+        supportsMultipleOutputs: false,
+        maxOutputs: 1,
+        action: {
+          request: {
+            method: "POST",
+            url: "https://api.example.test/images",
+            headers: { Authorization: "Bearer {{credential.apiKey}}" },
+            bodyJson: { prompt: "{{input.prompt}}" },
+          },
+          output: { source: "url", path: "data.url", mimeType: "image/png" },
+        },
+      },
+    };
+    const programmableProviderSummary: ProgrammableProviderDefinitionSummary = {
+      id: "programmable_provider_1",
+      kind: "image",
+      provider: programmableManifest.id,
+      displayName: programmableManifest.displayName,
+      activeVersionId: "programmable_version_1",
+      versions: [
+        {
+          id: "programmable_version_1",
+          version: 1,
+          status: "valid",
+          diagnostics: [],
+          createdAt: "2026-06-13T00:00:00.000Z",
+          active: true,
+        },
+      ],
+      enabled: true,
+      credentialConfigured: true,
+    };
+    expect(JSON.stringify([programmableManifest, programmableProviderSummary])).not.toContain(
+      "sk-secret-provider-key",
+    );
     expect(videoTaskResult.status).toBe("provider_waiting");
     expect(cancelInput.reason).toContain("cancelled");
     expect(batchParentInput.childJobIds).toEqual(["job_2"]);
@@ -1178,11 +2226,15 @@ describe("shared domain constants", () => {
   });
 
   it("exports Phase 11 editor export inputs, package outputs, and canvas package data", () => {
+    const exportPreset = "hd_1080p";
+    const sourceEditorExportId = "export_previous";
     const createInput: CreateEditorExportInput = {
       videoNodeIds: ["video_1", "video_2", "video_3"],
       sortMode: "manual",
+      exportPreset,
       includeStoryboardCsv: true,
       includeSubtitles: false,
+      sourceEditorExportId,
     };
     const manifest: TimelineManifest = {
       version: "1.0",
@@ -1192,6 +2244,7 @@ describe("shared domain constants", () => {
       aspectRatio: "16:9",
       fps: 24,
       sortMode: createInput.sortMode,
+      exportPreset,
       assets: [
         {
           id: "asset_video_1",
@@ -1221,6 +2274,7 @@ describe("shared domain constants", () => {
       ],
       metadata: {
         selectedVideoNodeIds: createInput.videoNodeIds,
+        sourceEditorExportId,
       },
     };
     const jobInput: EditorExportJobInput = {
@@ -1229,6 +2283,7 @@ describe("shared domain constants", () => {
       editorExportId: "export_1",
       videoNodeIds: createInput.videoNodeIds,
       sortMode: createInput.sortMode,
+      exportPreset,
       includeStoryboardCsv: true,
       includeSubtitles: false,
       fps: 24,
@@ -1245,6 +2300,7 @@ describe("shared domain constants", () => {
           manualIndex: 0,
         },
       ],
+      sourceEditorExportId,
     };
     const packageOutput: EditorExportPackageOutput = {
       storageKey: "project_1/editor-exports/export_1.zip",
@@ -1308,6 +2364,8 @@ describe("shared domain constants", () => {
       edgeIds: ["edge_sent_1"],
       selectedVideoNodeIds: createInput.videoNodeIds,
       sortMode: createInput.sortMode,
+      exportPreset,
+      sourceEditorExportId,
       timeline: manifest,
       storyboardCsv: packageOutput.storyboardCsv,
       clips: packageOutput.clips,
@@ -1331,13 +2389,17 @@ describe("shared domain constants", () => {
       packageAssetId: exportRecord.packageAssetId,
       selectedVideoNodeIds: createInput.videoNodeIds,
       sortMode: createInput.sortMode,
+      exportPreset,
+      sourceEditorExportId,
       clipCount: 3,
       localEditorError: sendResult.errorMessage,
       exportedAt: jobOutput.completedAt,
     };
 
     expect(createInput.sortMode).toBe("manual");
+    expect(createInput.exportPreset).toBe("hd_1080p");
     expect(jobInput.operation).toBe("editor_export");
+    expect(jobInput.sourceEditorExportId).toBe("export_previous");
     expect(manifest.tracks[0]?.items[0]).toMatchObject({
       sourceNodeId: "video_1",
       durationMs: 4000,
@@ -1350,6 +2412,8 @@ describe("shared domain constants", () => {
       editorExportId: "export_1",
       packageAssetId: "asset_package_1",
       sortMode: "manual",
+      exportPreset: "hd_1080p",
+      sourceEditorExportId: "export_previous",
     });
   });
 });
@@ -1424,6 +2488,20 @@ function promptComposerGraph(): {
         },
       ],
       characterStageRefs: [{ characterTempId: "character_1", stageId: "stage_alert" }],
+      generationSettings: {
+        aspectRatio: "16:9",
+        narrationAccent: "warm northern accent",
+        visualManual: {
+          lens: "long-lens compression",
+        },
+        directorManual: {
+          cameraLanguage: "locked-off surveillance angle",
+        },
+        continuity: {
+          mode: "one_take",
+          adjacentShotPrompt: "Keep both characters moving left to right",
+        },
+      },
     }),
   ];
   return {

@@ -67,10 +67,26 @@ export class MockLlmProvider implements LlmProvider {
     failIfRequested(this.capability.id, input.forceFailure);
 
     const title = input.title?.trim() || "Mock Storyboard";
+    const referenceAssetIds = uniqueStrings(input.referenceAssetIds ?? []);
+    const referencePrompt = input.referencePrompt?.trim();
 
     return {
       title,
-      logline: `A mock storyboard generated from ${input.novelText.length} characters.`,
+      logline: `A mock storyboard generated from ${input.novelText.length} characters${
+        referenceAssetIds.length > 0 ? " with reference image continuity" : ""
+      }.`,
+      ...(referenceAssetIds.length > 0 || input.referenceImageNodeIds?.length
+        ? {
+            storySeedReferences: referenceAssetIds.map((assetId, index) => ({
+              assetId,
+              ...(input.referenceImageNodeIds?.[index]
+                ? { imageNodeId: input.referenceImageNodeIds[index] }
+                : {}),
+              label: index === 0 ? "Primary story seed" : `Story seed ${index + 1}`,
+              ...(referencePrompt ? { prompt: referencePrompt } : {}),
+            })),
+          }
+        : {}),
       storyBlueprint: {
         worldSummary: "A near-future city where rooftop signals reveal hidden alliances.",
         timelineEvents: [
@@ -120,9 +136,16 @@ export class MockLlmProvider implements LlmProvider {
           tempId: "char_hero",
           name: "Hero",
           role: "protagonist",
-          appearance: "A consistent lead character for mock generation.",
+          appearance:
+            referenceAssetIds.length > 0
+              ? "A consistent lead character anchored to the selected reference image."
+              : "A consistent lead character for mock generation.",
           personality: "Determined and observant.",
-          identityPrompt: "consistent protagonist, cinematic character reference",
+          identityPrompt: [
+            "consistent protagonist, cinematic character reference",
+            referencePrompt,
+          ].filter(Boolean).join(", "),
+          ...(referenceAssetIds.length > 0 ? { referenceAssetIds } : {}),
           lifecycleStages: [
             {
               stageId: "stage_alert",
@@ -172,7 +195,11 @@ export class MockLlmProvider implements LlmProvider {
           description: "A simple rooftop location used by the mock storyboard.",
           lighting: "soft evening light",
           atmosphere: "quiet and expectant",
-          locationPrompt: "cinematic rooftop, soft evening light",
+          locationPrompt: [
+            "cinematic rooftop, soft evening light",
+            referencePrompt,
+          ].filter(Boolean).join(", "),
+          ...(referenceAssetIds.length > 0 ? { referenceAssetIds } : {}),
         },
       ],
       scenes: [
@@ -185,6 +212,7 @@ export class MockLlmProvider implements LlmProvider {
           mood: "anticipatory",
           timeOfDay: "evening",
           heroStageId: "stage_alert",
+          referenceAssetIds,
         }),
         mockScene({
           sceneIndex: 2,
@@ -195,6 +223,7 @@ export class MockLlmProvider implements LlmProvider {
           mood: "resolved",
           timeOfDay: "night",
           heroStageId: "stage_resolved",
+          referenceAssetIds,
         }),
       ],
     };
@@ -210,6 +239,7 @@ function mockScene(input: {
   mood: string;
   timeOfDay: string;
   heroStageId: string;
+  referenceAssetIds?: string[];
 }): StoryboardResult["scenes"][number] {
   return {
     tempId: `scene_${input.sceneIndex}`,
@@ -251,6 +281,7 @@ function mockScene(input: {
         characterStageRefs,
         imagePrompt: `cinematic rooftop scene ${input.sceneIndex} shot ${shotIndex}, consistent hero and ally`,
         videoPrompt: `camera ${shotIndex} movement over rooftop scene ${input.sceneIndex}`,
+        ...(input.referenceAssetIds?.length ? { referenceAssetIds: input.referenceAssetIds } : {}),
       };
     }),
   };
@@ -266,7 +297,14 @@ export class MockImageProvider implements ImageProvider {
   async generateImage(input: ImageGenerationInput): Promise<ImageProviderResult> {
     failIfRequested(this.capability.id, input.forceFailure);
 
-    const assetId = stableId("asset_image", `${input.projectId}-${input.prompt}`);
+    const sourceKey = input.sourceImageAssetId ? `-${input.sourceImageAssetId}` : "";
+    const assetId = stableId("asset_image", `${input.projectId}-${input.prompt}${sourceKey}`);
+    const referenceAssetIds = Array.from(
+      new Set([
+        ...(input.sourceImageAssetId ? [input.sourceImageAssetId] : []),
+        ...(input.referenceAssetIds ?? []),
+      ]),
+    );
 
     const output: MockAssetOutput = {
       assetId,
@@ -275,7 +313,12 @@ export class MockImageProvider implements ImageProvider {
       provider: this.capability.id,
       model: "mock-image-v1",
       prompt: input.prompt,
-      referenceAssetIds: input.referenceAssetIds ?? [],
+      referenceAssetIds,
+      rawJson: {
+        mode: input.mode ?? "text_to_image",
+        sourceImageAssetId: input.sourceImageAssetId ?? null,
+        sourceImageNodeId: input.sourceImageNodeId ?? null,
+      },
     };
 
     return {
@@ -389,6 +432,10 @@ export class MockEditorProvider implements EditorProvider {
       storyboardCsv: input.storyboardCsv,
     };
   }
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
 export function createMockProviderRegistry(): ProviderRegistry {

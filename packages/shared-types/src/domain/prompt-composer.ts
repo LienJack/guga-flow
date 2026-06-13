@@ -1,4 +1,5 @@
 import type { AssetListItem } from "./assets";
+import type { SkillTemplatePromptContext } from "./skills";
 import type {
   CanvasEdgeRecord,
   CanvasNodeRecord,
@@ -10,6 +11,8 @@ import type {
   ShotNodeData,
   StoryEventTraceData,
 } from "./canvas";
+import type { GenerationCreativeSettings, ResolvedGenerationSettings } from "./generation";
+import { resolveGenerationSettings } from "./generation";
 
 export const PROMPT_COMPOSITION_CHANNELS = ["image", "video"] as const;
 export type PromptCompositionChannel = (typeof PROMPT_COMPOSITION_CHANNELS)[number];
@@ -18,6 +21,10 @@ export const PROMPT_DEBUG_PART_KINDS = [
   "global_style",
   "scene",
   "story_event",
+  "generation_settings",
+  "visual_manual",
+  "director_manual",
+  "skill_template",
   "location",
   "character",
   "character_lifecycle",
@@ -80,6 +87,7 @@ export interface ShotPromptCompositionResult {
   sourceNodeIds: ShotPromptSourceNodeIds;
   referenceAssetIds: string[];
   negativePrompt: string;
+  resolvedGenerationSettings: ResolvedGenerationSettings;
   image: PromptChannelComposition;
   video: PromptChannelComposition;
   debugParts: PromptDebugPart[];
@@ -92,6 +100,8 @@ export interface ComposeShotPromptInput {
   edges?: readonly CanvasEdgeRecord[];
   assets?: readonly AssetListItem[];
   globalStylePrompt?: string;
+  projectGenerationSettings?: GenerationCreativeSettings;
+  skillTemplates?: readonly SkillTemplatePromptContext[];
   modelPromptSuffix?: string;
 }
 
@@ -118,6 +128,10 @@ export function composeShotPrompt(input: ComposeShotPromptInput): ShotPromptComp
   const locationNode = findLocationNode(input.edges ?? [], nodesById, shotNode);
   const storyEventParts = storyEventPartsForShot(shotNode, sceneNode, missingContext);
   const lifecycleParts = characterLifecyclePartsForShot(shotNode, characterNodes, missingContext);
+  const resolvedGenerationSettings = resolveGenerationSettings({
+    projectSettings: input.projectGenerationSettings,
+    shotSettings: shotData.generationSettings,
+  });
 
   if (!sceneNode) {
     missingContext.push({
@@ -158,6 +172,10 @@ export function composeShotPrompt(input: ComposeShotPromptInput): ShotPromptComp
       text: optionalText(input.globalStylePrompt),
       channels: ["image", "video"],
     }),
+    generationSettingsPart(resolvedGenerationSettings, shotNode.id),
+    visualManualPart(resolvedGenerationSettings, shotNode.id),
+    directorManualPart(resolvedGenerationSettings, shotNode.id),
+    ...skillTemplateParts(input.skillTemplates ?? [], shotNode.id),
     ...storyEventParts,
     scenePart(sceneNode),
     locationPart(locationNode),
@@ -224,6 +242,7 @@ export function composeShotPrompt(input: ComposeShotPromptInput): ShotPromptComp
     },
     referenceAssetIds,
     negativePrompt,
+    resolvedGenerationSettings,
     image: channelComposition("image", imageParts, negativePrompt, missingContext),
     video: channelComposition("video", videoParts, negativePrompt, missingContext),
     debugParts: uniqueParts([...imageParts, ...videoParts]),
@@ -243,6 +262,7 @@ function emptyResult(
     },
     referenceAssetIds: [],
     negativePrompt: "",
+    resolvedGenerationSettings: resolveGenerationSettings(),
     image: channelComposition("image", [], "", missingContext),
     video: channelComposition("video", [], "", missingContext),
     debugParts: [],
@@ -397,6 +417,234 @@ function characterLifecyclePartsForShot(
       });
     })
     .filter(isPromptDebugPart);
+}
+
+function generationSettingsPart(
+  resolved: ResolvedGenerationSettings,
+  shotNodeId: string,
+): PromptDebugPart | undefined {
+  const settings = resolved.effective;
+  const text = joinLines([
+    labeledWithSource("Visual style", settings.visualStyle, resolved.sources.visualStyle),
+    labeledWithSource("Aspect ratio", settings.aspectRatio, resolved.sources.aspectRatio),
+    labeledWithSource("Narration language", settings.narrationLanguage, resolved.sources.narrationLanguage),
+    labeledWithSource("Narration accent", settings.narrationAccent, resolved.sources.narrationAccent),
+    labeledWithSource("Narration voice", settings.narrationVoice, resolved.sources.narrationVoice),
+    packagingLine("Subtitle", settings.subtitle, resolved.sources.subtitle),
+    packagingLine("BGM", settings.bgm, resolved.sources.bgm),
+    packagingLine("Transition", settings.transition, resolved.sources.transition),
+    packagingLine("Style pack", settings.stylePack, resolved.sources.stylePack),
+    viralReferenceLine(settings.viralReference, resolved.sources.viralReference),
+    continuityLine(settings.continuity, resolved.sources.continuity),
+    talkingPhotoLine(settings.talkingPhoto, resolved.sources.talkingPhoto),
+    marketingLine(settings.marketing, resolved.sources.marketing),
+  ]);
+
+  return partFromText({
+    id: `generation-settings:${shotNodeId}`,
+    kind: "generation_settings",
+    label: "Generation settings",
+    text,
+    channels: ["image", "video"],
+    sourceNodeIds: [shotNodeId],
+  });
+}
+
+function visualManualPart(
+  resolved: ResolvedGenerationSettings,
+  shotNodeId: string,
+): PromptDebugPart | undefined {
+  const manual = resolved.effective.visualManual;
+  const sources = resolved.sources.visualManualFields;
+  if (!manual) {
+    return undefined;
+  }
+
+  return partFromText({
+    id: `visual-manual:${shotNodeId}`,
+    kind: "visual_manual",
+    label: "Visual manual",
+    text: joinLines([
+      labeledWithSource("Art style", manual.artStyle, sources?.artStyle),
+      labeledWithSource("Palette", manual.palette, sources?.palette),
+      labeledWithSource("Lighting", manual.lighting, sources?.lighting),
+      labeledWithSource("Lens", manual.lens, sources?.lens),
+      labeledWithSource("Composition", manual.composition, sources?.composition),
+      labeledWithSource("Texture", manual.texture, sources?.texture),
+      labeledWithSource("Consistency", manual.consistencyRules, sources?.consistencyRules),
+      labeledWithSource("Negative style", manual.negativeStyle, sources?.negativeStyle),
+    ]),
+    channels: ["image", "video"],
+    sourceNodeIds: [shotNodeId],
+  });
+}
+
+function directorManualPart(
+  resolved: ResolvedGenerationSettings,
+  shotNodeId: string,
+): PromptDebugPart | undefined {
+  const manual = resolved.effective.directorManual;
+  const sources = resolved.sources.directorManualFields;
+  if (!manual) {
+    return undefined;
+  }
+
+  return partFromText({
+    id: `director-manual:${shotNodeId}`,
+    kind: "director_manual",
+    label: "Director manual",
+    text: joinLines([
+      labeledWithSource("Pacing", manual.pacing, sources?.pacing),
+      labeledWithSource("Camera language", manual.cameraLanguage, sources?.cameraLanguage),
+      labeledWithSource("Performance", manual.performance, sources?.performance),
+      labeledWithSource("Editing rhythm", manual.editingRhythm, sources?.editingRhythm),
+      labeledWithSource("Audio narration", manual.audioNarration, sources?.audioNarration),
+      labeledWithSource(
+        "Production constraints",
+        manual.productionConstraints,
+        sources?.productionConstraints,
+      ),
+    ]),
+    channels: ["image", "video"],
+    sourceNodeIds: [shotNodeId],
+  });
+}
+
+function skillTemplateParts(
+  templates: readonly SkillTemplatePromptContext[],
+  shotNodeId: string,
+): PromptDebugPart[] {
+  return templates
+    .filter((template) => template.kind !== "agent")
+    .map((template) =>
+      partFromText({
+        id: `skill-template:${template.id}:${template.versionId}`,
+        kind: "skill_template",
+        label: `Skill: ${template.displayName}`,
+        text: joinLines([
+          labeled("Kind", template.kind),
+          labeled("Slug", template.slug),
+          labeled("Version", `v${template.version}`),
+          template.sourceText,
+        ]),
+        channels: ["image", "video"],
+        sourceNodeIds: [shotNodeId],
+      }),
+    )
+    .filter(isPromptDebugPart);
+}
+
+function labeledWithSource(label: string, value: unknown, source: string | undefined): string | undefined {
+  const text = optionalText(value);
+  if (!text) {
+    return undefined;
+  }
+  return source ? `${label}: ${text} (${source})` : `${label}: ${text}`;
+}
+
+function packagingLine(
+  label: string,
+  value: GenerationCreativeSettings["subtitle"],
+  source: string | undefined,
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const detail = compactText([
+    value.status,
+    value.assetId ? `asset ${value.assetId}` : undefined,
+    value.label,
+    value.prompt,
+    value.notes,
+  ]);
+  return labeledWithSource(label, detail, source);
+}
+
+function viralReferenceLine(
+  value: GenerationCreativeSettings["viralReference"],
+  source: string | undefined,
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const detail = compactText([
+    value.sourceSummary ? `summary ${value.sourceSummary}` : undefined,
+    value.hook ? `hook ${value.hook}` : undefined,
+    value.pacing ? `pacing ${value.pacing}` : undefined,
+    value.theme ? `theme ${value.theme}` : undefined,
+    value.visualStyle ? `style ${value.visualStyle}` : undefined,
+    value.transformationNotes ? `transform ${value.transformationNotes}` : undefined,
+    value.complianceNote ? `compliance ${value.complianceNote}` : undefined,
+  ]);
+  return labeledWithSource("Manual viral reference", detail, source);
+}
+
+function continuityLine(
+  value: GenerationCreativeSettings["continuity"],
+  source: string | undefined,
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const detail = compactText([
+    value.mode ? `mode ${value.mode}` : undefined,
+    value.transitionPrompt ? `transition ${value.transitionPrompt}` : undefined,
+    value.adjacentShotPrompt ? `adjacent ${value.adjacentShotPrompt}` : undefined,
+    value.cameraBridge ? `camera bridge ${value.cameraBridge}` : undefined,
+    value.subjectAnchor ? `subject anchor ${value.subjectAnchor}` : undefined,
+  ]);
+  return labeledWithSource("Continuity strategy", detail, source);
+}
+
+function talkingPhotoLine(
+  value: GenerationCreativeSettings["talkingPhoto"],
+  source: string | undefined,
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const detail = compactText([
+    value.enabled ? "enabled" : undefined,
+    value.consentConfirmed ? "consent confirmed" : undefined,
+    value.sourceAssetId ? `source asset ${value.sourceAssetId}` : undefined,
+    value.personaPrompt ? `persona ${value.personaPrompt}` : undefined,
+    value.voicePrompt ? `voice ${value.voicePrompt}` : undefined,
+    value.scriptPrompt ? `script ${value.scriptPrompt}` : undefined,
+  ]);
+  return labeledWithSource("Talking photo brief", detail, source);
+}
+
+function marketingLine(
+  value: GenerationCreativeSettings["marketing"],
+  source: string | undefined,
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const detail = compactText([
+    packagingReferenceDetail("cover", value.cover),
+    packagingReferenceDetail("poster", value.poster),
+    packagingReferenceDetail("promo", value.promo),
+    value.callToAction ? `CTA ${value.callToAction}` : undefined,
+    value.layoutNotes ? `layout ${value.layoutNotes}` : undefined,
+  ]);
+  return labeledWithSource("Marketing materials", detail, source);
+}
+
+function packagingReferenceDetail(
+  label: string,
+  value: GenerationCreativeSettings["subtitle"],
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return `${label} ${compactText([
+    value.status,
+    value.assetId ? `asset ${value.assetId}` : undefined,
+    value.label,
+    value.prompt,
+    value.notes,
+  ])}`;
 }
 
 function scenePart(node: CanvasNodeRecord<SceneNodeData> | undefined): PromptDebugPart | undefined {
@@ -608,6 +856,10 @@ function labeled(label: string, value: unknown): string | undefined {
 
 function joinLines(values: ReadonlyArray<string | undefined>, separator = "\n"): string {
   return values.filter((value): value is string => Boolean(optionalText(value))).join(separator);
+}
+
+function compactText(values: ReadonlyArray<string | undefined>): string {
+  return values.filter((value): value is string => Boolean(optionalText(value))).join(" / ");
 }
 
 function stringArray(value: unknown): string[] {

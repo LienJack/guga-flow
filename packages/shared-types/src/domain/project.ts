@@ -1,4 +1,5 @@
 import type {
+  GenerationCreativeSettings,
   GenerationJobRecord,
   NovelToStoryboardJobInput,
   NovelToStoryboardJobOutput,
@@ -14,6 +15,7 @@ export interface ProjectRecord {
   title: string;
   description?: string;
   defaultAspectRatio: ProjectAspectRatio;
+  generationSettings?: GenerationCreativeSettings;
   createdAt: string;
   updatedAt: string;
 }
@@ -39,12 +41,14 @@ export interface CreateProjectInput {
   title: string;
   description?: string;
   defaultAspectRatio?: ProjectAspectRatio;
+  generationSettings?: GenerationCreativeSettings;
 }
 
 export interface UpdateProjectInput {
   title?: string;
   description?: string;
   defaultAspectRatio?: ProjectAspectRatio;
+  generationSettings?: GenerationCreativeSettings;
 }
 
 export interface NovelDocumentRecord {
@@ -73,12 +77,22 @@ export interface ImportNovelSourceInput {
   language?: NovelLanguage;
 }
 
+export interface StoryReferenceSeedInput {
+  assetId?: string;
+  imageNodeId?: string;
+  label?: string;
+  prompt?: string;
+}
+
 export interface CreateCreativeStoryboardInput {
   idea: string;
   mode?: CreativeAgentMode;
   audience?: string;
   stylePrompt?: string;
   targetDurationSeconds?: number;
+  referenceAssetIds?: string[];
+  referenceImageNodeIds?: string[];
+  referencePrompt?: string;
   forceFailure?: boolean;
 }
 

@@ -1,5 +1,6 @@
 import type {
   CanvasSnapshotJson,
+  ImageProviderMode,
   EditorExportSortMode,
   TimelineManifest,
   ProjectAspectRatio,
@@ -49,16 +50,22 @@ export interface NovelToStoryboardInput {
   projectId: string;
   title?: string;
   novelText: string;
+  referenceAssetIds?: string[];
+  referenceImageNodeIds?: string[];
+  referencePrompt?: string;
   forceFailure?: boolean;
 }
 
 export interface ImageGenerationInput {
   projectId: string;
   prompt: string;
+  mode?: ImageProviderMode;
   negativePrompt?: string;
   model?: string;
   aspectRatio?: ProjectAspectRatio;
   count?: number;
+  sourceImageAssetId?: string;
+  sourceImageNodeId?: string;
   referenceAssetIds?: string[];
   providerParams?: CanvasSnapshotJson;
   forceFailure?: boolean;

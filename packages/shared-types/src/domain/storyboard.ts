@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const nonEmptyString = z.string().trim().min(1);
 const optionalNonEmptyString = z.string().trim().min(1).optional();
+const referenceAssetIdsSchema = z.array(nonEmptyString).optional();
 
 export const STORYBOARD_LOCATION_TYPES = ["interior", "exterior", "fantasy", "virtual"] as const;
 export type StoryboardLocationType = (typeof STORYBOARD_LOCATION_TYPES)[number];
@@ -67,6 +68,13 @@ export const storyBlueprintSchema = z.object({
   adaptationNotes: optionalNonEmptyString,
 });
 
+export const storySeedReferenceSchema = z.object({
+  assetId: optionalNonEmptyString,
+  imageNodeId: optionalNonEmptyString,
+  label: optionalNonEmptyString,
+  prompt: optionalNonEmptyString,
+});
+
 export const characterDraftSchema = z.object({
   tempId: nonEmptyString,
   name: nonEmptyString,
@@ -75,6 +83,7 @@ export const characterDraftSchema = z.object({
   personality: nonEmptyString,
   costume: optionalNonEmptyString,
   identityPrompt: nonEmptyString,
+  referenceAssetIds: referenceAssetIdsSchema,
   lifecycleStages: z.array(characterLifecycleStageSchema).optional(),
   locked: z.boolean().optional(),
   lockedFields: z.array(z.enum(CHARACTER_IDENTITY_LOCK_FIELDS)).optional(),
@@ -88,6 +97,7 @@ export const locationDraftSchema = z.object({
   lighting: nonEmptyString,
   atmosphere: nonEmptyString,
   locationPrompt: nonEmptyString,
+  referenceAssetIds: referenceAssetIdsSchema,
 });
 
 export const shotDraftSchema = z.object({
@@ -112,6 +122,7 @@ export const shotDraftSchema = z.object({
   imagePrompt: nonEmptyString,
   videoPrompt: nonEmptyString,
   negativePrompt: optionalNonEmptyString,
+  referenceAssetIds: referenceAssetIdsSchema,
 });
 
 export const sceneDraftSchema = z.object({
@@ -131,6 +142,7 @@ export const storyboardResultSchema = z
   .object({
     title: nonEmptyString,
     logline: nonEmptyString,
+    storySeedReferences: z.array(storySeedReferenceSchema).optional(),
     storyBlueprint: storyBlueprintSchema.optional(),
     characters: z.array(characterDraftSchema).min(1),
     locations: z.array(locationDraftSchema).min(1),
@@ -305,6 +317,7 @@ export type LocationDraft = z.infer<typeof locationDraftSchema>;
 export type SceneDraft = z.infer<typeof sceneDraftSchema>;
 export type ShotDraft = z.infer<typeof shotDraftSchema>;
 export type StoryBlueprint = z.infer<typeof storyBlueprintSchema>;
+export type StorySeedReference = z.infer<typeof storySeedReferenceSchema>;
 export type StoryTimelineEvent = z.infer<typeof storyTimelineEventSchema>;
 export type StoryboardResult = z.infer<typeof storyboardResultSchema>;
 

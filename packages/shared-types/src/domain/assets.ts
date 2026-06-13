@@ -1,12 +1,15 @@
-export const ASSET_TYPES = ["image", "video", "document", "package"] as const;
+export const ASSET_TYPES = ["image", "video", "audio", "document", "package"] as const;
 export type AssetType = (typeof ASSET_TYPES)[number];
 
 export const ASSET_PURPOSES = [
   "uploaded",
   "shot_keyframe",
+  "shot_audio",
   "character_reference",
+  "voice_reference",
   "location_reference",
   "style_reference",
+  "background_music",
   "shot_clip",
   "editor_package",
 ] as const;
@@ -18,12 +21,18 @@ export const UPLOADABLE_ASSET_MIME_TYPES = [
   "image/webp",
   "video/mp4",
   "video/webm",
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/ogg",
+  "audio/webm",
   "text/plain",
   "text/markdown",
 ] as const;
 export type UploadableAssetMimeType = (typeof UPLOADABLE_ASSET_MIME_TYPES)[number];
 
-export const ASSET_PREVIEW_KINDS = ["image", "video", "text", "metadata"] as const;
+export const ASSET_PREVIEW_KINDS = ["image", "video", "audio", "text", "metadata"] as const;
 export type AssetPreviewKind = (typeof ASSET_PREVIEW_KINDS)[number];
 
 export const EDITOR_PACKAGE_MIME_TYPE = "application/zip" as const;

@@ -13,6 +13,7 @@ export interface ImageProviderRegistryOptions {
   fetchImpl?: RealImageProviderOptions["fetchImpl"];
   openAiBaseUrl?: string;
   geminiBaseUrl?: string;
+  additionalProviders?: ImageProvider[];
 }
 
 class StaticImageProviderRegistry implements ImageProviderRegistry {
@@ -58,5 +59,6 @@ export function createImageProviderRegistry(
       baseUrl: options.geminiBaseUrl,
       fetchImpl: options.fetchImpl,
     }),
+    ...(options.additionalProviders ?? []),
   ]);
 }

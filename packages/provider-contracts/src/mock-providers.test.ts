@@ -83,6 +83,30 @@ describe("mock providers", () => {
     });
   });
 
+  it("carries reference image story seeds through storyboard drafts", async () => {
+    const registry = createMockProviderRegistry();
+
+    const storyboard = await registry.llm.generateStoryboard({
+      projectId: "project_1",
+      title: "Reference Demo",
+      novelText: "A raincoat courier becomes the subject of a short film.",
+      referenceAssetIds: ["asset_seed_1"],
+      referenceImageNodeIds: ["image_seed_1"],
+      referencePrompt: "preserve the yellow raincoat",
+    });
+
+    expect(validateStoryboardResult(storyboard).success).toBe(true);
+    expect(storyboard.storySeedReferences).toEqual([
+      expect.objectContaining({
+        assetId: "asset_seed_1",
+        imageNodeId: "image_seed_1",
+      }),
+    ]);
+    expect(storyboard.characters[0]?.referenceAssetIds).toEqual(["asset_seed_1"]);
+    expect(storyboard.locations[0]?.referenceAssetIds).toEqual(["asset_seed_1"]);
+    expect(storyboard.scenes[0]?.shots[0]?.referenceAssetIds).toEqual(["asset_seed_1"]);
+  });
+
   it("normalizes forced mock provider failures", async () => {
     const registry = createMockProviderRegistry();
 
@@ -97,6 +121,37 @@ describe("mock providers", () => {
       code: "MOCK_PROVIDER_FAILURE",
       retryable: true,
     } satisfies Partial<ProviderError>);
+  });
+
+  it("carries source image metadata through mock image refinement", async () => {
+    const registry = createMockProviderRegistry();
+
+    const first = await registry.image.generateImage({
+      projectId: "project_1",
+      prompt: "make the lighting warmer",
+      mode: "image_to_image",
+      sourceImageAssetId: "asset_source_a",
+      sourceImageNodeId: "image_source_a",
+      referenceAssetIds: ["asset_ref_1"],
+    });
+    const second = await registry.image.generateImage({
+      projectId: "project_1",
+      prompt: "make the lighting warmer",
+      mode: "image_to_image",
+      sourceImageAssetId: "asset_source_b",
+      sourceImageNodeId: "image_source_b",
+      referenceAssetIds: ["asset_ref_1"],
+    });
+
+    expect(first.outputs[0]?.assetId).not.toBe(second.outputs[0]?.assetId);
+    expect(first.outputs[0]).toMatchObject({
+      referenceAssetIds: ["asset_source_a", "asset_ref_1"],
+      rawJson: {
+        mode: "image_to_image",
+        sourceImageAssetId: "asset_source_a",
+        sourceImageNodeId: "image_source_a",
+      },
+    });
   });
 
   it("keeps mock media storage filenames bounded for long prompts", async () => {

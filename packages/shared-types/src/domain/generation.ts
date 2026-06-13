@@ -1,4 +1,12 @@
-import type { CanvasSnapshotJson } from "./canvas";
+import type {
+  CanvasEdgeRecord,
+  CanvasEdgeRelation,
+  CanvasNodeRecord,
+  CanvasNodeType,
+  CanvasSnapshotJson,
+  NodeStatus,
+  Phase3CanvasNodeType,
+} from "./canvas";
 import type { PromptDebugPart, PromptMissingContext, ShotPromptSourceNodeIds } from "./prompt-composer";
 import type { ProjectAspectRatio } from "./project";
 
@@ -17,15 +25,23 @@ export const GENERATION_OPERATIONS = [
   "shot_to_image",
   "character_to_image",
   "location_to_image",
+  "image_refinement",
   "image_to_video",
   "shot_to_video",
   "batch_shots_to_images",
   "batch_images_to_videos",
   "editor_export",
+  "agent_canvas_action",
 ] as const;
 export type GenerationOperation = (typeof GENERATION_OPERATIONS)[number];
 
-export const PHASE_8_GENERATION_OPERATIONS = ["shot_to_image", "image_to_video"] as const;
+export const PHASE_8_GENERATION_OPERATIONS = [
+  "shot_to_image",
+  "character_to_image",
+  "location_to_image",
+  "image_refinement",
+  "image_to_video",
+] as const;
 export type Phase8GenerationOperation = (typeof PHASE_8_GENERATION_OPERATIONS)[number];
 
 export const IMAGE_PROVIDER_IDS = ["mock-image", "image2", "banana"] as const;
@@ -36,6 +52,10 @@ export type ImageProviderMode = (typeof IMAGE_PROVIDER_MODES)[number];
 
 export const VIDEO_PROVIDER_IDS = ["mock-video", "seedance", "happyhorse"] as const;
 export type VideoProviderId = (typeof VIDEO_PROVIDER_IDS)[number];
+
+export type ProgrammableProviderId = `custom:${string}`;
+export type AnyImageProviderId = ImageProviderId | ProgrammableProviderId;
+export type AnyVideoProviderId = VideoProviderId | ProgrammableProviderId;
 
 export const VIDEO_PROVIDER_MODES = ["text_to_video", "image_to_video", "reference_to_video", "video_edit"] as const;
 export type VideoProviderMode = (typeof VIDEO_PROVIDER_MODES)[number];
@@ -51,13 +71,423 @@ export const VIDEO_PROVIDER_TASK_STATUSES = [
 ] as const;
 export type VideoProviderTaskStatus = (typeof VIDEO_PROVIDER_TASK_STATUSES)[number];
 
+export const PROVIDER_KINDS = ["llm", "image", "video", "editor"] as const;
+export type ProviderKind = (typeof PROVIDER_KINDS)[number];
+
+export const MANAGED_PROVIDER_KINDS = ["image", "video"] as const;
+export type ManagedProviderKind = (typeof MANAGED_PROVIDER_KINDS)[number];
+
+export type ManagedProviderId = ImageProviderId | VideoProviderId | ProgrammableProviderId;
+
+export const PROVIDER_CREDENTIAL_UPDATE_ACTIONS = ["unchanged", "set", "clear"] as const;
+export type ProviderCredentialUpdateAction = (typeof PROVIDER_CREDENTIAL_UPDATE_ACTIONS)[number];
+
+export const PROVIDER_TEST_STATUSES = ["untested", "succeeded", "failed"] as const;
+export type ProviderTestStatus = (typeof PROVIDER_TEST_STATUSES)[number];
+
+export const PROVIDER_CREDENTIAL_SOURCES = ["environment", "stored"] as const;
+export type ProviderCredentialSource = (typeof PROVIDER_CREDENTIAL_SOURCES)[number];
+
+export const PROGRAMMABLE_PROVIDER_VERSION_STATUSES = ["valid", "invalid"] as const;
+export type ProgrammableProviderVersionStatus = (typeof PROGRAMMABLE_PROVIDER_VERSION_STATUSES)[number];
+
+export const PROGRAMMABLE_PROVIDER_CREDENTIAL_INPUT_TYPES = ["password", "text", "url"] as const;
+export type ProgrammableProviderCredentialInputType =
+  (typeof PROGRAMMABLE_PROVIDER_CREDENTIAL_INPUT_TYPES)[number];
+
+export const PROGRAMMABLE_PROVIDER_HTTP_METHODS = ["GET", "POST"] as const;
+export type ProgrammableProviderHttpMethod = (typeof PROGRAMMABLE_PROVIDER_HTTP_METHODS)[number];
+
+export const PROGRAMMABLE_PROVIDER_OUTPUT_SOURCES = ["url", "base64"] as const;
+export type ProgrammableProviderOutputSource = (typeof PROGRAMMABLE_PROVIDER_OUTPUT_SOURCES)[number];
+
 export const EDITOR_EXPORT_SORT_MODES = ["shot_index", "canvas_x", "manual"] as const;
 export type EditorExportSortMode = (typeof EDITOR_EXPORT_SORT_MODES)[number];
+
+export const EDITOR_EXPORT_PRESETS = [
+  "standard_zip",
+  "gif_preview",
+  "image_sequence",
+  "hd_1080p",
+] as const;
+export type EditorExportPreset = (typeof EDITOR_EXPORT_PRESETS)[number];
 
 export const EDITOR_EXPORT_STATUSES = ["queued", "running", "succeeded", "failed"] as const;
 export type EditorExportStatus = (typeof EDITOR_EXPORT_STATUSES)[number];
 
 export type GenerationJobStatusCounts = Record<GenerationJobStatus, number>;
+
+export const GENERATION_PACKAGING_REFERENCE_STATUSES = [
+  "absent",
+  "requested_unresolved",
+  "available",
+] as const;
+export type GenerationPackagingReferenceStatus = (typeof GENERATION_PACKAGING_REFERENCE_STATUSES)[number];
+
+export const GENERATION_CONTINUITY_MODES = [
+  "standard",
+  "match_cut",
+  "one_take",
+  "multi_image",
+] as const;
+export type GenerationContinuityMode = (typeof GENERATION_CONTINUITY_MODES)[number];
+
+export const GENERATION_CREATIVE_SETTING_KEYS = [
+  "visualStyle",
+  "aspectRatio",
+  "narrationLanguage",
+  "narrationAccent",
+  "narrationVoice",
+  "visualManual",
+  "directorManual",
+  "subtitle",
+  "bgm",
+  "transition",
+  "stylePack",
+  "viralReference",
+  "continuity",
+  "talkingPhoto",
+  "marketing",
+] as const;
+export type GenerationCreativeSettingKey = (typeof GENERATION_CREATIVE_SETTING_KEYS)[number];
+
+export type GenerationSettingSource = "project" | "shot";
+
+export const GENERATION_VISUAL_MANUAL_FIELDS = [
+  "artStyle",
+  "palette",
+  "lighting",
+  "lens",
+  "composition",
+  "texture",
+  "consistencyRules",
+  "negativeStyle",
+] as const;
+export type GenerationVisualManualField = (typeof GENERATION_VISUAL_MANUAL_FIELDS)[number];
+
+export const GENERATION_DIRECTOR_MANUAL_FIELDS = [
+  "pacing",
+  "cameraLanguage",
+  "performance",
+  "editingRhythm",
+  "audioNarration",
+  "productionConstraints",
+] as const;
+export type GenerationDirectorManualField = (typeof GENERATION_DIRECTOR_MANUAL_FIELDS)[number];
+
+export interface GenerationPackagingReference {
+  [key: string]: CanvasSnapshotJson | undefined;
+  status?: GenerationPackagingReferenceStatus;
+  assetId?: string;
+  label?: string;
+  prompt?: string;
+  notes?: string;
+}
+
+export interface GenerationViralReference {
+  [key: string]: CanvasSnapshotJson | undefined;
+  sourceSummary?: string;
+  hook?: string;
+  pacing?: string;
+  theme?: string;
+  visualStyle?: string;
+  transformationNotes?: string;
+  complianceNote?: string;
+}
+
+export interface GenerationVisualManualSettings {
+  [key: string]: CanvasSnapshotJson | undefined;
+  artStyle?: string;
+  palette?: string;
+  lighting?: string;
+  lens?: string;
+  composition?: string;
+  texture?: string;
+  consistencyRules?: string;
+  negativeStyle?: string;
+}
+
+export interface GenerationDirectorManualSettings {
+  [key: string]: CanvasSnapshotJson | undefined;
+  pacing?: string;
+  cameraLanguage?: string;
+  performance?: string;
+  editingRhythm?: string;
+  audioNarration?: string;
+  productionConstraints?: string;
+}
+
+export interface GenerationContinuitySettings {
+  [key: string]: CanvasSnapshotJson | undefined;
+  mode?: GenerationContinuityMode;
+  transitionPrompt?: string;
+  adjacentShotPrompt?: string;
+  cameraBridge?: string;
+  subjectAnchor?: string;
+}
+
+export interface GenerationTalkingPhotoSettings {
+  [key: string]: CanvasSnapshotJson | undefined;
+  enabled?: boolean;
+  consentConfirmed?: boolean;
+  sourceAssetId?: string;
+  personaPrompt?: string;
+  voicePrompt?: string;
+  scriptPrompt?: string;
+}
+
+export interface GenerationMarketingSettings {
+  [key: string]: CanvasSnapshotJson | undefined;
+  cover?: GenerationPackagingReference;
+  poster?: GenerationPackagingReference;
+  promo?: GenerationPackagingReference;
+  callToAction?: string;
+  layoutNotes?: string;
+}
+
+export interface GenerationCreativeSettings {
+  [key: string]: CanvasSnapshotJson | undefined;
+  visualStyle?: string;
+  aspectRatio?: ProjectAspectRatio;
+  narrationLanguage?: string;
+  narrationAccent?: string;
+  narrationVoice?: string;
+  visualManual?: GenerationVisualManualSettings;
+  directorManual?: GenerationDirectorManualSettings;
+  subtitle?: GenerationPackagingReference;
+  bgm?: GenerationPackagingReference;
+  transition?: GenerationPackagingReference;
+  stylePack?: GenerationPackagingReference;
+  viralReference?: GenerationViralReference;
+  continuity?: GenerationContinuitySettings;
+  talkingPhoto?: GenerationTalkingPhotoSettings;
+  marketing?: GenerationMarketingSettings;
+}
+
+export type GenerationVisualManualSources = Partial<
+  Record<GenerationVisualManualField, GenerationSettingSource>
+> & {
+  [key: string]: CanvasSnapshotJson | undefined;
+};
+
+export type GenerationDirectorManualSources = Partial<
+  Record<GenerationDirectorManualField, GenerationSettingSource>
+> & {
+  [key: string]: CanvasSnapshotJson | undefined;
+};
+
+export type GenerationSettingSources = Partial<Record<GenerationCreativeSettingKey, GenerationSettingSource>> & {
+  visualManualFields?: GenerationVisualManualSources;
+  directorManualFields?: GenerationDirectorManualSources;
+  [key: string]: CanvasSnapshotJson | undefined;
+};
+
+export interface ResolvedGenerationSettings {
+  [key: string]: CanvasSnapshotJson | undefined;
+  project: GenerationCreativeSettings;
+  shot: GenerationCreativeSettings;
+  effective: GenerationCreativeSettings;
+  sources: GenerationSettingSources;
+}
+
+export interface ResolveGenerationSettingsInput {
+  projectSettings?: unknown;
+  shotSettings?: unknown;
+}
+
+export function resolveGenerationSettings(
+  input: ResolveGenerationSettingsInput = {},
+): ResolvedGenerationSettings {
+  const project = normalizeGenerationCreativeSettings(input.projectSettings);
+  const shot = normalizeGenerationCreativeSettings(input.shotSettings);
+  const effective: GenerationCreativeSettings = {};
+  const sources: GenerationSettingSources = {};
+
+  for (const key of GENERATION_CREATIVE_SETTING_KEYS) {
+    if (key === "visualManual") {
+      const resolved = resolveManualSetting(
+        project.visualManual,
+        shot.visualManual,
+        GENERATION_VISUAL_MANUAL_FIELDS,
+      );
+      if (resolved.value) {
+        effective.visualManual = resolved.value;
+        sources.visualManual = resolved.source;
+        sources.visualManualFields = resolved.fieldSources;
+      }
+      continue;
+    }
+    if (key === "directorManual") {
+      const resolved = resolveManualSetting(
+        project.directorManual,
+        shot.directorManual,
+        GENERATION_DIRECTOR_MANUAL_FIELDS,
+      );
+      if (resolved.value) {
+        effective.directorManual = resolved.value;
+        sources.directorManual = resolved.source;
+        sources.directorManualFields = resolved.fieldSources;
+      }
+      continue;
+    }
+
+    const shotValue = shot[key];
+    if (hasGenerationSettingValue(shotValue)) {
+      effective[key] = shotValue as never;
+      sources[key] = "shot";
+      continue;
+    }
+    const projectValue = project[key];
+    if (hasGenerationSettingValue(projectValue)) {
+      effective[key] = projectValue as never;
+      sources[key] = "project";
+    }
+  }
+
+  return { project, shot, effective, sources };
+}
+
+export function normalizeGenerationCreativeSettings(input: unknown): GenerationCreativeSettings {
+  const raw = dataObject(input);
+  const aspectRatio = projectAspectRatio(raw.aspectRatio);
+
+  return compactSettings({
+    visualStyle: optionalString(raw.visualStyle),
+    aspectRatio,
+    narrationLanguage: optionalString(raw.narrationLanguage),
+    narrationAccent: optionalString(raw.narrationAccent),
+    narrationVoice: optionalString(raw.narrationVoice),
+    visualManual: normalizeGenerationVisualManualSettings(raw.visualManual),
+    directorManual: normalizeGenerationDirectorManualSettings(raw.directorManual),
+    subtitle: normalizeGenerationPackagingReference(raw.subtitle),
+    bgm: normalizeGenerationPackagingReference(raw.bgm),
+    transition: normalizeGenerationPackagingReference(raw.transition),
+    stylePack: normalizeGenerationPackagingReference(raw.stylePack),
+    viralReference: normalizeGenerationViralReference(raw.viralReference),
+    continuity: normalizeGenerationContinuitySettings(raw.continuity),
+    talkingPhoto: normalizeGenerationTalkingPhotoSettings(raw.talkingPhoto),
+    marketing: normalizeGenerationMarketingSettings(raw.marketing),
+  });
+}
+
+export function normalizeGenerationPackagingReference(input: unknown): GenerationPackagingReference | undefined {
+  const raw = dataObject(input);
+  const assetId = optionalString(raw.assetId);
+  const label = optionalString(raw.label);
+  const prompt = optionalString(raw.prompt);
+  const notes = optionalString(raw.notes);
+  const rawStatus = optionalString(raw.status);
+  const status = GENERATION_PACKAGING_REFERENCE_STATUSES.includes(rawStatus as GenerationPackagingReferenceStatus)
+    ? (rawStatus as GenerationPackagingReferenceStatus)
+    : assetId
+      ? "available"
+      : label || prompt || notes
+        ? "requested_unresolved"
+        : undefined;
+
+  if (!status && !assetId && !label && !prompt && !notes) {
+    return undefined;
+  }
+
+  return compactObject({
+    status,
+    assetId,
+    label,
+    prompt,
+    notes,
+  });
+}
+
+export function normalizeGenerationViralReference(input: unknown): GenerationViralReference | undefined {
+  const raw = dataObject(input);
+  return compactOptionalObject({
+    sourceSummary: optionalString(raw.sourceSummary),
+    hook: optionalString(raw.hook),
+    pacing: optionalString(raw.pacing),
+    theme: optionalString(raw.theme),
+    visualStyle: optionalString(raw.visualStyle),
+    transformationNotes: optionalString(raw.transformationNotes),
+    complianceNote: optionalString(raw.complianceNote),
+  });
+}
+
+export function normalizeGenerationVisualManualSettings(
+  input: unknown,
+): GenerationVisualManualSettings | undefined {
+  const raw = dataObject(input);
+  return compactOptionalObject({
+    artStyle: optionalString(raw.artStyle),
+    palette: optionalString(raw.palette),
+    lighting: optionalString(raw.lighting),
+    lens: optionalString(raw.lens),
+    composition: optionalString(raw.composition),
+    texture: optionalString(raw.texture),
+    consistencyRules: optionalString(raw.consistencyRules),
+    negativeStyle: optionalString(raw.negativeStyle),
+  });
+}
+
+export function normalizeGenerationDirectorManualSettings(
+  input: unknown,
+): GenerationDirectorManualSettings | undefined {
+  const raw = dataObject(input);
+  return compactOptionalObject({
+    pacing: optionalString(raw.pacing),
+    cameraLanguage: optionalString(raw.cameraLanguage),
+    performance: optionalString(raw.performance),
+    editingRhythm: optionalString(raw.editingRhythm),
+    audioNarration: optionalString(raw.audioNarration),
+    productionConstraints: optionalString(raw.productionConstraints),
+  });
+}
+
+export function normalizeGenerationContinuitySettings(
+  input: unknown,
+): GenerationContinuitySettings | undefined {
+  const raw = dataObject(input);
+  return compactOptionalObject({
+    mode: continuityMode(raw.mode),
+    transitionPrompt: optionalString(raw.transitionPrompt),
+    adjacentShotPrompt: optionalString(raw.adjacentShotPrompt),
+    cameraBridge: optionalString(raw.cameraBridge),
+    subjectAnchor: optionalString(raw.subjectAnchor),
+  });
+}
+
+export function normalizeGenerationTalkingPhotoSettings(
+  input: unknown,
+): GenerationTalkingPhotoSettings | undefined {
+  const raw = dataObject(input);
+  const sourceAssetId = optionalString(raw.sourceAssetId);
+  const personaPrompt = optionalString(raw.personaPrompt);
+  const voicePrompt = optionalString(raw.voicePrompt);
+  const scriptPrompt = optionalString(raw.scriptPrompt);
+  const consentConfirmed = raw.consentConfirmed === true ? true : undefined;
+  const enabled =
+    raw.enabled === true || sourceAssetId || personaPrompt || voicePrompt || scriptPrompt
+      ? true
+      : undefined;
+
+  return compactOptionalObject({
+    enabled,
+    consentConfirmed,
+    sourceAssetId,
+    personaPrompt,
+    voicePrompt,
+    scriptPrompt,
+  });
+}
+
+export function normalizeGenerationMarketingSettings(input: unknown): GenerationMarketingSettings | undefined {
+  const raw = dataObject(input);
+  return compactOptionalObject({
+    cover: normalizeGenerationPackagingReference(raw.cover),
+    poster: normalizeGenerationPackagingReference(raw.poster),
+    promo: normalizeGenerationPackagingReference(raw.promo),
+    callToAction: optionalString(raw.callToAction),
+    layoutNotes: optionalString(raw.layoutNotes),
+  });
+}
 
 export interface ImageProviderModelOption {
   id: string;
@@ -82,7 +512,8 @@ export interface ImageProviderParameterDefinition {
 }
 
 export interface ImageProviderCatalogItem {
-  id: ImageProviderId;
+  id: AnyImageProviderId;
+  providerVersionId?: string;
   displayName: string;
   enabled: boolean;
   disabledReason?: string;
@@ -108,7 +539,8 @@ export type VideoProviderParameterOption = ImageProviderParameterOption;
 export type VideoProviderParameterDefinition = ImageProviderParameterDefinition;
 
 export interface VideoProviderCatalogItem {
-  id: VideoProviderId;
+  id: AnyVideoProviderId;
+  providerVersionId?: string;
   displayName: string;
   enabled: boolean;
   disabledReason?: string;
@@ -134,8 +566,207 @@ export interface VideoProviderCatalogResult {
   providers: VideoProviderCatalogItem[];
 }
 
+export interface ProviderCredentialUpdate {
+  action: ProviderCredentialUpdateAction;
+  value?: string;
+}
+
+export interface ProgrammableProviderCredentialDefinition {
+  key: string;
+  label: string;
+  type: ProgrammableProviderCredentialInputType;
+  required: boolean;
+  placeholder?: string;
+}
+
+export interface ProgrammableProviderHttpRequestTemplate {
+  method: ProgrammableProviderHttpMethod;
+  url: string;
+  headers?: Record<string, string>;
+  bodyJson?: CanvasSnapshotJson;
+  timeoutMs?: number;
+  maxResponseBytes?: number;
+}
+
+export interface ProgrammableProviderOutputMapping {
+  source: ProgrammableProviderOutputSource;
+  path: string;
+  mimeType?: string;
+  widthPath?: string;
+  heightPath?: string;
+}
+
+export interface ProgrammableProviderTaskMapping {
+  idPath: string;
+  statusPath?: string;
+  succeededValues?: string[];
+  failedValues?: string[];
+  output?: ProgrammableProviderOutputMapping;
+  errorPath?: string;
+  pollRequest?: ProgrammableProviderHttpRequestTemplate;
+  cancelRequest?: ProgrammableProviderHttpRequestTemplate;
+}
+
+export interface ProgrammableProviderActionManifest {
+  request: ProgrammableProviderHttpRequestTemplate;
+  output?: ProgrammableProviderOutputMapping;
+  task?: ProgrammableProviderTaskMapping;
+}
+
+export interface ProgrammableProviderManifest {
+  id: ProgrammableProviderId;
+  kind: ManagedProviderKind;
+  displayName: string;
+  description?: string;
+  credentials: ProgrammableProviderCredentialDefinition[];
+  models: ImageProviderModelOption[];
+  defaultModel: string;
+  supportedModes: ImageProviderMode[] | VideoProviderMode[];
+  defaultAspectRatio: ProjectAspectRatio;
+  supportedAspectRatios: ProjectAspectRatio[];
+  parameters: ImageProviderParameterDefinition[];
+  image?: {
+    supportsReferenceImages: boolean;
+    maxReferenceImages: number;
+    supportsMultipleOutputs: boolean;
+    maxOutputs: number;
+    action: ProgrammableProviderActionManifest;
+  };
+  video?: {
+    supportsFirstFrame: boolean;
+    supportsLastFrame: boolean;
+    supportsReferenceImages: boolean;
+    maxReferenceImages: number;
+    supportsCancel: boolean;
+    defaultDurationSeconds: number;
+    supportedDurationSeconds: number[];
+    defaultResolution: VideoProviderResolution;
+    supportedResolutions: VideoProviderResolution[];
+    action: ProgrammableProviderActionManifest;
+  };
+}
+
+export interface ProgrammableProviderValidationDiagnostic {
+  path: string;
+  message: string;
+}
+
+export interface ProgrammableProviderVersionSummary {
+  id: string;
+  version: number;
+  status: ProgrammableProviderVersionStatus;
+  diagnostics: ProgrammableProviderValidationDiagnostic[];
+  createdAt: string;
+  active: boolean;
+}
+
+export interface ProgrammableProviderDefinitionSummary {
+  id: string;
+  kind: ManagedProviderKind;
+  provider: ProgrammableProviderId;
+  displayName: string;
+  description?: string;
+  activeVersionId?: string;
+  versions: ProgrammableProviderVersionSummary[];
+  enabled: boolean;
+  credentialConfigured: boolean;
+  lastTest?: ProviderConnectionTestSummary;
+}
+
+export interface ProgrammableProviderDefinitionResult {
+  provider: ProgrammableProviderDefinitionSummary;
+}
+
+export interface CreateProgrammableProviderInput {
+  sourceCode: string;
+  credential?: ProviderCredentialUpdate;
+}
+
+export interface UpdateProgrammableProviderSourceInput {
+  sourceCode: string;
+}
+
+export interface ActivateProgrammableProviderVersionInput {
+  versionId: string;
+}
+
+export interface ProgrammableProviderRuntimeConfig {
+  versionId: string;
+  manifest: ProgrammableProviderManifest;
+  credentials: Record<string, string>;
+}
+
+export interface UpdateProviderConfigInput {
+  enabled?: boolean;
+  defaultModel?: string;
+  credential?: ProviderCredentialUpdate;
+}
+
+export interface ProviderConnectionTestInput {
+  model?: string;
+}
+
+export interface ProviderConnectionTestSummary {
+  status: ProviderTestStatus;
+  testedAt?: string;
+  model?: string;
+  message?: string;
+}
+
+export interface ProviderManagementMetadata {
+  configuredEnabled: boolean;
+  credentialConfigured: boolean;
+  credentialSource?: ProviderCredentialSource;
+  configuredDefaultModel?: string;
+  lastTest?: ProviderConnectionTestSummary;
+}
+
+export type ImageProviderManagementItem = ImageProviderCatalogItem &
+  ProviderManagementMetadata & {
+    kind: "image";
+  };
+
+export type VideoProviderManagementItem = VideoProviderCatalogItem &
+  ProviderManagementMetadata & {
+    kind: "video";
+  };
+
+export type ProviderManagementItem = ImageProviderManagementItem | VideoProviderManagementItem;
+
+export interface ProviderManagementResult {
+  image: ImageProviderManagementItem[];
+  video: VideoProviderManagementItem[];
+}
+
+export interface ProviderConfigUpdateResult {
+  provider: ProviderManagementItem;
+}
+
+export interface ProviderConnectionTestResult {
+  kind: ManagedProviderKind;
+  provider: ManagedProviderId;
+  status: Exclude<ProviderTestStatus, "untested">;
+  testedAt: string;
+  model: string;
+  message: string;
+  credentialConfigured: boolean;
+}
+
+export interface ProviderRuntimeConfig {
+  kind: ManagedProviderKind;
+  provider: ManagedProviderId;
+  env: Record<string, string | undefined>;
+  programmableProvider?: ProgrammableProviderRuntimeConfig;
+}
+
+export interface WorkerProviderRuntimeConfigInput {
+  projectId: string;
+  kind: ManagedProviderKind;
+  provider: ManagedProviderId;
+}
+
 export interface ImageGenerationSettings {
-  provider?: ImageProviderId;
+  provider?: AnyImageProviderId;
   model?: string;
   aspectRatio?: ProjectAspectRatio;
   count?: number;
@@ -143,12 +774,63 @@ export interface ImageGenerationSettings {
 }
 
 export interface VideoGenerationSettings {
-  videoProvider?: VideoProviderId;
+  videoProvider?: AnyVideoProviderId;
   videoModel?: string;
   videoAspectRatio?: ProjectAspectRatio;
   durationSeconds?: number;
   resolution?: VideoProviderResolution;
   videoProviderParams?: CanvasSnapshotJson;
+}
+
+export function normalizeUpdateProviderConfigInput(input: unknown): UpdateProviderConfigInput {
+  const raw = dataObject(input);
+  const credential = normalizeProviderCredentialUpdate(raw.credential);
+  return compactObject({
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : undefined,
+    defaultModel: optionalString(raw.defaultModel),
+    credential,
+  });
+}
+
+export function normalizeProviderConnectionTestInput(input: unknown): ProviderConnectionTestInput {
+  const raw = dataObject(input);
+  return compactObject({
+    model: optionalString(raw.model),
+  });
+}
+
+export function managedProviderKind(value: unknown): ManagedProviderKind | undefined {
+  return MANAGED_PROVIDER_KINDS.includes(value as ManagedProviderKind)
+    ? (value as ManagedProviderKind)
+    : undefined;
+}
+
+export function programmableProviderId(value: unknown): ProgrammableProviderId | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!/^custom:[a-z0-9][a-z0-9-]{1,62}$/.test(normalized)) {
+    return undefined;
+  }
+  const builtinId = normalized.replace(/^custom:/, "");
+  if (
+    IMAGE_PROVIDER_IDS.includes(builtinId as ImageProviderId) ||
+    VIDEO_PROVIDER_IDS.includes(builtinId as VideoProviderId)
+  ) {
+    return undefined;
+  }
+  return normalized as ProgrammableProviderId;
+}
+
+export function managedProviderId(kind: ManagedProviderKind, value: unknown): ManagedProviderId | undefined {
+  if (kind === "image" && IMAGE_PROVIDER_IDS.includes(value as ImageProviderId)) {
+    return value as ImageProviderId;
+  }
+  if (kind === "video" && VIDEO_PROVIDER_IDS.includes(value as VideoProviderId)) {
+    return value as VideoProviderId;
+  }
+  return programmableProviderId(value);
 }
 
 export interface GenerationQueueSummary {
@@ -181,6 +863,7 @@ export interface GenerationJobRecord<TInput = unknown, TOutput = unknown> {
 export interface CreateGenerationJobInput extends ImageGenerationSettings, VideoGenerationSettings {
   operation: Phase8GenerationOperation;
   sourceNodeId: string;
+  refinementPrompt?: string;
   forceFailure?: boolean;
 }
 
@@ -199,8 +882,10 @@ export interface CreateBatchShotsToImagesJobInput extends ImageGenerationSetting
 export interface CreateEditorExportInput {
   videoNodeIds: string[];
   sortMode: EditorExportSortMode;
+  exportPreset?: EditorExportPreset;
   includeStoryboardCsv?: boolean;
   includeSubtitles?: boolean;
+  sourceEditorExportId?: string;
   forceFailure?: boolean;
 }
 
@@ -254,7 +939,10 @@ export interface EditorExportSendResult {
   errorMessage?: string;
 }
 
-export interface GenerationJobListResult<TInput = GenerationJobInput, TOutput = GeneratedMediaJobOutput> {
+export interface GenerationJobListResult<
+  TInput = GenerationJobInput,
+  TOutput = GeneratedMediaJobOutput | ReferenceAssetJobOutput,
+> {
   jobs: Array<GenerationJobRecord<TInput, TOutput>>;
   queueSummary: GenerationQueueSummary;
 }
@@ -297,7 +985,11 @@ export interface WorkerGenerationJobCancelInput {
 
 export type GenerationJobInput =
   | NovelToStoryboardJobInput
+  | AgentCanvasActionJobInput
   | ShotToImageJobInput
+  | CharacterToImageJobInput
+  | LocationToImageJobInput
+  | ImageRefinementJobInput
   | ImageToVideoJobInput
   | EditorExportJobInput;
 
@@ -309,9 +1001,105 @@ export interface NovelToStoryboardJobInput {
   audience?: string;
   stylePrompt?: string;
   targetDurationSeconds?: number;
+  referenceAssetIds?: string[];
+  referenceImageNodeIds?: string[];
+  referencePrompt?: string;
   provider: string;
   model?: string;
   forceFailure?: boolean;
+}
+
+export const AGENT_CANVAS_ACTION_KINDS = [
+  "create_node",
+  "update_node",
+  "create_edge",
+] as const;
+export type AgentCanvasActionKind = (typeof AGENT_CANVAS_ACTION_KINDS)[number];
+
+export interface CreateAgentCanvasActionInput {
+  message: string;
+  selectedNodeId?: string;
+  sourceNodeId?: string;
+  targetNodeId?: string;
+  canvasX?: number;
+  canvasY?: number;
+}
+
+export interface AgentCanvasActionJobInput extends CreateAgentCanvasActionInput {
+  operation: "agent_canvas_action";
+  projectId: string;
+  provider: "local-agent";
+  model: "deterministic-canvas-actions-v1";
+  memoryIds?: string[];
+  memorySummary?: string;
+  skillTemplateIds?: string[];
+  skillTemplateSummary?: string;
+}
+
+export interface AgentCanvasActionPreviousNodeSnapshot {
+  nodeId: string;
+  tldrawShapeId: string;
+  type: CanvasNodeType;
+  title?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex: number;
+  status: NodeStatus;
+  dataJson: CanvasSnapshotJson;
+}
+
+export interface AgentCanvasActionCreatedNode {
+  nodeId: string;
+  type: Phase3CanvasNodeType;
+  title?: string;
+}
+
+export interface AgentCanvasActionUpdatedNode {
+  nodeId: string;
+  title?: string;
+  previous: AgentCanvasActionPreviousNodeSnapshot;
+}
+
+export interface AgentCanvasActionCreatedEdge {
+  edgeId: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  relation: CanvasEdgeRelation;
+}
+
+export interface AgentCanvasActionUndoMetadata {
+  undoneAt: string;
+  deletedNodeIds: string[];
+  deletedEdgeIds: string[];
+  restoredNodeIds: string[];
+}
+
+export interface AgentCanvasActionJobOutput {
+  operation: "agent_canvas_action";
+  actionKind: AgentCanvasActionKind;
+  message: string;
+  summary: string;
+  createdNodes?: AgentCanvasActionCreatedNode[];
+  updatedNodes?: AgentCanvasActionUpdatedNode[];
+  createdEdges?: AgentCanvasActionCreatedEdge[];
+  completedAt: string;
+  undo?: AgentCanvasActionUndoMetadata;
+}
+
+export interface CreateAgentCanvasActionResult {
+  job: GenerationJobRecord<AgentCanvasActionJobInput, AgentCanvasActionJobOutput>;
+  nodes: CanvasNodeRecord[];
+  edges: CanvasEdgeRecord[];
+  focusNodeId?: string;
+}
+
+export interface UndoAgentCanvasActionResult {
+  job: GenerationJobRecord<AgentCanvasActionJobInput, AgentCanvasActionJobOutput>;
+  restoredNodes: CanvasNodeRecord[];
+  deletedNodeIds: string[];
+  deletedEdgeIds: string[];
 }
 
 export interface ShotToImageJobInput {
@@ -326,12 +1114,48 @@ export interface ShotToImageJobInput {
   debugParts: PromptDebugPart[];
   missingContext: PromptMissingContext[];
   provider: string;
+  providerVersionId?: string;
   model?: string;
   aspectRatio?: ProjectAspectRatio;
   count?: number;
   providerParams?: CanvasSnapshotJson;
+  generationSettings?: ResolvedGenerationSettings;
   omittedReferenceAssetIds?: string[];
   referenceOmissionReason?: string;
+  forceFailure?: boolean;
+}
+
+export interface CharacterToImageJobInput {
+  operation: "character_to_image";
+  projectId: string;
+  sourceNodeId: string;
+  characterNodeId: string;
+  prompt: string;
+  referenceAssetIds: string[];
+  sourceNodeIds: string[];
+  provider: string;
+  providerVersionId?: string;
+  model?: string;
+  aspectRatio?: ProjectAspectRatio;
+  providerParams?: CanvasSnapshotJson;
+  assetPurpose: "character_reference";
+  forceFailure?: boolean;
+}
+
+export interface LocationToImageJobInput {
+  operation: "location_to_image";
+  projectId: string;
+  sourceNodeId: string;
+  locationNodeId: string;
+  prompt: string;
+  referenceAssetIds: string[];
+  sourceNodeIds: string[];
+  provider: string;
+  providerVersionId?: string;
+  model?: string;
+  aspectRatio?: ProjectAspectRatio;
+  providerParams?: CanvasSnapshotJson;
+  assetPurpose: "location_reference";
   forceFailure?: boolean;
 }
 
@@ -350,8 +1174,30 @@ export interface ImageToVideoJobInput {
   referenceAssetIds: string[];
   sourceNodeIds: string[];
   provider: string;
+  providerVersionId?: string;
   model?: string;
   providerParams?: CanvasSnapshotJson;
+  generationSettings?: ResolvedGenerationSettings;
+  forceFailure?: boolean;
+}
+
+export interface ImageRefinementJobInput {
+  operation: "image_refinement";
+  projectId: string;
+  sourceNodeId: string;
+  imageNodeId: string;
+  sourceImageAssetId: string;
+  prompt: string;
+  referenceAssetIds: string[];
+  sourceNodeIds: string[];
+  parentShotNodeId?: string;
+  parentShotTitle?: string;
+  provider: string;
+  providerVersionId?: string;
+  model?: string;
+  aspectRatio?: ProjectAspectRatio;
+  providerParams?: CanvasSnapshotJson;
+  generationSettings?: ResolvedGenerationSettings;
   forceFailure?: boolean;
 }
 
@@ -361,11 +1207,13 @@ export interface BatchImagesToVideosJobInput {
   sourceNodeIds: string[];
   childJobIds: string[];
   provider: string;
+  providerVersionId?: string;
   model?: string;
   durationSeconds?: number;
   aspectRatio?: ProjectAspectRatio;
   resolution?: VideoProviderResolution;
   providerParams?: CanvasSnapshotJson;
+  generationSettings?: ResolvedGenerationSettings;
   forceFailure?: boolean;
 }
 
@@ -375,10 +1223,12 @@ export interface BatchShotsToImagesJobInput {
   sourceNodeIds: string[];
   childJobIds: string[];
   provider: string;
+  providerVersionId?: string;
   model?: string;
   aspectRatio?: ProjectAspectRatio;
   count?: number;
   providerParams?: CanvasSnapshotJson;
+  generationSettings?: ResolvedGenerationSettings;
   forceFailure?: boolean;
 }
 
@@ -397,6 +1247,20 @@ export interface EditorExportClipSource {
   canvasX?: number;
   canvasY?: number;
   manualIndex?: number;
+  generationSettings?: ResolvedGenerationSettings;
+  packagingSettings?: ResolvedGenerationSettings;
+  audioReferences?: EditorExportAudioReference[];
+}
+
+export interface EditorExportAudioReference {
+  [key: string]: CanvasSnapshotJson | undefined;
+  assetId: string;
+  sourceNodeId: string;
+  sourceNodeType?: "shot" | "video" | "character_asset";
+  label?: string;
+  role?: "voice" | "narration" | "sound_effect" | "bgm" | "clip_audio";
+  mimeType?: string;
+  durationMs?: number;
 }
 
 export interface EditorExportJobInput {
@@ -405,11 +1269,15 @@ export interface EditorExportJobInput {
   editorExportId: string;
   videoNodeIds: string[];
   sortMode: EditorExportSortMode;
+  exportPreset: EditorExportPreset;
   includeStoryboardCsv: boolean;
   includeSubtitles: boolean;
   fps: 24 | 25 | 30;
   aspectRatio: ProjectAspectRatio;
   clips: EditorExportClipSource[];
+  generationSettings?: ResolvedGenerationSettings;
+  packagingReferences?: EditorExportPackagingReferences;
+  sourceEditorExportId?: string;
   forceFailure?: boolean;
 }
 
@@ -421,9 +1289,22 @@ export interface TimelineManifest {
   aspectRatio: ProjectAspectRatio;
   fps: 24 | 25 | 30;
   sortMode: EditorExportSortMode;
+  exportPreset: EditorExportPreset;
   tracks: TimelineTrack[];
   assets: TimelineAsset[];
   metadata?: CanvasSnapshotJson;
+}
+
+export interface EditorExportPackagingReferences {
+  [key: string]: CanvasSnapshotJson | undefined;
+  project?: ResolvedGenerationSettings;
+  subtitle?: GenerationPackagingReference;
+  bgm?: GenerationPackagingReference;
+  transition?: GenerationPackagingReference;
+  stylePack?: GenerationPackagingReference;
+  cover?: GenerationPackagingReference;
+  poster?: GenerationPackagingReference;
+  promo?: GenerationPackagingReference;
 }
 
 export interface TimelineTrack {
@@ -473,6 +1354,9 @@ export interface EditorExportClipOutput {
   videoNodeId: string;
   videoAssetId: string;
   durationMs: number;
+  generationSettings?: ResolvedGenerationSettings;
+  packagingSettings?: ResolvedGenerationSettings;
+  audioReferences?: EditorExportAudioReference[];
 }
 
 export interface EditorExportPackageOutput {
@@ -494,6 +1378,8 @@ export interface EditorExportJobOutput {
   edgeIds: string[];
   selectedVideoNodeIds: string[];
   sortMode: EditorExportSortMode;
+  exportPreset: EditorExportPreset;
+  sourceEditorExportId?: string;
   timeline: TimelineManifest;
   storyboardCsv: string;
   clips: EditorExportClipOutput[];
@@ -505,6 +1391,8 @@ export interface NovelToStoryboardJobOutput {
   operation: "novel_to_storyboard";
   novelDocumentId: string;
   storyboardDraftId: string;
+  referenceAssetIds?: string[];
+  referenceImageNodeIds?: string[];
   provider: string;
   model?: string;
   completedAt: string;
@@ -553,7 +1441,7 @@ export interface GeneratedMediaJobTargetOutput {
 }
 
 export interface GeneratedMediaJobOutput {
-  operation: Phase8GenerationOperation;
+  operation: "shot_to_image" | "image_refinement" | "image_to_video";
   sourceNodeId: string;
   targetNodeId: string;
   assetId: string;
@@ -562,8 +1450,21 @@ export interface GeneratedMediaJobOutput {
   model: string;
   prompt: string;
   referenceAssetIds: string[];
+  generationSettings?: ResolvedGenerationSettings;
   providerOutput: GeneratedMediaProviderOutput;
   targets?: GeneratedMediaJobTargetOutput[];
+  completedAt: string;
+}
+
+export interface ReferenceAssetJobOutput {
+  operation: "character_to_image" | "location_to_image";
+  sourceNodeId: string;
+  assetId: string;
+  provider: string;
+  model: string;
+  prompt: string;
+  referenceAssetIds: string[];
+  providerOutput: GeneratedMediaProviderOutput;
   completedAt: string;
 }
 
@@ -609,3 +1510,121 @@ export type VideoProviderTaskResult =
   | VideoProviderTaskSucceededResult
   | VideoProviderTaskFailedResult
   | VideoProviderTaskCancelledResult;
+
+function compactSettings(settings: GenerationCreativeSettings): GenerationCreativeSettings {
+  const compact: GenerationCreativeSettings = {};
+  for (const key of GENERATION_CREATIVE_SETTING_KEYS) {
+    const value = settings[key];
+    if (hasGenerationSettingValue(value)) {
+      compact[key] = value as never;
+    }
+  }
+  return compact;
+}
+
+function resolveManualSetting<TField extends string, TManual extends Record<string, CanvasSnapshotJson | undefined>>(
+  projectManual: TManual | undefined,
+  shotManual: TManual | undefined,
+  fields: readonly TField[],
+): {
+  value?: TManual;
+  source?: GenerationSettingSource;
+  fieldSources?: Partial<Record<TField, GenerationSettingSource>> & {
+    [key: string]: CanvasSnapshotJson | undefined;
+  };
+} {
+  const value: Record<string, CanvasSnapshotJson | undefined> = {};
+  const fieldSources: Record<string, GenerationSettingSource> = {};
+
+  for (const field of fields) {
+    const shotValue = shotManual?.[field];
+    if (hasGenerationSettingValue(shotValue)) {
+      value[field] = shotValue;
+      fieldSources[field] = "shot";
+      continue;
+    }
+
+    const projectValue = projectManual?.[field];
+    if (hasGenerationSettingValue(projectValue)) {
+      value[field] = projectValue;
+      fieldSources[field] = "project";
+    }
+  }
+
+  if (!Object.keys(value).length) {
+    return {};
+  }
+
+  const fieldSourceValues = Object.values(fieldSources);
+  const source = fieldSourceValues.every((item) => item === "project") ? "project" : "shot";
+  return {
+    value: value as TManual,
+    source,
+    fieldSources: fieldSources as Partial<Record<TField, GenerationSettingSource>> & {
+      [key: string]: CanvasSnapshotJson | undefined;
+    },
+  };
+}
+
+function hasGenerationSettingValue(value: unknown): boolean {
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    return Object.values(value).some((item) => item !== undefined && item !== "");
+  }
+  return value !== undefined;
+}
+
+function dataObject(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function projectAspectRatio(value: unknown): ProjectAspectRatio | undefined {
+  return value === "9:16" || value === "16:9" || value === "1:1" ? value : undefined;
+}
+
+function continuityMode(value: unknown): GenerationContinuityMode | undefined {
+  return GENERATION_CONTINUITY_MODES.includes(value as GenerationContinuityMode)
+    ? (value as GenerationContinuityMode)
+    : undefined;
+}
+
+function compactObject<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined && item !== ""),
+  ) as T;
+}
+
+function compactOptionalObject<T extends Record<string, unknown>>(value: T): T | undefined {
+  const compact = compactObject(value);
+  return Object.keys(compact).length ? compact : undefined;
+}
+
+function normalizeProviderCredentialUpdate(input: unknown): ProviderCredentialUpdate | undefined {
+  const raw = dataObject(input);
+  const action = PROVIDER_CREDENTIAL_UPDATE_ACTIONS.includes(
+    raw.action as ProviderCredentialUpdateAction,
+  )
+    ? (raw.action as ProviderCredentialUpdateAction)
+    : undefined;
+  if (!action || action === "unchanged") {
+    return undefined;
+  }
+
+  if (action === "clear") {
+    return { action };
+  }
+
+  const value = optionalString(raw.value);
+  if (!value) {
+    return undefined;
+  }
+  return { action, value };
+}
