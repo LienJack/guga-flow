@@ -1,4 +1,9 @@
-import type { NovelDocumentRecord, StoryboardDraftRecord, StoryboardResult } from "@guga-flow/shared-types";
+import type {
+  NovelDocumentRecord,
+  NovelEventGraphRecord,
+  StoryboardDraftRecord,
+  StoryboardResult,
+} from "@guga-flow/shared-types";
 import { renderToStaticMarkup } from "react-dom/server";
 import React from "react";
 import { describe, expect, it } from "vitest";
@@ -89,6 +94,51 @@ function draft(): StoryboardDraftRecord {
   };
 }
 
+function eventGraph(): NovelEventGraphRecord {
+  return {
+    id: "event_graph_1",
+    projectId: "project_1",
+    novelDocumentId: "novel_1",
+    chapters: [
+      {
+        chapterIndex: 1,
+        title: "Chapter 1 Signal",
+        startOffset: 0,
+        endOffset: 24,
+        wordCount: 4,
+        summary: "Hero watches the city.",
+        eventState: "succeeded",
+        eventCount: 1,
+        eventIds: ["chapter_1_event_1"],
+      },
+      {
+        chapterIndex: 2,
+        title: "Chapter 2 Failure",
+        startOffset: 25,
+        endOffset: 48,
+        wordCount: 4,
+        summary: "Hero misses the train.",
+        eventState: "failed",
+        eventCount: 0,
+        eventIds: [],
+        errorReason: "Provider timed out",
+      },
+    ],
+    events: [
+      {
+        eventId: "chapter_1_event_1",
+        title: "Signal found",
+        orderIndex: 1,
+        chapterIndex: 1,
+        sourceExcerpt: "Hero watches the city.",
+        summary: "The hero sees the signal.",
+      },
+    ],
+    createdAt: "2026-06-12T00:00:00.000Z",
+    updatedAt: "2026-06-12T00:00:00.000Z",
+  };
+}
+
 describe("NovelStoryboardPanel", () => {
   it("renders novel source controls and a storyboard draft preview", () => {
     const html = renderToStaticMarkup(
@@ -96,6 +146,7 @@ describe("NovelStoryboardPanel", () => {
         projectId="project_1"
         initialNovels={[novel()]}
         initialDraft={draft()}
+        initialEventGraph={eventGraph()}
       />,
     );
 
@@ -106,7 +157,10 @@ describe("NovelStoryboardPanel", () => {
     expect(html).toContain("Rooftop story");
     expect(html).toContain("Generate");
     expect(html).toContain("Extract events");
-    expect(html).toContain("No graph");
+    expect(html).toContain("Chapters");
+    expect(html).toContain("Chapter 1 Signal");
+    expect(html).toContain("Succeeded");
+    expect(html).toContain("Failed");
     expect(html).toContain("Script");
     expect(html).toContain("Create script");
     expect(html).toContain("Faithful");

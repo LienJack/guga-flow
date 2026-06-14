@@ -23,6 +23,7 @@ import {
   exportCanvasFragment,
   exportProjectSettings,
   extractNovelEvents,
+  extractNovelChapterEvents,
   exportScriptDraft,
   generateStoryboardFromScriptDraft,
   generateStoryboardDraft,
@@ -34,6 +35,7 @@ import {
   getImageProviderCatalog,
   getLlmProviderCatalog,
   getNovelEventGraph,
+  getNovelChapter,
   getProviderManagement,
   getProjectSettingsSummary,
   getProjectImageProviderCatalog,
@@ -50,6 +52,7 @@ import {
   importNovelSource,
   listAssets,
   listAssetTags,
+  listNovelChapters,
   listScriptDrafts,
   listEditorExports,
   listAgentMemories,
@@ -74,6 +77,7 @@ import {
   updateSkillTemplateSource,
   sendEditorExportToLocalEditor,
   updateStoryboardDraft,
+  updateNovelChapter,
   undoAgentCanvasAction,
   createWorkflowDefinition,
   createWorkflowVersion,
@@ -1224,6 +1228,20 @@ describe("frontend api client", () => {
           createdAt: "2026-06-13T00:00:00.000Z",
           updatedAt: "2026-06-13T00:00:00.000Z",
         },
+        chapters: [],
+        chapter: {
+          chapterIndex: 1,
+          title: "Chapter 1",
+          startOffset: 0,
+          endOffset: 20,
+          wordCount: 4,
+          summary: "Hero watches the city.",
+          eventState: "pending",
+          eventCount: 0,
+          eventIds: [],
+          content: "Hero watches the city.",
+          events: [],
+        },
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -1244,7 +1262,13 @@ describe("frontend api client", () => {
       stylePrompt: "rainy neon thriller",
       targetDurationSeconds: 45,
     });
-    await extractNovelEvents("project_1", "novel_1");
+    await extractNovelEvents("project_1", "novel_1", { chapterIndexes: [1] });
+    await listNovelChapters("project_1", "novel_1");
+    await getNovelChapter("project_1", "novel_1", 1);
+    await updateNovelChapter("project_1", "novel_1", 1, {
+      content: "Hero raises a signal flare.",
+    });
+    await extractNovelChapterEvents("project_1", "novel_1", 1, { forceFailure: true });
     await getNovelEventGraph("project_1", "novel_1");
     await listScriptDrafts("project_1", "novel_1");
     await createScriptDraft("project_1", "novel_1", { strategy: "short_drama" });
@@ -1291,20 +1315,49 @@ describe("frontend api client", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
       "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/extract-events",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ chapterIndexes: [1] }),
+      }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       5,
-      "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/event-graph",
+      "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/chapters",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       6,
-      "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/script-drafts",
+      "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/chapters/1",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       7,
+      "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/chapters/1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ content: "Hero raises a signal flare." }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/chapters/1/extract-events",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ forceFailure: true }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      9,
+      "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/event-graph",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      10,
+      "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/script-drafts",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      11,
       "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/script-drafts",
       expect.objectContaining({
         method: "POST",
@@ -1312,12 +1365,12 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      8,
+      12,
       "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/script-drafts/script_1/export",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      9,
+      13,
       "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/script-drafts/script_1/generate-storyboard",
       expect.objectContaining({ method: "POST" }),
     );

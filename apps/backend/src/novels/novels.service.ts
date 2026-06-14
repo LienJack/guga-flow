@@ -5,12 +5,19 @@ import type {
   CreateNovelDocumentInput,
   CreateNovelDocumentResult,
   DeleteNovelDocumentResult,
+  ExtractNovelChapterEventsInput,
+  ExtractNovelChapterEventsResult,
+  ExtractNovelEventsInput,
   ExtractNovelEventsResult,
   GenerateStoryboardResult,
   GenerationJobRecord,
   GenerationJobStatus,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
+  NovelChapterDetail,
+  NovelChapterDetailResult,
+  NovelChapterEventState,
+  NovelChapterListResult,
   MarkStoryboardDraftReadyResult,
   NovelDocumentRecord,
   NovelEventGraphRecord,
@@ -38,11 +45,14 @@ import type {
   StoryboardValidationResult,
   UpdateStoryboardDraftInput,
   UpdateStoryboardDraftResult,
+  UpdateNovelChapterInput,
+  UpdateNovelChapterResult,
   UpdateNovelDocumentInput,
   UpdateNovelDocumentResult,
 } from "@guga-flow/shared-types";
 import {
   CREATIVE_AGENT_MODES,
+  NOVEL_CHAPTER_EVENT_STATES,
   NOVEL_LANGUAGES,
   NOVEL_SOURCE_TYPES,
   SCRIPT_ADAPTATION_STRATEGIES,
@@ -137,8 +147,16 @@ type ReferenceAssetModel = {
   originalFilename: string | null;
 };
 
-type ParsedNovelChapter = NovelChapterSummary & {
+type ParsedNovelChapter = Omit<
+  NovelChapterSummary,
+  "eventState" | "eventCount" | "eventIds" | "errorReason" | "extractedAt"
+> & {
   text: string;
+};
+
+type ChapterHeadingRange = {
+  startOffset: number;
+  endOffset: number;
 };
 
 interface CreativeStorySeedResolution {
@@ -403,12 +421,69 @@ export class NovelsService {
     });
   }
 
+  async listNovelChapters(
+    projectId: string,
+    novelId: string,
+  ): Promise<NovelChapterListResult> {
+    const novel = await this.findNovel(projectId, novelId);
+    const latestGraph = await this.findLatestEventGraph(projectId, novel.id);
+    const eventGraph = latestGraph ? this.toNovelEventGraphRecord(latestGraph) : undefined;
+    return {
+      chapters: this.chapterSummariesFromParsed(this.splitChapters(novel.content), eventGraph),
+      ...(eventGraph ? { eventGraph } : {}),
+    };
+  }
+
+  async getNovelChapter(
+    projectId: string,
+    novelId: string,
+    chapterIndex: number,
+  ): Promise<NovelChapterDetailResult> {
+    const novel = await this.findNovel(projectId, novelId);
+    const latestGraph = await this.findLatestEventGraph(projectId, novel.id);
+    const eventGraph = latestGraph ? this.toNovelEventGraphRecord(latestGraph) : undefined;
+    return {
+      chapter: this.chapterDetailFromParsed(
+        this.findParsedChapter(novel.content, chapterIndex),
+        eventGraph,
+      ),
+      ...(eventGraph ? { eventGraph } : {}),
+    };
+  }
+
+  async updateNovelChapter(
+    projectId: string,
+    novelId: string,
+    chapterIndex: number,
+    input: UpdateNovelChapterInput,
+  ): Promise<UpdateNovelChapterResult> {
+    const existing = await this.findNovel(projectId, novelId);
+    const nextContent = this.replaceNovelChapter(existing.content, chapterIndex, input);
+    const updated = await this.prisma.novelDocument.update({
+      where: { id: existing.id },
+      data: {
+        content: nextContent,
+        wordCount: countWords(nextContent),
+        language: normalizeLanguage(undefined, nextContent),
+      },
+    });
+    const eventGraph = await this.createPendingChapterEventGraph(projectId, updated, chapterIndex);
+    const parsedChapter = this.findParsedChapter(updated.content, chapterIndex);
+
+    return {
+      novel: this.toNovelRecord(updated),
+      chapter: this.chapterDetailFromParsed(parsedChapter, eventGraph),
+      ...(eventGraph ? { eventGraph } : {}),
+    };
+  }
+
   async extractChapterEvents(
     projectId: string,
     novelId: string,
+    input: ExtractNovelEventsInput = {},
   ): Promise<ExtractNovelEventsResult> {
     const novel = await this.findNovel(projectId, novelId);
-    const { chapters, events } = this.extractEventGraph(novel);
+    const { chapters, events } = await this.extractEventGraph(novel, input);
     const eventGraph = (await this.prisma.novelEventGraph.create({
       data: {
         projectId,
@@ -419,6 +494,27 @@ export class NovelsService {
     })) as NovelEventGraphModel;
 
     return { eventGraph: this.toNovelEventGraphRecord(eventGraph) };
+  }
+
+  async extractSingleChapterEvents(
+    projectId: string,
+    novelId: string,
+    chapterIndex: number,
+    input: ExtractNovelChapterEventsInput = {},
+  ): Promise<ExtractNovelChapterEventsResult> {
+    const forceFailureChapterIndexes = input.forceFailure ? [chapterIndex] : [];
+    const result = await this.extractChapterEvents(projectId, novelId, {
+      chapterIndexes: [chapterIndex],
+      forceFailureChapterIndexes,
+    });
+    const novel = await this.findNovel(projectId, novelId);
+    return {
+      eventGraph: result.eventGraph,
+      chapter: this.chapterDetailFromParsed(
+        this.findParsedChapter(novel.content, chapterIndex),
+        result.eventGraph,
+      ),
+    };
   }
 
   async getLatestEventGraph(
@@ -1160,32 +1256,294 @@ export class NovelsService {
     return Array.from(events.values());
   }
 
-  private extractEventGraph(novel: NovelDocumentModel): {
+  private async extractEventGraph(
+    novel: NovelDocumentModel,
+    input: ExtractNovelEventsInput,
+  ): Promise<{
     chapters: NovelChapterSummary[];
     events: StoryTimelineEvent[];
-  } {
-    const chapters = this.splitChapters(novel.content);
-    const events: StoryTimelineEvent[] = [];
-    chapters.forEach((chapter) => {
-      this.eventExcerptsForChapter(chapter).forEach((excerpt, eventIndex) => {
-        const orderIndex = events.length + 1;
-        events.push({
-          eventId: `chapter_${chapter.chapterIndex}_event_${eventIndex + 1}`,
-          title: `${chapter.title} Event ${eventIndex + 1}`,
-          orderIndex,
-          chapterIndex: chapter.chapterIndex,
-          sourceExcerpt: excerpt,
-          summary: this.eventSummary(excerpt),
-          conflict: `Chapter ${chapter.chapterIndex} turning point`,
-          result: `Advances event ${orderIndex}`,
-          estimatedDurationSec: 12,
-        });
-      });
+  }> {
+    const parsedChapters = this.splitChapters(novel.content);
+    const targetIndexes = this.normalizeChapterIndexes(input.chapterIndexes, parsedChapters);
+    const forceFailureIndexes = new Set(
+      this.normalizeChapterIndexes(input.forceFailureChapterIndexes, parsedChapters, false),
+    );
+    const latestGraph = await this.findLatestEventGraph(novel.projectId, novel.id);
+    const existingGraph = latestGraph ? this.toNovelEventGraphRecord(latestGraph) : undefined;
+    const extractedAt = new Date().toISOString();
+    const targetIndexSet = new Set(targetIndexes);
+    const events = (existingGraph?.events ?? []).filter(
+      (event) => typeof event.chapterIndex !== "number" || !targetIndexSet.has(event.chapterIndex),
+    );
+    const chapterSummaries = this.chapterSummariesFromParsed(parsedChapters, existingGraph);
+
+    parsedChapters.forEach((chapter) => {
+      if (!targetIndexSet.has(chapter.chapterIndex)) {
+        return;
+      }
+
+      const summaryIndex = chapterSummaries.findIndex(
+        (summary) => summary.chapterIndex === chapter.chapterIndex,
+      );
+      if (summaryIndex < 0) {
+        return;
+      }
+
+      if (forceFailureIndexes.has(chapter.chapterIndex)) {
+        chapterSummaries[summaryIndex] = {
+          ...chapterSummaries[summaryIndex]!,
+          eventState: "failed",
+          eventCount: 0,
+          eventIds: [],
+          errorReason: "Event extraction failed for this chapter",
+          extractedAt,
+        };
+        return;
+      }
+
+      const chapterEvents = this.eventsForChapter(chapter, events.length + 1);
+      if (chapterEvents.length === 0) {
+        chapterSummaries[summaryIndex] = {
+          ...chapterSummaries[summaryIndex]!,
+          eventState: "failed",
+          eventCount: 0,
+          eventIds: [],
+          errorReason: "No extractable events found",
+          extractedAt,
+        };
+        return;
+      }
+
+      events.push(...chapterEvents);
+      chapterSummaries[summaryIndex] = {
+        ...chapterSummaries[summaryIndex]!,
+        eventState: "succeeded",
+        eventCount: chapterEvents.length,
+        eventIds: chapterEvents.map((event) => event.eventId),
+        errorReason: undefined,
+        extractedAt,
+      };
     });
 
     return {
-      chapters: chapters.map(({ text: _text, ...chapter }) => chapter),
+      chapters: chapterSummaries,
+      events: this.reorderStoryEvents(events),
+    };
+  }
+
+  private async createPendingChapterEventGraph(
+    projectId: string,
+    novel: NovelDocumentModel,
+    pendingChapterIndex: number,
+  ): Promise<NovelEventGraphRecord | undefined> {
+    const latestGraph = await this.findLatestEventGraph(projectId, novel.id);
+    if (!latestGraph) {
+      return undefined;
+    }
+
+    const existingGraph = this.toNovelEventGraphRecord(latestGraph);
+    const parsedChapters = this.splitChapters(novel.content);
+    const chapters = this.chapterSummariesFromParsed(parsedChapters, existingGraph).map((chapter) =>
+      chapter.chapterIndex === pendingChapterIndex
+        ? {
+            ...chapter,
+            eventState: "pending" as const,
+            eventCount: 0,
+            eventIds: [],
+            errorReason: undefined,
+            extractedAt: undefined,
+          }
+        : chapter,
+    );
+    const events = existingGraph.events.filter(
+      (event) => event.chapterIndex !== pendingChapterIndex,
+    );
+    const eventGraph = (await this.prisma.novelEventGraph.create({
+      data: {
+        projectId,
+        novelDocumentId: novel.id,
+        chaptersJson: jsonValue(chapters),
+        eventsJson: jsonValue(this.reorderStoryEvents(events)),
+      },
+    })) as NovelEventGraphModel;
+
+    return this.toNovelEventGraphRecord(eventGraph);
+  }
+
+  private chapterSummariesFromParsed(
+    parsedChapters: readonly ParsedNovelChapter[],
+    eventGraph?: NovelEventGraphRecord,
+  ): NovelChapterSummary[] {
+    const graphChapterByIndex = new Map(
+      (eventGraph?.chapters ?? []).map((chapter) => [chapter.chapterIndex, chapter]),
+    );
+    const eventIdsByChapter = new Map<number, string[]>();
+    (eventGraph?.events ?? []).forEach((event) => {
+      if (typeof event.chapterIndex !== "number") {
+        return;
+      }
+      const ids = eventIdsByChapter.get(event.chapterIndex) ?? [];
+      ids.push(event.eventId);
+      eventIdsByChapter.set(event.chapterIndex, ids);
+    });
+
+    return parsedChapters.map(({ text: _text, ...chapter }) => {
+      const graphChapter = graphChapterByIndex.get(chapter.chapterIndex);
+      const eventIds = graphChapter?.eventIds?.length
+        ? graphChapter.eventIds
+        : (eventIdsByChapter.get(chapter.chapterIndex) ?? []);
+      const eventState = this.normalizeChapterEventState(
+        graphChapter?.eventState,
+        eventIds.length > 0 ? "succeeded" : "pending",
+      );
+      return {
+        ...chapter,
+        eventState,
+        eventCount:
+          typeof graphChapter?.eventCount === "number"
+            ? graphChapter.eventCount
+            : eventIds.length,
+        eventIds,
+        ...(graphChapter?.errorReason ? { errorReason: graphChapter.errorReason } : {}),
+        ...(graphChapter?.extractedAt ? { extractedAt: graphChapter.extractedAt } : {}),
+      };
+    });
+  }
+
+  private chapterDetailFromParsed(
+    parsedChapter: ParsedNovelChapter,
+    eventGraph?: NovelEventGraphRecord,
+  ): NovelChapterDetail {
+    const summary = this.chapterSummariesFromParsed([parsedChapter], eventGraph)[0]!;
+    const events = (eventGraph?.events ?? []).filter(
+      (event) => event.chapterIndex === parsedChapter.chapterIndex,
+    );
+    return {
+      ...summary,
+      content: parsedChapter.text,
       events,
+    };
+  }
+
+  private eventsForChapter(
+    chapter: ParsedNovelChapter,
+    startOrderIndex: number,
+  ): StoryTimelineEvent[] {
+    return this.eventExcerptsForChapter(chapter).map((excerpt, eventIndex) => {
+      const orderIndex = startOrderIndex + eventIndex;
+      return {
+        eventId: `chapter_${chapter.chapterIndex}_event_${eventIndex + 1}`,
+        title: `${chapter.title} Event ${eventIndex + 1}`,
+        orderIndex,
+        chapterIndex: chapter.chapterIndex,
+        sourceExcerpt: excerpt,
+        summary: this.eventSummary(excerpt),
+        conflict: `Chapter ${chapter.chapterIndex} turning point`,
+        result: `Advances event ${orderIndex}`,
+        estimatedDurationSec: 12,
+      };
+    });
+  }
+
+  private reorderStoryEvents(events: readonly StoryTimelineEvent[]): StoryTimelineEvent[] {
+    return [...events]
+      .sort((left, right) => {
+        const leftChapter = left.chapterIndex ?? Number.MAX_SAFE_INTEGER;
+        const rightChapter = right.chapterIndex ?? Number.MAX_SAFE_INTEGER;
+        return leftChapter === rightChapter
+          ? left.orderIndex - right.orderIndex
+          : leftChapter - rightChapter;
+      })
+      .map((event, index) => ({
+        ...event,
+        orderIndex: index + 1,
+      }));
+  }
+
+  private findParsedChapter(content: string, chapterIndex: number): ParsedNovelChapter {
+    const chapter = this.splitChapters(content).find((item) => item.chapterIndex === chapterIndex);
+    if (!chapter) {
+      throw new NotFoundException("Novel chapter not found");
+    }
+    return chapter;
+  }
+
+  private normalizeChapterIndexes(
+    chapterIndexes: readonly number[] | undefined,
+    chapters: readonly ParsedNovelChapter[],
+    defaultToAll = true,
+  ): number[] {
+    const availableIndexes = new Set(chapters.map((chapter) => chapter.chapterIndex));
+    let indexes: number[];
+    if (chapterIndexes === undefined) {
+      indexes = defaultToAll ? chapters.map((chapter) => chapter.chapterIndex) : [];
+    } else {
+      indexes = Array.from(new Set(chapterIndexes));
+    }
+
+    indexes.forEach((chapterIndex) => {
+      if (!Number.isInteger(chapterIndex) || chapterIndex < 1 || !availableIndexes.has(chapterIndex)) {
+        throw new BadRequestException("Novel chapter not found");
+      }
+    });
+
+    return indexes;
+  }
+
+  private normalizeChapterEventState(
+    value: NovelChapterEventState | undefined,
+    fallback: NovelChapterEventState,
+  ): NovelChapterEventState {
+    return value && NOVEL_CHAPTER_EVENT_STATES.includes(value) ? value : fallback;
+  }
+
+  private replaceNovelChapter(
+    content: string,
+    chapterIndex: number,
+    input: UpdateNovelChapterInput,
+  ): string {
+    const chapter = this.findParsedChapter(content, chapterIndex);
+    const nextTitle = normalizeOptionalText(input.title);
+    const nextBody = normalizeOptionalText(input.content);
+    if (!nextTitle && !nextBody) {
+      throw new BadRequestException("Chapter title or content is required");
+    }
+
+    const headingRange = this.chapterHeadingRange(content, chapter);
+    if (!headingRange && nextTitle) {
+      const body = nextBody ?? chapter.text;
+      return `${nextTitle}\n${body.trim()}`;
+    }
+
+    let nextContent = content;
+    if (nextBody) {
+      nextContent = `${nextContent.slice(0, chapter.startOffset)}${nextBody}${nextContent.slice(chapter.endOffset)}`;
+    }
+    if (nextTitle && headingRange) {
+      nextContent = `${nextContent.slice(0, headingRange.startOffset)}${nextTitle}${nextContent.slice(headingRange.endOffset)}`;
+    }
+
+    return nextContent;
+  }
+
+  private chapterHeadingRange(
+    content: string,
+    chapter: ParsedNovelChapter,
+  ): ChapterHeadingRange | undefined {
+    if (chapter.startOffset <= 0) {
+      return undefined;
+    }
+    const headingEnd = content[chapter.startOffset - 1] === "\n"
+      ? chapter.startOffset - 1
+      : chapter.startOffset;
+    const headingStart = content.lastIndexOf("\n", Math.max(0, headingEnd - 1)) + 1;
+    const heading = content.slice(headingStart, headingEnd).trim();
+    if (!isChapterHeading(heading)) {
+      return undefined;
+    }
+    return {
+      startOffset: headingStart,
+      endOffset: headingEnd,
     };
   }
 
@@ -1386,12 +1744,13 @@ export class NovelsService {
   }
 
   private toNovelEventGraphRecord(eventGraph: NovelEventGraphModel): NovelEventGraphRecord {
+    const events = this.toStoryEvents(eventGraph.eventsJson);
     return {
       id: eventGraph.id,
       projectId: eventGraph.projectId,
       novelDocumentId: eventGraph.novelDocumentId,
-      chapters: this.toChapterSummaries(eventGraph.chaptersJson),
-      events: this.toStoryEvents(eventGraph.eventsJson),
+      chapters: this.toChapterSummaries(eventGraph.chaptersJson, events),
+      events,
       createdAt: toIsoString(eventGraph.createdAt),
       updatedAt: toIsoString(eventGraph.updatedAt),
     };
@@ -1437,10 +1796,23 @@ export class NovelsService {
     };
   }
 
-  private toChapterSummaries(value: unknown): NovelChapterSummary[] {
+  private toChapterSummaries(
+    value: unknown,
+    events: readonly StoryTimelineEvent[],
+  ): NovelChapterSummary[] {
     if (!Array.isArray(value)) {
       return [];
     }
+    const eventIdsByChapter = new Map<number, string[]>();
+    events.forEach((event) => {
+      if (typeof event.chapterIndex !== "number") {
+        return;
+      }
+      const ids = eventIdsByChapter.get(event.chapterIndex) ?? [];
+      ids.push(event.eventId);
+      eventIdsByChapter.set(event.chapterIndex, ids);
+    });
+
     return value
       .map((item) => {
         if (typeof item !== "object" || item === null || Array.isArray(item)) {
@@ -1457,6 +1829,13 @@ export class NovelsService {
         ) {
           return undefined;
         }
+        const eventIds = Array.isArray(record.eventIds)
+          ? record.eventIds.filter((eventId): eventId is string => typeof eventId === "string")
+          : (eventIdsByChapter.get(record.chapterIndex) ?? []);
+        const eventState = this.normalizeChapterEventState(
+          record.eventState as NovelChapterEventState | undefined,
+          eventIds.length > 0 ? "succeeded" : "pending",
+        );
         return {
           chapterIndex: record.chapterIndex,
           title: record.title,
@@ -1464,6 +1843,18 @@ export class NovelsService {
           endOffset: record.endOffset,
           wordCount: record.wordCount,
           summary: record.summary,
+          eventState,
+          eventCount:
+            typeof record.eventCount === "number"
+              ? record.eventCount
+              : eventIds.length,
+          eventIds,
+          ...(typeof record.errorReason === "string" && record.errorReason.trim()
+            ? { errorReason: record.errorReason }
+            : {}),
+          ...(typeof record.extractedAt === "string" && record.extractedAt.trim()
+            ? { extractedAt: record.extractedAt }
+            : {}),
         };
       })
       .filter((item): item is NovelChapterSummary => Boolean(item));

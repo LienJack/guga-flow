@@ -1,10 +1,13 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, ParseIntPipe, Patch, Post } from "@nestjs/common";
 
 import {
   CreateCreativeStoryboardDto,
   CreateNovelDocumentDto,
   CreateScriptDraftDto,
+  ExtractNovelChapterEventsDto,
+  ExtractNovelEventsDto,
   ImportNovelSourceDto,
+  UpdateNovelChapterDto,
   UpdateNovelDocumentDto,
   UpdateStoryboardDraftDto,
 } from "./dto";
@@ -51,6 +54,40 @@ export class NovelsController {
     return this.novelsService.updateNovel(projectId, novelId, body);
   }
 
+  @Get(":novelId/chapters")
+  listNovelChapters(@Param("projectId") projectId: string, @Param("novelId") novelId: string) {
+    return this.novelsService.listNovelChapters(projectId, novelId);
+  }
+
+  @Get(":novelId/chapters/:chapterIndex")
+  getNovelChapter(
+    @Param("projectId") projectId: string,
+    @Param("novelId") novelId: string,
+    @Param("chapterIndex", ParseIntPipe) chapterIndex: number,
+  ) {
+    return this.novelsService.getNovelChapter(projectId, novelId, chapterIndex);
+  }
+
+  @Patch(":novelId/chapters/:chapterIndex")
+  updateNovelChapter(
+    @Param("projectId") projectId: string,
+    @Param("novelId") novelId: string,
+    @Param("chapterIndex", ParseIntPipe) chapterIndex: number,
+    @Body() body: UpdateNovelChapterDto,
+  ) {
+    return this.novelsService.updateNovelChapter(projectId, novelId, chapterIndex, body);
+  }
+
+  @Post(":novelId/chapters/:chapterIndex/extract-events")
+  extractSingleChapterEvents(
+    @Param("projectId") projectId: string,
+    @Param("novelId") novelId: string,
+    @Param("chapterIndex", ParseIntPipe) chapterIndex: number,
+    @Body() body: ExtractNovelChapterEventsDto,
+  ) {
+    return this.novelsService.extractSingleChapterEvents(projectId, novelId, chapterIndex, body ?? {});
+  }
+
   @Delete(":novelId")
   deleteNovel(@Param("projectId") projectId: string, @Param("novelId") novelId: string) {
     return this.novelsService.deleteNovel(projectId, novelId);
@@ -62,8 +99,12 @@ export class NovelsController {
   }
 
   @Post(":novelId/extract-events")
-  extractChapterEvents(@Param("projectId") projectId: string, @Param("novelId") novelId: string) {
-    return this.novelsService.extractChapterEvents(projectId, novelId);
+  extractChapterEvents(
+    @Param("projectId") projectId: string,
+    @Param("novelId") novelId: string,
+    @Body() body: ExtractNovelEventsDto,
+  ) {
+    return this.novelsService.extractChapterEvents(projectId, novelId, body ?? {});
   }
 
   @Get(":novelId/event-graph")

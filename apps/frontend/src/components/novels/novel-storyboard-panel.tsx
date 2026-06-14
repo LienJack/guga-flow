@@ -5,6 +5,8 @@ import type {
   CreateCreativeStoryboardResult,
   ImportNovelSourceInput,
   ImportStoryboardToCanvasResult,
+  NovelChapterDetail,
+  NovelChapterSummary,
   NovelDocumentRecord,
   NovelEventGraphRecord,
   ScriptAdaptationStrategy,
@@ -19,17 +21,21 @@ import {
   createScriptDraft,
   createNovelDocument,
   deleteNovelDocument,
+  extractNovelChapterEvents,
   extractNovelEvents,
   exportScriptDraft,
   generateStoryboardFromScriptDraft,
   generateStoryboardDraft,
   getActiveStoryboardDraft,
+  getNovelChapter,
   getNovelEventGraph,
   importStoryboardToCanvas,
   importNovelSource,
+  listNovelChapters,
   listScriptDrafts,
   listNovelDocuments,
   markStoryboardDraftReady,
+  updateNovelChapter,
   updateNovelDocument,
   updateStoryboardDraft,
 } from "../../lib/api";
@@ -50,6 +56,7 @@ interface NovelStoryboardPanelProps {
   selectedNodeId?: string;
   initialNovels?: NovelDocumentRecord[];
   initialDraft?: StoryboardDraftRecord;
+  initialEventGraph?: NovelEventGraphRecord;
   onStoryboardImported?: (result: ImportStoryboardToCanvasResult) => void;
 }
 
@@ -60,6 +67,7 @@ type BusyAction =
   | "update"
   | "delete"
   | "events"
+  | "chapter"
   | "script"
   | "generate"
   | "draft"
@@ -72,6 +80,7 @@ export function NovelStoryboardPanel({
   projectId,
   initialNovels = [],
   initialDraft,
+  initialEventGraph,
   onStoryboardImported,
 }: NovelStoryboardPanelProps) {
   const [novels, setNovels] = useState<NovelDocumentRecord[]>(initialNovels);
@@ -82,7 +91,14 @@ export function NovelStoryboardPanel({
   const [selectedContent, setSelectedContent] = useState("");
   const [draft, setDraft] = useState<StoryboardDraftRecord | undefined>(initialDraft);
   const [storyboard, setStoryboard] = useState<StoryboardResult | undefined>(initialDraft?.storyboard);
-  const [eventGraph, setEventGraph] = useState<NovelEventGraphRecord | undefined>();
+  const [eventGraph, setEventGraph] = useState<NovelEventGraphRecord | undefined>(initialEventGraph);
+  const [chapters, setChapters] = useState<NovelChapterSummary[]>(initialEventGraph?.chapters ?? []);
+  const [selectedChapterIndex, setSelectedChapterIndex] = useState<number | undefined>(
+    initialEventGraph?.chapters[0]?.chapterIndex,
+  );
+  const [chapterDetail, setChapterDetail] = useState<NovelChapterDetail | undefined>();
+  const [chapterTitle, setChapterTitle] = useState("");
+  const [chapterContent, setChapterContent] = useState("");
   const [scriptDrafts, setScriptDrafts] = useState<ScriptDraftRecord[]>([]);
   const [scriptStrategy, setScriptStrategy] = useState<ScriptAdaptationStrategy>("faithful");
   const [draftDirty, setDraftDirty] = useState(false);
@@ -137,9 +153,75 @@ export function NovelStoryboardPanel({
     setSelectedTitle(selectedNovel?.title ?? "");
     setSelectedContent(selectedNovel?.content ?? "");
     setEventGraph(undefined);
+    setChapters([]);
+    setSelectedChapterIndex(undefined);
+    setChapterDetail(undefined);
+    setChapterTitle("");
+    setChapterContent("");
     setScriptDrafts([]);
     setConfirmNewVersion(false);
   }, [selectedNovel]);
+
+  useEffect(() => {
+    if (!selectedNovelId) {
+      setChapters([]);
+      setSelectedChapterIndex(undefined);
+      return;
+    }
+
+    let ignore = false;
+    listNovelChapters(projectId, selectedNovelId)
+      .then((result) => {
+        if (ignore) {
+          return;
+        }
+        setChapters(result.chapters);
+        if (result.eventGraph) {
+          setEventGraph(result.eventGraph);
+        }
+        setSelectedChapterIndex((current) =>
+          current && result.chapters.some((chapter) => chapter.chapterIndex === current)
+            ? current
+            : result.chapters[0]?.chapterIndex,
+        );
+      })
+      .catch((loadError: unknown) => {
+        if (!ignore && !isNotFoundError(loadError)) {
+          setError(summarizeStoryboardActionError(loadError, "Unable to load chapters"));
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [projectId, selectedNovelId]);
+
+  useEffect(() => {
+    if (!selectedNovelId || !selectedChapterIndex) {
+      setChapterDetail(undefined);
+      setChapterTitle("");
+      setChapterContent("");
+      return;
+    }
+
+    let ignore = false;
+    getNovelChapter(projectId, selectedNovelId, selectedChapterIndex)
+      .then((result) => {
+        if (ignore) {
+          return;
+        }
+        applyChapterDetail(result.chapter, result.eventGraph);
+      })
+      .catch((loadError: unknown) => {
+        if (!ignore && !isNotFoundError(loadError)) {
+          setError(summarizeStoryboardActionError(loadError, "Unable to load chapter"));
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [projectId, selectedNovelId, selectedChapterIndex]);
 
   useEffect(() => {
     if (!selectedNovelId) {
@@ -303,8 +385,36 @@ export function NovelStoryboardPanel({
     }
     await runAction("events", async () => {
       const result = await extractNovelEvents(projectId, selectedNovel.id);
-      setEventGraph(result.eventGraph);
+      applyEventGraph(result.eventGraph);
       setNotice("Events extracted");
+    });
+  }
+
+  async function handleUpdateChapter(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedNovel || !selectedChapterIndex) {
+      return;
+    }
+    await runAction("chapter", async () => {
+      const result = await updateNovelChapter(projectId, selectedNovel.id, selectedChapterIndex, {
+        title: chapterTitle,
+        content: chapterContent,
+      });
+      replaceNovel(result.novel);
+      setSelectedContent(result.novel.content);
+      applyChapterDetail(result.chapter, result.eventGraph);
+      setNotice("Chapter saved");
+    });
+  }
+
+  async function handleExtractChapterEvents() {
+    if (!selectedNovel || !selectedChapterIndex) {
+      return;
+    }
+    await runAction("chapter", async () => {
+      const result = await extractNovelChapterEvents(projectId, selectedNovel.id, selectedChapterIndex);
+      applyChapterDetail(result.chapter, result.eventGraph);
+      setNotice("Chapter events extracted");
     });
   }
 
@@ -471,6 +581,53 @@ export function NovelStoryboardPanel({
     setDraftDirty(false);
   }
 
+  function applyEventGraph(nextEventGraph: NovelEventGraphRecord) {
+    setEventGraph(nextEventGraph);
+    setChapters(nextEventGraph.chapters);
+    setSelectedChapterIndex((current) =>
+      current && nextEventGraph.chapters.some((chapter) => chapter.chapterIndex === current)
+        ? current
+        : nextEventGraph.chapters[0]?.chapterIndex,
+    );
+    if (chapterDetail) {
+      const nextChapter = nextEventGraph.chapters.find(
+        (chapter) => chapter.chapterIndex === chapterDetail.chapterIndex,
+      );
+      if (nextChapter) {
+        setChapterDetail({
+          ...chapterDetail,
+          ...nextChapter,
+          events: nextEventGraph.events.filter((event) => event.chapterIndex === nextChapter.chapterIndex),
+        });
+      }
+    }
+  }
+
+  function applyChapterDetail(
+    nextChapter: NovelChapterDetail,
+    nextEventGraph: NovelEventGraphRecord | undefined,
+  ) {
+    setChapterDetail(nextChapter);
+    setChapterTitle(nextChapter.title);
+    setChapterContent(nextChapter.content);
+    setChapters((current) =>
+      current.some((chapter) => chapter.chapterIndex === nextChapter.chapterIndex)
+        ? current.map((chapter) =>
+            chapter.chapterIndex === nextChapter.chapterIndex ? toChapterSummary(nextChapter) : chapter,
+          )
+        : [...current, toChapterSummary(nextChapter)].sort((left, right) => left.chapterIndex - right.chapterIndex),
+    );
+    if (nextEventGraph) {
+      setEventGraph(nextEventGraph);
+      setChapters(nextEventGraph.chapters);
+      setSelectedChapterIndex((current) =>
+        current && nextEventGraph.chapters.some((chapter) => chapter.chapterIndex === current)
+          ? current
+          : nextEventGraph.chapters[0]?.chapterIndex,
+      );
+    }
+  }
+
   function handleCreativeStoryboardCreated(result: CreateCreativeStoryboardResult) {
     replaceNovel(result.novel);
     setSelectedNovelId(result.novel.id);
@@ -608,8 +765,24 @@ export function NovelStoryboardPanel({
               <Trash2 size={14} aria-hidden="true" />
             </button>
           </div>
-          <EventGraphSummary eventGraph={eventGraph} />
         </form>
+      ) : null}
+
+      {selectedNovel ? (
+        <ChapterEventWorkbench
+          busy={Boolean(busyAction)}
+          chapterContent={chapterContent}
+          chapterDetail={chapterDetail}
+          chapterTitle={chapterTitle}
+          chapters={chapters}
+          eventGraph={eventGraph}
+          selectedChapterIndex={selectedChapterIndex}
+          onChapterContentChange={setChapterContent}
+          onChapterTitleChange={setChapterTitle}
+          onExtractChapterEvents={() => void handleExtractChapterEvents()}
+          onSelectChapter={setSelectedChapterIndex}
+          onUpdateChapter={(event) => void handleUpdateChapter(event)}
+        />
       ) : null}
 
       {selectedNovel ? (
@@ -757,34 +930,153 @@ export function NovelStoryboardPanel({
   );
 }
 
-function EventGraphSummary({ eventGraph }: { eventGraph: NovelEventGraphRecord | undefined }) {
-  if (!eventGraph) {
-    return (
-      <div className="event-graph-summary empty">
-        <strong>Events</strong>
-        <span>No graph</span>
-      </div>
-    );
-  }
+interface ChapterEventWorkbenchProps {
+  busy: boolean;
+  chapters: NovelChapterSummary[];
+  selectedChapterIndex: number | undefined;
+  chapterDetail: NovelChapterDetail | undefined;
+  chapterTitle: string;
+  chapterContent: string;
+  eventGraph: NovelEventGraphRecord | undefined;
+  onSelectChapter: (chapterIndex: number) => void;
+  onChapterTitleChange: (title: string) => void;
+  onChapterContentChange: (content: string) => void;
+  onUpdateChapter: (event: FormEvent<HTMLFormElement>) => void;
+  onExtractChapterEvents: () => void;
+}
 
+function ChapterEventWorkbench({
+  busy,
+  chapters,
+  selectedChapterIndex,
+  chapterDetail,
+  chapterTitle,
+  chapterContent,
+  eventGraph,
+  onSelectChapter,
+  onChapterTitleChange,
+  onChapterContentChange,
+  onUpdateChapter,
+  onExtractChapterEvents,
+}: ChapterEventWorkbenchProps) {
   return (
-    <div className="event-graph-summary" aria-label="Novel event graph">
-      <div>
-        <strong>{eventGraph.events.length}</strong>
-        <span>events</span>
+    <section className="script-workbench" aria-label="Chapter event workbench">
+      <div className="panel-heading compact">
+        <h2>Chapters</h2>
+        <span>{chapters.length}</span>
       </div>
-      <div>
-        <strong>{eventGraph.chapters.length}</strong>
-        <span>chapters</span>
+      <div className="event-graph-summary" aria-label="Novel event graph">
+        <div>
+          <strong>{eventGraph?.events.length ?? 0}</strong>
+          <span>events</span>
+        </div>
+        <div>
+          <strong>{chapters.filter((chapter) => chapter.eventState === "succeeded").length}</strong>
+          <span>succeeded</span>
+        </div>
+        <div>
+          <strong>{chapters.filter((chapter) => chapter.eventState === "failed").length}</strong>
+          <span>failed</span>
+        </div>
       </div>
-      {eventGraph.events.slice(0, 2).map((event) => (
-        <p key={event.eventId}>
-          <strong>{event.title ?? event.eventId}</strong>
-          <span>{event.summary}</span>
-        </p>
-      ))}
-    </div>
+
+      {chapters.length === 0 ? (
+        <div className="empty-state small">
+          <strong>No chapters</strong>
+          <span>No graph</span>
+        </div>
+      ) : (
+        <ul className="script-draft-list">
+          {chapters.map((chapter) => (
+            <li className="script-draft-row" key={chapter.chapterIndex}>
+              <button
+                className={`novel-select ${selectedChapterIndex === chapter.chapterIndex ? "active" : ""}`}
+                type="button"
+                onClick={() => onSelectChapter(chapter.chapterIndex)}
+              >
+                <FileText size={15} aria-hidden="true" />
+                <span>{chapter.title}</span>
+                <small>
+                  {chapterStatusLabel(chapter.eventState)} · {chapter.eventCount} events
+                </small>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {chapterDetail ? (
+        <form className="novel-detail-form" onSubmit={onUpdateChapter}>
+          <div className="panel-heading compact">
+            <h2>Chapter {chapterDetail.chapterIndex}</h2>
+            <span>{chapterStatusLabel(chapterDetail.eventState)}</span>
+          </div>
+          <label className="field-label">
+            <span>Title</span>
+            <input
+              name="chapter-title"
+              value={chapterTitle}
+              onChange={(event) => onChapterTitleChange(event.target.value)}
+            />
+          </label>
+          <label className="field-label">
+            <span>Content</span>
+            <textarea
+              name="chapter-content"
+              rows={5}
+              value={chapterContent}
+              onChange={(event) => onChapterContentChange(event.target.value)}
+            />
+          </label>
+          {chapterDetail.errorReason ? (
+            <p className="form-error">{chapterDetail.errorReason}</p>
+          ) : null}
+          <div className="storyboard-action-row">
+            <button className="primary-action compact" type="submit" disabled={busy}>
+              <Save size={15} aria-hidden="true" />
+              Save chapter
+            </button>
+            <button
+              className="ghost-action compact"
+              type="button"
+              onClick={onExtractChapterEvents}
+              disabled={busy}
+            >
+              <RefreshCw size={15} aria-hidden="true" />
+              Extract chapter
+            </button>
+          </div>
+          {chapterDetail.events.length > 0 ? (
+            <ul className="script-draft-list">
+              {chapterDetail.events.map((event) => (
+                <li className="script-draft-row" key={event.eventId}>
+                  <div>
+                    <strong>{event.title ?? event.eventId}</strong>
+                    <span>{event.summary}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </form>
+      ) : null}
+    </section>
   );
+}
+
+function toChapterSummary(chapter: NovelChapterDetail): NovelChapterSummary {
+  const { content: _content, events: _events, ...summary } = chapter;
+  return summary;
+}
+
+function chapterStatusLabel(state: NovelChapterSummary["eventState"]): string {
+  if (state === "succeeded") {
+    return "Succeeded";
+  }
+  if (state === "failed") {
+    return "Failed";
+  }
+  return "Pending";
 }
 
 export function getNovelImportSourceType(

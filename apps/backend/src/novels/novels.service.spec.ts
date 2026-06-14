@@ -287,6 +287,196 @@ describe("NovelsService", () => {
       chapterIndex: 1,
       sourceExcerpt: expect.stringContaining("blue signal"),
     });
+    expect(result.eventGraph.chapters[0]).toMatchObject({
+      eventState: "succeeded",
+      eventCount: 2,
+      eventIds: ["chapter_1_event_1", "chapter_1_event_2"],
+      extractedAt: expect.any(String),
+    });
+  });
+
+  it("lists chapter status and details from the latest event graph", async () => {
+    prisma.novelDocument.findFirst.mockResolvedValue(
+      novel({
+        content:
+          "Chapter 1 Signal\nThe courier finds a blue signal.\n\nChapter 2 Choice\nThe courier waits for a response.",
+      }),
+    );
+    prisma.novelEventGraph.findFirst.mockResolvedValue(
+      novelEventGraph({
+        chaptersJson: [
+          {
+            chapterIndex: 1,
+            title: "Chapter 1 Signal",
+            startOffset: 17,
+            endOffset: 50,
+            wordCount: 6,
+            summary: "The courier finds a blue signal.",
+            eventState: "succeeded",
+            eventCount: 1,
+            eventIds: ["chapter_1_event_1"],
+            extractedAt: "2026-06-12T00:10:00.000Z",
+          },
+          {
+            chapterIndex: 2,
+            title: "Chapter 2 Choice",
+            startOffset: 68,
+            endOffset: 103,
+            wordCount: 7,
+            summary: "The courier waits for a response.",
+            eventState: "failed",
+            eventCount: 0,
+            eventIds: [],
+            errorReason: "Provider timed out",
+            extractedAt: "2026-06-12T00:11:00.000Z",
+          },
+        ],
+        eventsJson: [
+          {
+            eventId: "chapter_1_event_1",
+            title: "Chapter 1 Event 1",
+            orderIndex: 1,
+            chapterIndex: 1,
+            sourceExcerpt: "The courier finds a blue signal.",
+            summary: "The courier finds a blue signal.",
+          },
+        ],
+      }),
+    );
+
+    const list = await service.listNovelChapters("project_1", "novel_1");
+    const detail = await service.getNovelChapter("project_1", "novel_1", 2);
+
+    expect(list.chapters).toHaveLength(2);
+    expect(list.chapters[0]).toMatchObject({
+      title: "Chapter 1 Signal",
+      eventState: "succeeded",
+      eventCount: 1,
+      eventIds: ["chapter_1_event_1"],
+    });
+    expect(list.chapters[1]).toMatchObject({
+      title: "Chapter 2 Choice",
+      eventState: "failed",
+      errorReason: "Provider timed out",
+    });
+    expect(detail.chapter.content).toContain("waits for a response");
+    expect(detail.chapter.events).toHaveLength(0);
+  });
+
+  it("updates a chapter and resets only that chapter event state", async () => {
+    const source =
+      "Chapter 1 Signal\nThe courier finds a blue signal.\n\nChapter 2 Choice\nThe courier waits for a response.";
+    const updatedSource =
+      "Chapter 1 Signal\nThe courier finds a blue signal.\n\nChapter 2 Choice\nThe courier follows the response.";
+    prisma.novelDocument.findFirst.mockResolvedValue(novel({ content: source }));
+    prisma.novelDocument.update.mockResolvedValue(
+      novel({
+        content: updatedSource,
+        wordCount: 15,
+      }),
+    );
+    prisma.novelEventGraph.findFirst.mockResolvedValue(
+      novelEventGraph({
+        chaptersJson: [
+          {
+            chapterIndex: 1,
+            title: "Chapter 1 Signal",
+            startOffset: 17,
+            endOffset: 50,
+            wordCount: 6,
+            summary: "The courier finds a blue signal.",
+            eventState: "succeeded",
+            eventCount: 1,
+            eventIds: ["chapter_1_event_1"],
+          },
+          {
+            chapterIndex: 2,
+            title: "Chapter 2 Choice",
+            startOffset: 68,
+            endOffset: 103,
+            wordCount: 7,
+            summary: "The courier waits for a response.",
+            eventState: "succeeded",
+            eventCount: 1,
+            eventIds: ["chapter_2_event_1"],
+          },
+        ],
+        eventsJson: [
+          {
+            eventId: "chapter_1_event_1",
+            title: "Chapter 1 Event 1",
+            orderIndex: 1,
+            chapterIndex: 1,
+            sourceExcerpt: "The courier finds a blue signal.",
+            summary: "The courier finds a blue signal.",
+          },
+          {
+            eventId: "chapter_2_event_1",
+            title: "Chapter 2 Event 1",
+            orderIndex: 2,
+            chapterIndex: 2,
+            sourceExcerpt: "The courier waits for a response.",
+            summary: "The courier waits for a response.",
+          },
+        ],
+      }),
+    );
+    prisma.novelEventGraph.create.mockImplementation(async ({ data }) =>
+      novelEventGraph({
+        chaptersJson: data.chaptersJson,
+        eventsJson: data.eventsJson,
+      }),
+    );
+
+    const result = await service.updateNovelChapter("project_1", "novel_1", 2, {
+      content: "The courier follows the response.",
+    });
+
+    expect(prisma.novelDocument.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "novel_1" },
+        data: expect.objectContaining({
+          content: expect.stringContaining("follows the response"),
+        }),
+      }),
+    );
+    expect(result.chapter).toMatchObject({
+      chapterIndex: 2,
+      eventState: "pending",
+      eventCount: 0,
+      eventIds: [],
+    });
+    expect(result.eventGraph?.events.map((event) => event.eventId)).toEqual([
+      "chapter_1_event_1",
+    ]);
+  });
+
+  it("extracts one chapter and records failure state independently", async () => {
+    prisma.novelDocument.findFirst.mockResolvedValue(
+      novel({
+        content: "Chapter 1 Signal\nThe courier finds a blue signal.",
+      }),
+    );
+    prisma.novelEventGraph.findFirst.mockResolvedValue(null);
+    prisma.novelEventGraph.create.mockImplementation(async ({ data }) =>
+      novelEventGraph({
+        chaptersJson: data.chaptersJson,
+        eventsJson: data.eventsJson,
+      }),
+    );
+
+    const result = await service.extractSingleChapterEvents("project_1", "novel_1", 1, {
+      forceFailure: true,
+    });
+
+    expect(result.chapter).toMatchObject({
+      chapterIndex: 1,
+      eventState: "failed",
+      eventCount: 0,
+      errorReason: "Event extraction failed for this chapter",
+      content: "The courier finds a blue signal.",
+    });
+    expect(result.eventGraph.events).toHaveLength(0);
   });
 
   it("creates script drafts from the latest chapter event graph", async () => {

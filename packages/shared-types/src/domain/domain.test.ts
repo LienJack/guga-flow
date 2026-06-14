@@ -660,6 +660,10 @@ describe("shared domain constants", () => {
           endOffset: 120,
           wordCount: 24,
           summary: "The courier finds the signal.",
+          eventState: "succeeded",
+          eventCount: 1,
+          eventIds: ["chapter_1_event_1"],
+          extractedAt: "2026-06-13T00:00:00.000Z",
         },
       ],
       events: [
@@ -678,6 +682,8 @@ describe("shared domain constants", () => {
 
     expect(graph.events[0]?.chapterIndex).toBe(1);
     expect(graph.events[0]?.sourceExcerpt).toContain("signal");
+    expect(graph.chapters[0]?.eventState).toBe("succeeded");
+    expect(graph.chapters[0]?.eventIds).toContain("chapter_1_event_1");
   });
 
   it("models TF-15 script draft records", () => {

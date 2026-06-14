@@ -3,10 +3,13 @@ import type {
   CreateNovelDocumentInput,
   CreateScriptDraftInput,
   CreativeAgentMode,
+  ExtractNovelChapterEventsInput,
+  ExtractNovelEventsInput,
   ScriptAdaptationStrategy,
   ImportNovelSourceInput,
   NovelLanguage,
   NovelSourceType,
+  UpdateNovelChapterInput,
   UpdateStoryboardDraftInput,
   UpdateNovelDocumentInput,
 } from "@guga-flow/shared-types";
@@ -138,6 +141,41 @@ export class UpdateNovelDocumentDto implements UpdateNovelDocumentInput {
   @IsOptional()
   @IsIn(NOVEL_LANGUAGES)
   language?: NovelLanguage;
+}
+
+export class UpdateNovelChapterDto implements UpdateNovelChapterInput {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  content?: string;
+}
+
+export class ExtractNovelEventsDto implements ExtractNovelEventsInput {
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  chapterIndexes?: number[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  forceFailureChapterIndexes?: number[];
+}
+
+export class ExtractNovelChapterEventsDto implements ExtractNovelChapterEventsInput {
+  @IsOptional()
+  @IsBoolean()
+  forceFailure?: boolean;
 }
 
 export class UpdateStoryboardDraftDto implements UpdateStoryboardDraftInput {

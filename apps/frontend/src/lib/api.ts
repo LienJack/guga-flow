@@ -47,6 +47,9 @@ import type {
   DeleteCanvasNodeResult,
   DeleteNovelDocumentResult,
   ComposeShotPromptInput,
+  ExtractNovelChapterEventsInput,
+  ExtractNovelChapterEventsResult,
+  ExtractNovelEventsInput,
   ExtractNovelEventsResult,
   GenerateStoryboardResult,
   EditorExportDetailResult,
@@ -83,6 +86,8 @@ import type {
   ImportStoryboardToCanvasInput,
   ImportStoryboardToCanvasResult,
   MarkStoryboardDraftReadyResult,
+  NovelChapterDetailResult,
+  NovelChapterListResult,
   NovelDocumentRecord,
   NovelEventGraphRecord,
   ProjectDetail,
@@ -102,6 +107,8 @@ import type {
   UpdateStoryboardDraftInput,
   UpdateStoryboardDraftResult,
   UpdateProjectInput,
+  UpdateNovelChapterInput,
+  UpdateNovelChapterResult,
   ValidateProjectSettingsImportInput,
   UpdateCanvasNodeGeometryInput,
   UpdateCanvasNodeGeometryResult,
@@ -424,10 +431,63 @@ export function importNovelSource(
 export function extractNovelEvents(
   projectId: string,
   novelId: string,
+  input?: ExtractNovelEventsInput,
 ): Promise<ExtractNovelEventsResult> {
   return requestJson<ExtractNovelEventsResult>(
     `/projects/${projectId}/novels/${novelId}/extract-events`,
-    { method: "POST" },
+    {
+      method: "POST",
+      ...(input ? { body: JSON.stringify(input) } : {}),
+    },
+  );
+}
+
+export function listNovelChapters(
+  projectId: string,
+  novelId: string,
+): Promise<NovelChapterListResult> {
+  return requestJson<NovelChapterListResult>(
+    `/projects/${projectId}/novels/${novelId}/chapters`,
+  );
+}
+
+export function getNovelChapter(
+  projectId: string,
+  novelId: string,
+  chapterIndex: number,
+): Promise<NovelChapterDetailResult> {
+  return requestJson<NovelChapterDetailResult>(
+    `/projects/${projectId}/novels/${novelId}/chapters/${chapterIndex}`,
+  );
+}
+
+export function updateNovelChapter(
+  projectId: string,
+  novelId: string,
+  chapterIndex: number,
+  input: UpdateNovelChapterInput,
+): Promise<UpdateNovelChapterResult> {
+  return requestJson<UpdateNovelChapterResult>(
+    `/projects/${projectId}/novels/${novelId}/chapters/${chapterIndex}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function extractNovelChapterEvents(
+  projectId: string,
+  novelId: string,
+  chapterIndex: number,
+  input?: ExtractNovelChapterEventsInput,
+): Promise<ExtractNovelChapterEventsResult> {
+  return requestJson<ExtractNovelChapterEventsResult>(
+    `/projects/${projectId}/novels/${novelId}/chapters/${chapterIndex}/extract-events`,
+    {
+      method: "POST",
+      ...(input ? { body: JSON.stringify(input) } : {}),
+    },
   );
 }
 
