@@ -302,6 +302,7 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
             nodes={canvasNodes}
             projectId={projectId}
             selectedNodeId={selection.kind === "business-node" ? selection.nodeId : undefined}
+            onGenerationQueued={handleGenerationChanged}
             onItemUpdated={handleNodeUpdated}
             onWorkspaceMutation={handleProductionWorkspaceMutation}
             onSelectNode={handleSelectCanvasNode}

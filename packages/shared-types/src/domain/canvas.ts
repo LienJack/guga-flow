@@ -831,6 +831,31 @@ export interface VideoNodeData extends GeneratedMediaNodeData {
   audioReferences?: AudioReferenceData[];
 }
 
+export interface MediaClipSegmentData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  segmentId: string;
+  orderIndex: number;
+  sourceNodeId: string;
+  sourceNodeType: "shot" | "image" | "video" | "audio";
+  assetId?: string;
+  title?: string;
+  durationMs?: number;
+  trimStartMs?: number;
+  trimEndMs?: number;
+}
+
+export interface MediaClipNodeData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  clipId: string;
+  title: string;
+  source: "production_workspace";
+  selectedVideoNodeIds: string[];
+  shotNodeIds: string[];
+  exportPreset?: EditorExportPreset;
+  segments: MediaClipSegmentData[];
+  audioReferences?: AudioReferenceData[];
+}
+
 export interface EditorPackageNodeData {
   packageName?: string;
   format?: string;
@@ -849,6 +874,7 @@ export interface EditorPackageNodeData {
   notes?: string;
   generationSettings?: ResolvedGenerationSettings;
   packagingReferences?: unknown;
+  mediaClip?: MediaClipNodeData;
 }
 
 export interface Phase3CanvasNodeDataByType {

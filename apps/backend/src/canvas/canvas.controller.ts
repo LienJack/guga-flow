@@ -4,6 +4,7 @@ import { CanvasService } from "./canvas.service";
 import {
   CreateCanvasEdgeDto,
   CreateCanvasNodeDto,
+  CreateProductionMediaClipDto,
   CreateProductionStoryboardItemsDto,
   CreateStoryboardMediaBoardDto,
   DeleteProductionStoryboardItemsDto,
@@ -12,6 +13,7 @@ import {
   ImportStoryboardToCanvasDto,
   ReorderProductionStoryboardItemsDto,
   SaveCanvasSnapshotDto,
+  SelectProductionTrackVideoDto,
   UpdateCanvasNodeDto,
   UpdateCanvasNodeGeometryDto,
   UpdateProductionWorkspaceItemDto,
@@ -75,6 +77,23 @@ export class CanvasController {
     @Body() body: CreateStoryboardMediaBoardDto,
   ) {
     return this.canvasService.createStoryboardMediaBoard(projectId, body);
+  }
+
+  @Patch("production-workspace/video-tracks/:trackId/selected-video")
+  selectProductionTrackVideo(
+    @Param("projectId") projectId: string,
+    @Param("trackId") trackId: string,
+    @Body() body: SelectProductionTrackVideoDto,
+  ) {
+    return this.canvasService.selectProductionTrackVideo(projectId, trackId, body);
+  }
+
+  @Post("production-workspace/media-clips")
+  createProductionMediaClip(
+    @Param("projectId") projectId: string,
+    @Body() body: CreateProductionMediaClipDto,
+  ) {
+    return this.canvasService.createProductionMediaClip(projectId, body);
   }
 
   @Post("nodes")

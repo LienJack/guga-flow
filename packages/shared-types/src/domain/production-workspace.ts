@@ -1,5 +1,5 @@
 import type { CanvasEdgeRecord, CanvasNodeRecord, NodeStatus } from "./canvas";
-import type { GenerationQueueSummary } from "./generation";
+import type { EditorExportPreset, GenerationQueueSummary } from "./generation";
 import type { ScriptAdaptationStrategy } from "./script";
 
 export const PRODUCTION_WORKSPACE_ITEM_TYPES = ["storyboard_item"] as const;
@@ -46,6 +46,32 @@ export interface ProductionWorkspaceStoryboardItem {
   updatedAt: string;
 }
 
+export interface ProductionWorkspaceVideoCandidate {
+  candidateId: string;
+  videoNodeId: string;
+  shotNodeId: string;
+  title: string;
+  status: NodeStatus;
+  isSelected: boolean;
+  videoAssetId?: string;
+  durationSeconds?: number;
+  sourceImageNodeId?: string;
+  sourceNodeIds: string[];
+  updatedAt: string;
+}
+
+export interface ProductionWorkspaceVideoTrack {
+  trackId: string;
+  storyboardItemId: string;
+  shotNodeId: string;
+  orderIndex: number;
+  title: string;
+  prompt: string;
+  durationSeconds?: number;
+  selectedVideoNodeId?: string;
+  candidates: ProductionWorkspaceVideoCandidate[];
+}
+
 export interface ProductionWorkspaceAssetSummary {
   nodeId: string;
   nodeType: ProductionWorkspaceAssetNodeType;
@@ -79,6 +105,7 @@ export interface ProductionWorkspaceProjection {
   scriptPlan?: ProductionWorkspaceScriptPlan;
   storyboardTable: ProductionWorkspaceStoryboardItem[];
   storyboardItems: ProductionWorkspaceStoryboardItem[];
+  videoTracks: ProductionWorkspaceVideoTrack[];
   assets: ProductionWorkspaceAssetSummary[];
   summary: ProductionWorkspaceSummary;
   agentContext: ProductionWorkspaceAgentContext;
@@ -118,6 +145,24 @@ export interface CreateStoryboardMediaBoardInput {
   columns?: number;
 }
 
+export interface SelectProductionTrackVideoInput {
+  videoNodeId?: string;
+}
+
+export interface SelectProductionTrackVideoResult {
+  workspace: ProductionWorkspaceProjection;
+  updatedNode: CanvasNodeRecord;
+}
+
+export interface CreateProductionMediaClipInput {
+  trackIds?: string[];
+  videoNodeIds?: string[];
+  title?: string;
+  trimStartMs?: number;
+  trimEndMs?: number;
+  exportPreset?: EditorExportPreset;
+}
+
 export interface ProductionWorkspaceMutationResult {
   workspace: ProductionWorkspaceProjection;
   nodes: CanvasNodeRecord[];
@@ -128,4 +173,8 @@ export interface ProductionWorkspaceMutationResult {
 
 export interface CreateStoryboardMediaBoardResult extends ProductionWorkspaceMutationResult {
   boardNode: CanvasNodeRecord;
+}
+
+export interface CreateProductionMediaClipResult extends ProductionWorkspaceMutationResult {
+  mediaClipNode: CanvasNodeRecord;
 }

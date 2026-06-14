@@ -193,6 +193,9 @@ function installCanvasGraphMocks(
   prisma.canvasNode.findMany.mockImplementation(async (args?: MockFindArgs) =>
     nodes.filter((node) => recordMatchesWhere(node, args?.where)),
   );
+  prisma.canvasNode.findFirst.mockImplementation(async (args: MockFindArgs) =>
+    nodes.find((node) => recordMatchesWhere(node, args.where)) ?? null,
+  );
   prisma.canvasNode.create.mockImplementation(async ({ data }: MockCreateArgs) => {
     const node = canvasNode({
       id: `created_node_${nodeSequence++}`,
@@ -414,6 +417,17 @@ describe("CanvasService", () => {
       imageNodeId: "image_1",
       videoNodeId: "video_1",
       sourceScriptDraftId: "script_1",
+    });
+    expect(result.videoTracks[0]).toMatchObject({
+      trackId: "shot_1",
+      selectedVideoNodeId: "video_1",
+      candidates: [
+        expect.objectContaining({
+          videoNodeId: "video_1",
+          isSelected: true,
+          videoAssetId: "asset_video_1",
+        }),
+      ],
     });
     expect(result.assets[0]).toMatchObject({
       nodeId: "character_1",
@@ -640,6 +654,118 @@ describe("CanvasService", () => {
       }),
     });
     expect(result.focusNodeId).toBe(result.boardNode.id);
+  });
+
+  it("selects primary videos for production tracks", async () => {
+    installCanvasGraphMocks(prisma, [
+      canvasNode({
+        id: "shot_1",
+        type: "shot",
+        title: "Shot 001",
+        dataJson: { storyboardOrder: 1, shotNumber: "001", videoPrompt: "slow push" },
+      }),
+      canvasNode({
+        id: "video_1",
+        type: "video",
+        title: "Video A",
+        dataJson: { assetId: "asset_video_1", generatedFromNodeId: "shot_1", durationSeconds: 5 },
+      }),
+    ]);
+
+    const result = await service.selectProductionTrackVideo("project_1", "shot_1", {
+      videoNodeId: "video_1",
+    });
+
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "shot_1" },
+      data: {
+        dataJson: {
+          storyboardOrder: 1,
+          shotNumber: "001",
+          videoPrompt: "slow push",
+          selectedVideoNodeId: "video_1",
+        },
+      },
+    });
+    expect(result.updatedNode.dataJson).toMatchObject({ selectedVideoNodeId: "video_1" });
+    expect(result.workspace.videoTracks[0]).toMatchObject({
+      trackId: "shot_1",
+      selectedVideoNodeId: "video_1",
+    });
+  });
+
+  it("creates MediaClip editor package nodes from selected video tracks", async () => {
+    installCanvasGraphMocks(
+      prisma,
+      [
+        canvasNode({
+          id: "shot_1",
+          type: "shot",
+          title: "Shot 001",
+          dataJson: {
+            storyboardOrder: 1,
+            shotNumber: "001",
+            selectedVideoNodeId: "video_1",
+          },
+        }),
+        canvasNode({
+          id: "video_1",
+          type: "video",
+          title: "Video A",
+          dataJson: {
+            assetId: "asset_video_1",
+            generatedFromNodeId: "shot_1",
+            durationSeconds: 5,
+            audioReferences: [{ assetId: "asset_audio_1", role: "bgm", label: "Cue" }],
+          },
+        }),
+      ],
+      [
+        canvasEdge({
+          id: "edge_video_1",
+          sourceNodeId: "shot_1",
+          targetNodeId: "video_1",
+          relation: "generated_video",
+        }),
+      ],
+    );
+
+    const result = await service.createProductionMediaClip("project_1", {
+      trackIds: ["shot_1"],
+      title: "Clip A",
+      trimStartMs: 100,
+      trimEndMs: 4500,
+    });
+
+    expect(result.mediaClipNode).toMatchObject({
+      type: "editor_package",
+      title: "Clip A",
+      dataJson: expect.objectContaining({
+        format: "media_clip",
+        selectedVideoNodeIds: ["video_1"],
+        mediaClip: expect.objectContaining({
+          selectedVideoNodeIds: ["video_1"],
+          shotNodeIds: ["shot_1"],
+          segments: [
+            expect.objectContaining({
+              sourceNodeId: "video_1",
+              assetId: "asset_video_1",
+              durationMs: 5000,
+              trimStartMs: 100,
+              trimEndMs: 4500,
+            }),
+          ],
+          audioReferences: [expect.objectContaining({ assetId: "asset_audio_1" })],
+        }),
+      }),
+    });
+    expect(result.edges).toContainEqual(
+      expect.objectContaining({
+        sourceNodeId: "video_1",
+        targetNodeId: result.mediaClipNode.id,
+        relation: "sent_to_editor",
+      }),
+    );
   });
 
   it("saves snapshots and returns the updated canvas document", async () => {

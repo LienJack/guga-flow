@@ -3,6 +3,7 @@ import type {
   CanvasSnapshotJson,
   CreateCanvasEdgeInput,
   CreateCanvasNodeInput,
+  CreateProductionMediaClipInput,
   CreateProductionStoryboardItemsInput,
   CreateStoryboardMediaBoardInput,
   DeleteProductionStoryboardItemsInput,
@@ -12,6 +13,7 @@ import type {
   NodeStatus,
   Phase3CanvasNodeType,
   ReorderProductionStoryboardItemsInput,
+  SelectProductionTrackVideoInput,
   StoryboardImportDuplicatePolicy,
   UpdateCanvasNodeGeometryInput,
   UpdateCanvasNodeInput,
@@ -19,6 +21,7 @@ import type {
 } from "@guga-flow/shared-types";
 import {
   CANVAS_EDGE_RELATIONS,
+  EDITOR_EXPORT_PRESETS,
   NODE_STATUSES,
   PHASE_3_CANVAS_NODE_TYPES,
   PRODUCTION_WORKSPACE_ITEM_TYPES,
@@ -255,6 +258,50 @@ export class CreateStoryboardMediaBoardDto implements CreateStoryboardMediaBoard
   @IsInt()
   @Min(1)
   columns?: number;
+}
+
+export class SelectProductionTrackVideoDto implements SelectProductionTrackVideoInput {
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  videoNodeId?: string;
+}
+
+export class CreateProductionMediaClipDto implements CreateProductionMediaClipInput {
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(160, { each: true })
+  trackIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(160, { each: true })
+  videoNodeIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  title?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  trimStartMs?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  trimEndMs?: number;
+
+  @IsOptional()
+  @IsIn(EDITOR_EXPORT_PRESETS)
+  exportPreset?: CreateProductionMediaClipInput["exportPreset"];
 }
 
 export class ImportStoryboardToCanvasDto implements ImportStoryboardToCanvasInput {

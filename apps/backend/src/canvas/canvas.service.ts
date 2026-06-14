@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import type {
+  AudioReferenceData,
   AssetListItem,
   AssetPreviewKind,
   AssetPurpose,
@@ -19,6 +20,8 @@ import type {
   CreateCanvasEdgeResult,
   CreateCanvasNodeInput,
   CreateCanvasNodeResult,
+  CreateProductionMediaClipInput,
+  CreateProductionMediaClipResult,
   CreateProductionStoryboardItemsInput,
   CreateStoryboardMediaBoardInput,
   CreateStoryboardMediaBoardResult,
@@ -41,13 +44,19 @@ import type {
   ProductionWorkspaceProjection,
   ProductionWorkspaceScriptPlan,
   ProductionWorkspaceStoryboardItem,
+  ProductionWorkspaceVideoCandidate,
+  ProductionWorkspaceVideoTrack,
   ReorderProductionStoryboardItemsInput,
   SaveCanvasSnapshotInput,
   SaveCanvasSnapshotResult,
   SceneFrameNodeData,
+  SelectProductionTrackVideoInput,
+  SelectProductionTrackVideoResult,
+  EditorPackageNodeData,
   ScriptAdaptationStrategy,
   ScriptDraftWorkspace,
   ShotNodeData,
+  VideoNodeData,
   StoryboardImportDataJson,
   StoryboardImportDuplicatePolicy,
   StoryboardImportPlannedNode,
@@ -258,8 +267,8 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function uniqueStrings(values: readonly string[]): string[] {
-  return Array.from(new Set(values));
+function uniqueStrings(values: readonly (string | undefined)[]): string[] {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
 }
 
 function getStringArray(value: CanvasSnapshotJson | undefined): string[] {
@@ -294,6 +303,19 @@ function storyboardBoardAssetRef(
   const mediaNode = mediaNodeId ? nodesById.get(mediaNodeId) : undefined;
   const assetId = optionalText(objectData(mediaNode?.dataJson).assetId);
   return assetId ? { assetId } : {};
+}
+
+function uniqueAudioReferenceData(references: readonly AudioReferenceData[]): AudioReferenceData[] {
+  const seen = new Set<string>();
+  const result: AudioReferenceData[] = [];
+  for (const reference of references) {
+    if (!reference.assetId || seen.has(reference.assetId)) {
+      continue;
+    }
+    seen.add(reference.assetId);
+    result.push(reference);
+  }
+  return result;
 }
 
 function hasExistingLifecycleStages(value: CanvasSnapshotJson | undefined): boolean {
@@ -792,6 +814,169 @@ export class CanvasService {
       boardNode: nodeRecord,
       nodes: [nodeRecord],
       edges: [],
+      focusNodeId: nodeRecord.id,
+    };
+  }
+
+  async selectProductionTrackVideo(
+    projectId: string,
+    trackId: string,
+    input: SelectProductionTrackVideoInput,
+  ): Promise<SelectProductionTrackVideoResult> {
+    const shotNode = await this.findProjectNode(projectId, trackId);
+    if (shotNode.type !== "shot") {
+      throw new BadRequestException("Production video tracks must target Shot nodes");
+    }
+
+    const videoNodeId = this.normalizeOptionalProductionText(input.videoNodeId);
+    if (videoNodeId) {
+      const videoNode = await this.findProjectNode(projectId, videoNodeId);
+      if (videoNode.type !== "video") {
+        throw new BadRequestException("Selected track candidate must be a Video node");
+      }
+    }
+
+    const dataJson = this.toNodeDataObject(shotNode.dataJson);
+    if (videoNodeId) {
+      dataJson.selectedVideoNodeId = videoNodeId;
+    } else {
+      delete dataJson.selectedVideoNodeId;
+    }
+
+    const updated = (await this.prisma.canvasNode.update({
+      where: { id: shotNode.id },
+      data: { dataJson },
+    })) as CanvasNodeModel;
+
+    return {
+      updatedNode: this.toCanvasNodeRecord(updated),
+      workspace: await this.getProductionWorkspace(projectId),
+    };
+  }
+
+  async createProductionMediaClip(
+    projectId: string,
+    input: CreateProductionMediaClipInput,
+  ): Promise<CreateProductionMediaClipResult> {
+    const workspace = await this.getProductionWorkspace(projectId);
+    const canvas = await this.getCanvas(projectId);
+    const nodesById = new Map(canvas.nodes.map((node) => [node.id, node]));
+    const selectedTrackIds = uniqueStrings(input.trackIds ?? []);
+    const selectedVideoIds = uniqueStrings(input.videoNodeIds ?? []);
+    const tracks = selectedTrackIds.length
+      ? workspace.videoTracks.filter((track) => selectedTrackIds.includes(track.trackId))
+      : workspace.videoTracks;
+    if (selectedTrackIds.length > 0 && tracks.length !== selectedTrackIds.length) {
+      throw new BadRequestException("MediaClip track ids must reference Shot tracks");
+    }
+    const videoNodeIds = selectedVideoIds.length
+      ? selectedVideoIds
+      : uniqueStrings(
+          tracks.flatMap((track) => track.selectedVideoNodeId ?? track.candidates[0]?.videoNodeId ?? []),
+        );
+    if (videoNodeIds.length === 0) {
+      throw new BadRequestException("MediaClip requires at least one video candidate");
+    }
+    const videoNodes = videoNodeIds.map((videoNodeId) => nodesById.get(videoNodeId));
+    if (videoNodes.some((node) => !node || node.type !== "video")) {
+      throw new BadRequestException("MediaClip video ids must reference Video nodes");
+    }
+
+    const canvasDocument = await this.getOrCreateCanvasDocument(projectId);
+    const title = this.normalizeOptionalProductionText(input.title) ?? "MediaClip";
+    const clipId = `clip_${Date.now().toString(36)}`;
+    const segments = videoNodes.map((node, index) => {
+      const videoNode = node as CanvasNodeRecord;
+      const data = objectData(videoNode.dataJson) as VideoNodeData;
+      const durationSeconds = optionalPositiveNumber(data.durationSeconds);
+      return {
+        segmentId: `${clipId}_${index + 1}`,
+        orderIndex: index + 1,
+        sourceNodeId: videoNode.id,
+        sourceNodeType: "video" as const,
+        ...(optionalText(data.assetId) ? { assetId: optionalText(data.assetId) } : {}),
+        title: videoNode.title ?? `Video ${index + 1}`,
+        ...(durationSeconds ? { durationMs: Math.round(durationSeconds * 1000) } : {}),
+        ...(input.trimStartMs !== undefined ? { trimStartMs: this.normalizeTrimMs(input.trimStartMs, "Trim start") } : {}),
+        ...(input.trimEndMs !== undefined ? { trimEndMs: this.normalizeTrimMs(input.trimEndMs, "Trim end") } : {}),
+      };
+    });
+    const shotNodeIds = uniqueStrings(
+      tracks.flatMap((track) =>
+        videoNodeIds.some((videoNodeId) =>
+          track.candidates.some((candidate) => candidate.videoNodeId === videoNodeId),
+        )
+          ? [track.shotNodeId]
+          : [],
+      ),
+    );
+    const audioReferences = uniqueAudioReferenceData(
+      videoNodes.flatMap((node) => {
+        const data = objectData(node?.dataJson) as VideoNodeData;
+        return Array.isArray(data.audioReferences) ? data.audioReferences : [];
+      }),
+    );
+    const mediaClipData: EditorPackageNodeData = {
+      packageName: title,
+      format: "media_clip",
+      selectedVideoNodeIds: videoNodeIds,
+      sortMode: "manual",
+      exportPreset: input.exportPreset ?? "standard_zip",
+      clipCount: segments.length,
+      notes: "Lightweight MediaClip projection",
+      mediaClip: {
+        clipId,
+        title,
+        source: "production_workspace",
+        selectedVideoNodeIds: videoNodeIds,
+        shotNodeIds,
+        exportPreset: input.exportPreset ?? "standard_zip",
+        segments,
+        ...(audioReferences.length ? { audioReferences } : {}),
+      },
+    };
+    const mediaClipNode = (await this.prisma.canvasNode.create({
+      data: {
+        projectId,
+        canvasDocumentId: canvasDocument.id,
+        tldrawShapeId: `mediaclip:${randomUUID()}`,
+        type: prismaCanvasNodeType("editor_package"),
+        title,
+        x: 120,
+        y: 120,
+        width: 420,
+        height: 260,
+        zIndex: canvas.nodes.length + 1,
+        status: "draft",
+        dataJson: this.normalizeNodeDataJson(mediaClipData),
+      },
+    })) as CanvasNodeModel;
+    const edges: CanvasEdgeModel[] = [];
+    for (const videoNodeId of videoNodeIds) {
+      const videoNode = nodesById.get(videoNodeId);
+      if (!videoNode) {
+        continue;
+      }
+      edges.push((await this.prisma.canvasEdge.create({
+        data: {
+          projectId,
+          canvasDocumentId: canvasDocument.id,
+          sourceNodeId: videoNodeId,
+          targetNodeId: mediaClipNode.id,
+          sourceShapeId: videoNode.tldrawShapeId,
+          targetShapeId: mediaClipNode.tldrawShapeId,
+          relation: prismaCanvasEdgeRelation("sent_to_editor"),
+          dataJson: { mediaClipId: clipId },
+        },
+      })) as CanvasEdgeModel);
+    }
+    const nodeRecord = this.toCanvasNodeRecord(mediaClipNode);
+
+    return {
+      workspace: await this.getProductionWorkspace(projectId),
+      mediaClipNode: nodeRecord,
+      nodes: [nodeRecord],
+      edges: edges.map((edge) => this.toCanvasEdgeRecord(edge)),
       focusNodeId: nodeRecord.id,
     };
   }
@@ -1962,6 +2147,9 @@ export class CanvasService {
         left.updatedAt.localeCompare(right.updatedAt) ||
         left.title.localeCompare(right.title),
       );
+    const videoTracks = storyboardItems.map((item) =>
+      this.productionVideoTrack(item, input.nodes, input.edges, nodesById),
+    );
     const assets = input.nodes
       .filter((node) =>
         node.type === "character_asset" || node.type === "location_asset" || node.type === "prop_asset",
@@ -1992,6 +2180,7 @@ export class CanvasService {
       ...(scriptPlan ? { scriptPlan } : {}),
       storyboardTable: storyboardItems,
       storyboardItems,
+      videoTracks,
       assets,
       summary: {
         shotCount: storyboardItems.length,
@@ -2200,6 +2389,109 @@ export class CanvasService {
     };
   }
 
+  private productionVideoTrack(
+    item: ProductionWorkspaceStoryboardItem,
+    nodes: readonly CanvasNodeRecord[],
+    edges: readonly CanvasEdgeRecord[],
+    nodesById: ReadonlyMap<string, CanvasNodeRecord>,
+  ): ProductionWorkspaceVideoTrack {
+    const candidates = nodes
+      .filter((node) => node.type === "video")
+      .filter((node) => this.videoBelongsToStoryboardItem(node, item, edges, nodesById))
+      .map((node) => this.productionVideoCandidate(node, item))
+      .sort((left, right) =>
+        Number(right.isSelected) - Number(left.isSelected) ||
+        left.updatedAt.localeCompare(right.updatedAt) ||
+        left.title.localeCompare(right.title),
+      );
+
+    return {
+      trackId: item.shotNodeId,
+      storyboardItemId: item.itemId,
+      shotNodeId: item.shotNodeId,
+      orderIndex: item.orderIndex,
+      title: item.title,
+      prompt: item.videoPrompt ?? "",
+      ...(item.durationSeconds ? { durationSeconds: item.durationSeconds } : {}),
+      ...(item.videoNodeId ? { selectedVideoNodeId: item.videoNodeId } : {}),
+      candidates,
+    };
+  }
+
+  private videoBelongsToStoryboardItem(
+    node: CanvasNodeRecord,
+    item: ProductionWorkspaceStoryboardItem,
+    edges: readonly CanvasEdgeRecord[],
+    nodesById: ReadonlyMap<string, CanvasNodeRecord>,
+  ): boolean {
+    if (node.id === item.videoNodeId) {
+      return true;
+    }
+    const data = objectData(node.dataJson);
+    const inputJson = objectData(data.inputJson);
+    const explicitShotId = optionalText(inputJson.parentShotNodeId) ?? optionalText(data.generatedFromNodeId);
+    if (explicitShotId === item.shotNodeId || stringArray(data.sourceNodeIds).includes(item.shotNodeId)) {
+      return true;
+    }
+    const sourceNodeId = optionalText(data.generatedFromNodeId);
+    const sourceNode = sourceNodeId ? nodesById.get(sourceNodeId) : undefined;
+    if (sourceNode?.type === "image") {
+      const sourceImageData = objectData(sourceNode.dataJson);
+      if (optionalText(sourceImageData.generatedFromNodeId) === item.shotNodeId) {
+        return true;
+      }
+      if (
+        edges.some(
+          (edge) =>
+            edge.relation === "generated_image" &&
+            edge.sourceNodeId === item.shotNodeId &&
+            edge.targetNodeId === sourceNode.id,
+        )
+      ) {
+        return true;
+      }
+    }
+    return edges.some((edge) => {
+      if (edge.relation !== "generated_video" || edge.targetNodeId !== node.id) {
+        return false;
+      }
+      if (edge.sourceNodeId === item.shotNodeId || edge.sourceNodeId === item.imageNodeId) {
+        return true;
+      }
+      const source = nodesById.get(edge.sourceNodeId);
+      return source?.type === "image" && optionalText(objectData(source.dataJson).generatedFromNodeId) === item.shotNodeId;
+    });
+  }
+
+  private productionVideoCandidate(
+    node: CanvasNodeRecord,
+    item: ProductionWorkspaceStoryboardItem,
+  ): ProductionWorkspaceVideoCandidate {
+    const data = objectData(node.dataJson);
+    const inputJson = objectData(data.inputJson);
+    const durationSeconds = optionalPositiveNumber(data.durationSeconds);
+    const sourceImageNodeId =
+      optionalText(data.generatedFromNodeId) ?? optionalText(inputJson.sourceImageNodeId);
+
+    return {
+      candidateId: node.id,
+      videoNodeId: node.id,
+      shotNodeId: item.shotNodeId,
+      title: node.title ?? optionalText(data.description) ?? "Video",
+      status: node.status,
+      isSelected: node.id === item.videoNodeId,
+      ...(optionalText(data.assetId) ? { videoAssetId: optionalText(data.assetId) } : {}),
+      ...(durationSeconds ? { durationSeconds } : {}),
+      ...(sourceImageNodeId ? { sourceImageNodeId } : {}),
+      sourceNodeIds: uniqueStrings([
+        ...stringArray(data.sourceNodeIds),
+        optionalText(data.generatedFromNodeId),
+        optionalText(inputJson.parentShotNodeId),
+      ]),
+      updatedAt: node.updatedAt,
+    };
+  }
+
   private productionAssetSummary(node: CanvasNodeRecord): ProductionWorkspaceAssetSummary {
     const data = objectData(node.dataJson);
     const source = objectData(data.scriptAssetSource);
@@ -2315,6 +2607,13 @@ export class CanvasService {
     }
     if (!Number.isInteger(value) || value < 1 || value > 8) {
       throw new BadRequestException("Storyboard board columns must be between 1 and 8");
+    }
+    return value;
+  }
+
+  private normalizeTrimMs(value: number, label: string): number {
+    if (!Number.isInteger(value) || value < 0) {
+      throw new BadRequestException(`${label} must be a non-negative integer`);
     }
     return value;
   }

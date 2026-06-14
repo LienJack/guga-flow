@@ -15,6 +15,7 @@ import {
   createProgrammableProvider,
   createProject,
   createCanvasEdge,
+  createProductionMediaClip,
   createProductionStoryboardItems,
   createCreativeStoryboard,
   createNovelDocument,
@@ -77,6 +78,7 @@ import {
   clearAgentMemories,
   deleteProductionStoryboardItems,
   reorderProductionStoryboardItems,
+  selectProductionTrackVideo,
   updateProject,
   updateProductionWorkspaceItem,
   validateProjectSettingsImport,
@@ -243,6 +245,16 @@ describe("frontend api client", () => {
       title: "Board A",
       columns: 3,
     });
+    await selectProductionTrackVideo("project_1", "shot_1", {
+      videoNodeId: "video_1",
+    });
+    await createProductionMediaClip("project_1", {
+      trackIds: ["shot_1"],
+      title: "Clip A",
+      trimStartMs: 100,
+      trimEndMs: 4000,
+      exportPreset: "standard_zip",
+    });
     await getAgentProductionWorkspaceContext("project_1");
 
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -311,6 +323,30 @@ describe("frontend api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       7,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/production-workspace/video-tracks/shot_1/selected-video",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          videoNodeId: "video_1",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/production-workspace/media-clips",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          trackIds: ["shot_1"],
+          title: "Clip A",
+          trimStartMs: 100,
+          trimEndMs: 4000,
+          exportPreset: "standard_zip",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      9,
       "http://localhost:3002/api/v1/projects/project_1/agents/production-workspace-context",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );

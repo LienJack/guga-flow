@@ -1,8 +1,10 @@
 import type {
   CanvasNodeRecord,
+  GenerationQueueSummary,
   ProductionWorkspaceMutationResult,
   ProductionWorkspaceProjection,
   ProductionWorkspaceStoryboardItem,
+  ProductionWorkspaceVideoTrack,
 } from "@guga-flow/shared-types";
 import {
   ArrowDown,
@@ -18,11 +20,14 @@ import {
 import React, { useEffect, useMemo, useState } from "react";
 
 import {
+  createEditorExport,
+  createProductionMediaClip,
   createProductionStoryboardItems,
   createStoryboardMediaBoard,
   deleteProductionStoryboardItems,
   getProductionWorkspace,
   reorderProductionStoryboardItems,
+  selectProductionTrackVideo,
   updateProductionWorkspaceItem,
 } from "../../lib/api";
 
@@ -32,6 +37,7 @@ interface ProductionWorkspacePanelProps {
   projectId: string;
   selectedNodeId?: string;
   onItemUpdated(node: CanvasNodeRecord): void;
+  onGenerationQueued?(queueSummary?: GenerationQueueSummary): void;
   onWorkspaceMutation(result: ProductionWorkspaceMutationResult): void;
   onSelectNode(nodeId: string): void;
 }
@@ -47,6 +53,7 @@ interface StoryboardItemDraft {
 export function ProductionWorkspacePanel({
   initialWorkspace,
   nodes,
+  onGenerationQueued,
   onItemUpdated,
   onWorkspaceMutation,
   onSelectNode,
@@ -255,6 +262,79 @@ export function ProductionWorkspacePanel({
     );
   }
 
+  function selectedTrackIds(): string[] {
+    if (selectedBatchIds.size > 0) {
+      return [...selectedBatchIds];
+    }
+    return selectedItem ? [selectedItem.itemId] : [];
+  }
+
+  function tracksForExport(): ProductionWorkspaceVideoTrack[] {
+    if (!workspace) {
+      return [];
+    }
+    const ids = selectedBatchIds.size > 0 ? selectedBatchIds : new Set(workspace.videoTracks.map((track) => track.trackId));
+    return workspace.videoTracks.filter((track) => ids.has(track.trackId));
+  }
+
+  function selectedTrackVideoIds(): string[] {
+    return tracksForExport().flatMap((track) => {
+      const videoNodeId = track.selectedVideoNodeId ?? track.candidates[0]?.videoNodeId;
+      return videoNodeId ? [videoNodeId] : [];
+    });
+  }
+
+  async function selectTrackVideo(track: ProductionWorkspaceVideoTrack, videoNodeId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await selectProductionTrackVideo(projectId, track.trackId, {
+        videoNodeId: videoNodeId || undefined,
+      });
+      setWorkspace(result.workspace);
+      onItemUpdated(result.updatedNode);
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Unable to select primary video");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createMediaClipFromTracks() {
+    const trackIds = selectedTrackIds();
+    await runWorkspaceAction(
+      () =>
+        createProductionMediaClip(projectId, {
+          trackIds: trackIds.length ? trackIds : undefined,
+          title: "MediaClip",
+          exportPreset: "standard_zip",
+        }),
+      "Unable to create MediaClip",
+    );
+  }
+
+  async function exportSelectedTrackVideos() {
+    const videoNodeIds = selectedTrackVideoIds();
+    if (videoNodeIds.length === 0) {
+      setError("Select at least one video candidate before export");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await createEditorExport(projectId, {
+        videoNodeIds,
+        sortMode: "shot_index",
+        exportPreset: "standard_zip",
+      });
+      onGenerationQueued?.(result.queueSummary);
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Unable to queue editor export");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveStoryboardItem(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedItem) {
@@ -359,6 +439,24 @@ export function ProductionWorkspacePanel({
               <Grid2X2 size={15} aria-hidden="true" />
               Board
             </button>
+            <button
+              className="ghost-action compact"
+              type="button"
+              onClick={() => void createMediaClipFromTracks()}
+              disabled={busy || workspace.videoTracks.every((track) => track.candidates.length === 0)}
+            >
+              <Clapperboard size={15} aria-hidden="true" />
+              Clip
+            </button>
+            <button
+              className="ghost-action compact"
+              type="button"
+              onClick={() => void exportSelectedTrackVideos()}
+              disabled={busy || selectedTrackVideoIds().length === 0}
+            >
+              <Save size={15} aria-hidden="true" />
+              Export videos
+            </button>
           </div>
           <div className="script-draft-list">
             {workspace.storyboardTable.slice(0, 8).map((item) => (
@@ -392,6 +490,40 @@ export function ProductionWorkspacePanel({
                   <LocateFixed size={15} aria-hidden="true" />
                   {item.durationSeconds ? `${item.durationSeconds}s` : "Locate"}
                 </button>
+              </div>
+            ))}
+          </div>
+          <div className="empty-state small">
+            <strong>Video tracks</strong>
+            <span>
+              {workspace.videoTracks.reduce((sum, track) => sum + track.candidates.length, 0)} candidates
+            </span>
+          </div>
+          <div className="script-draft-list">
+            {workspace.videoTracks.slice(0, 8).map((track) => (
+              <div className="script-draft-row" key={track.trackId}>
+                <div>
+                  <strong>{track.orderIndex}. {track.title}</strong>
+                  <span>
+                    {track.candidates.length} candidate{track.candidates.length === 1 ? "" : "s"}
+                    {track.selectedVideoNodeId ? " · selected" : ""}
+                  </span>
+                </div>
+                <label className="field-label">
+                  <span>Primary</span>
+                  <select
+                    value={track.selectedVideoNodeId ?? ""}
+                    onChange={(event) => void selectTrackVideo(track, event.target.value)}
+                    disabled={busy || track.candidates.length === 0}
+                  >
+                    <option value="">Fallback</option>
+                    {track.candidates.map((candidate) => (
+                      <option key={candidate.videoNodeId} value={candidate.videoNodeId}>
+                        {candidate.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             ))}
           </div>

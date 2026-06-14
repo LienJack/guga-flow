@@ -43,6 +43,8 @@ import type {
   CreateNovelDocumentInput,
   CreateNovelDocumentResult,
   CreateProjectInput,
+  CreateProductionMediaClipInput,
+  CreateProductionMediaClipResult,
   CreateProductionStoryboardItemsInput,
   CreateStoryboardMediaBoardInput,
   CreateStoryboardMediaBoardResult,
@@ -90,6 +92,8 @@ import type {
   ProductionWorkspaceMutationResult,
   ProductionWorkspaceProjection,
   ReorderProductionStoryboardItemsInput,
+  SelectProductionTrackVideoInput,
+  SelectProductionTrackVideoResult,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
   ImportScriptAssetsInput,
@@ -890,6 +894,33 @@ export function createStoryboardMediaBoard(
 ): Promise<CreateStoryboardMediaBoardResult> {
   return requestJson<CreateStoryboardMediaBoardResult>(
     `/projects/${projectId}/canvas/production-workspace/storyboard-board`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function selectProductionTrackVideo(
+  projectId: string,
+  trackId: string,
+  input: SelectProductionTrackVideoInput,
+): Promise<SelectProductionTrackVideoResult> {
+  return requestJson<SelectProductionTrackVideoResult>(
+    `/projects/${projectId}/canvas/production-workspace/video-tracks/${trackId}/selected-video`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function createProductionMediaClip(
+  projectId: string,
+  input: CreateProductionMediaClipInput,
+): Promise<CreateProductionMediaClipResult> {
+  return requestJson<CreateProductionMediaClipResult>(
+    `/projects/${projectId}/canvas/production-workspace/media-clips`,
     {
       method: "POST",
       body: JSON.stringify(input),

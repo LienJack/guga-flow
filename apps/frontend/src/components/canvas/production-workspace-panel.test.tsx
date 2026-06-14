@@ -29,6 +29,8 @@ describe("ProductionWorkspacePanel", () => {
     expect(html).toContain("Add 3");
     expect(html).toContain("Delete selected");
     expect(html).toContain("Board");
+    expect(html).toContain("Video tracks");
+    expect(html).toContain("Export videos");
   });
 });
 
@@ -81,6 +83,32 @@ function workspace(): ProductionWorkspaceProjection {
         storyEventIds: ["event_1"],
         referenceAssetIds: ["asset_ref_1"],
         updatedAt: "2026-06-14T00:00:00.000Z",
+      },
+    ],
+    videoTracks: [
+      {
+        trackId: "shot_1",
+        storyboardItemId: "shot_1",
+        shotNodeId: "shot_1",
+        orderIndex: 1,
+        title: "Shot 001",
+        prompt: "slow push toward console",
+        durationSeconds: 4,
+        selectedVideoNodeId: "video_1",
+        candidates: [
+          {
+            candidateId: "video_1",
+            videoNodeId: "video_1",
+            shotNodeId: "shot_1",
+            title: "Video 001",
+            status: "draft",
+            isSelected: true,
+            videoAssetId: "asset_video_1",
+            durationSeconds: 4,
+            sourceNodeIds: ["shot_1"],
+            updatedAt: "2026-06-14T00:00:00.000Z",
+          },
+        ],
       },
     ],
     assets: [],
