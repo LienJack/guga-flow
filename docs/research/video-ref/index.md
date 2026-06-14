@@ -6,8 +6,8 @@ This directory stores reusable reference evidence for video-production workbench
 
 1. Check the source version and license boundary in `source-contract.md`.
 2. For Infinite-Canvas work, start with `infinite-canvas-coverage-and-gaps.md`, then open the matching context pack in `context-packs/`.
-3. For AI-CanvasPro work, start with `context-packs/ai-canvaspro-canvas-provider-desktop.md`, then use `repomix/ai-canvaspro-token-tree.txt` and `graphs/ai-canvaspro/queries/*.txt`.
-4. For Toonflow-app work, use `graphs/toonflow-app/graph.json` for concept and module navigation.
+3. For Toonflow-app work, start with `toonflow-coverage-and-gaps.md`, then use `graphs/toonflow-app/queries/*.txt` and the focused Repomix contexts named there.
+4. For AI-CanvasPro work, start with `ai-canvaspro-coverage-and-gaps.md`, then open `context-packs/ai-canvaspro-canvas-provider-desktop.md` and the matching query/context pack named there.
 5. Use token trees to find candidate files without loading source.
 6. Use focused Repomix contexts for source-level verification.
 7. Use full/base contexts only when focused packs miss.
@@ -26,6 +26,7 @@ This directory stores reusable reference evidence for video-production workbench
 | Assets focused context | `repomix/toonflow-app-focused-assets.xml` | Assets, image generation, audio binding, task records |
 | Vendor focused context | `repomix/toonflow-app-focused-vendor.xml` | Vendor code plus large `src/lib/vendor.json` |
 | Vendor code context | `repomix/toonflow-app-focused-vendor-code.xml` | Vendor routes and execution code without the large vendor JSON |
+| Toonflow coverage ledger | `toonflow-coverage-and-gaps.md` | CEX/TFR coverage matrix, lookup map, evidence labels, and non-copy boundaries |
 | Infinite-Canvas coverage ledger | `infinite-canvas-coverage-and-gaps.md` | Coverage matrix and IC backlog |
 | Infinite-Canvas provider/workflow/asset pack | `context-packs/infinite-canvas-provider-workflow-assets.md` | Provider discovery, workflow, asset, prompt, local-platform evidence |
 | AI-CanvasPro Graphify graph | `graphs/ai-canvaspro/graph.json` | AST/code graph over selected high-value scope |
@@ -37,6 +38,7 @@ This directory stores reusable reference evidence for video-production workbench
 | AI-CanvasPro provider/task context | `repomix/ai-canvaspro-focused-provider-tasks.xml` | Compressed provider adapters, API task, error, and task-center index |
 | AI-CanvasPro project/desktop context | `repomix/ai-canvaspro-focused-project-desktop.xml` | Compressed local backend, Electron IPC, project package, and file persistence index |
 | AI-CanvasPro context pack | `context-packs/ai-canvaspro-canvas-provider-desktop.md` | Behavior-level facts, architecture map, adoption notes, and source limitations |
+| AI-CanvasPro coverage ledger | `ai-canvaspro-coverage-and-gaps.md` | CEX/ACP coverage matrix, lookup map, migration constraints, evidence labels, and exclusion governance |
 
 ## Query Protocol
 
