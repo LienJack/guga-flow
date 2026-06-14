@@ -13,6 +13,7 @@ import type {
   MediaMetadataJobOutput,
   ProviderFailure,
   ProviderRuntimeConfig,
+  SceneFrameExtractionJobOutput,
   WorkerGenerationJobWaitInput,
 } from "@guga-flow/shared-types";
 
@@ -40,6 +41,10 @@ export interface GenerationWorkerClient {
   succeedMediaMetadataJob(
     jobId: string,
     mediaMetadataOutput: MediaMetadataJobOutput,
+  ): Promise<GenerationJobRecord>;
+  succeedSceneFrameExtractionJob(
+    jobId: string,
+    sceneFrameExtractionOutput: SceneFrameExtractionJobOutput,
   ): Promise<GenerationJobRecord>;
   succeedAssetPromptPolishJob(
     jobId: string,
@@ -136,6 +141,15 @@ export class HttpGenerationWorkerClient implements GenerationWorkerClient {
   ): Promise<GenerationJobRecord> {
     return this.post(`/worker/generation/jobs/${encodeURIComponent(jobId)}/succeed`, {
       mediaMetadataOutput,
+    });
+  }
+
+  succeedSceneFrameExtractionJob(
+    jobId: string,
+    sceneFrameExtractionOutput: SceneFrameExtractionJobOutput,
+  ): Promise<GenerationJobRecord> {
+    return this.post(`/worker/generation/jobs/${encodeURIComponent(jobId)}/succeed`, {
+      sceneFrameExtractionOutput,
     });
   }
 

@@ -28,6 +28,7 @@ export const PROMPT_DEBUG_PART_KINDS = [
   "location",
   "character",
   "character_lifecycle",
+  "advanced_visual",
   "shot",
   "model_suffix",
   "negative_prompt",
@@ -78,6 +79,7 @@ export interface ShotPromptSourceNodeIds {
   sceneNodeId?: string;
   characterNodeIds: string[];
   locationNodeId?: string;
+  advancedNodeIds?: string[];
   referenceAssetIds: string[];
 }
 
@@ -127,6 +129,7 @@ export function composeShotPrompt(input: ComposeShotPromptInput): ShotPromptComp
   const sceneNode = findSceneNode(input.edges ?? [], nodesById, shotNode.id);
   const characterNodes = findCharacterNodes(input.edges ?? [], nodesById, shotNode);
   const locationNode = findLocationNode(input.edges ?? [], nodesById, shotNode);
+  const advancedVisualNodes = findAdvancedVisualNodes(input.edges ?? [], nodesById, shotNode.id);
   const storyEventParts = storyEventPartsForShot(shotNode, sceneNode, missingContext);
   const lifecycleParts = characterLifecyclePartsForShot(shotNode, characterNodes, missingContext);
   const resolvedGenerationSettings = resolveGenerationSettings({
@@ -160,7 +163,7 @@ export function composeShotPrompt(input: ComposeShotPromptInput): ShotPromptComp
   }
 
   const referenceAssetIds = resolveReferenceAssetIds(
-    [...characterNodes, ...(locationNode ? [locationNode] : [])],
+    [...characterNodes, ...(locationNode ? [locationNode] : []), ...advancedVisualNodes],
     input.assets,
     missingContext,
   );
@@ -181,6 +184,7 @@ export function composeShotPrompt(input: ComposeShotPromptInput): ShotPromptComp
     scenePart(sceneNode),
     locationPart(locationNode),
     ...characterNodes.map((node) => characterPart(node)),
+    ...advancedVisualNodes.map((node) => advancedVisualPart(node)),
     ...lifecycleParts,
   ].filter(isPromptDebugPart);
   const imageShotPart = shotPart("image", shotNode);
@@ -239,6 +243,7 @@ export function composeShotPrompt(input: ComposeShotPromptInput): ShotPromptComp
       sceneNodeId: sceneNode?.id,
       characterNodeIds: characterNodes.map((node) => node.id),
       locationNodeId: locationNode?.id,
+      advancedNodeIds: advancedVisualNodes.map((node) => node.id),
       referenceAssetIds,
     },
     referenceAssetIds,
@@ -314,6 +319,21 @@ function findLocationNode(
   ]);
   const node = linkedIds.map((nodeId) => nodesById.get(nodeId)).find((candidate) => candidate?.type === "location_asset");
   return node as CanvasNodeRecord<LocationAssetNodeData> | undefined;
+}
+
+function findAdvancedVisualNodes(
+  edges: readonly CanvasEdgeRecord[],
+  nodesById: ReadonlyMap<string, CanvasNodeRecord>,
+  shotNodeId: string,
+): CanvasNodeRecord[] {
+  const linkedIds = uniqueStrings(
+    edges
+      .filter((edge) => edge.relation === "derived_from" && edge.targetNodeId === shotNodeId)
+      .map((edge) => edge.sourceNodeId),
+  );
+  return linkedIds
+    .map((nodeId) => nodesById.get(nodeId))
+    .filter((node): node is CanvasNodeRecord => node?.type === "panorama" || node?.type === "director_3d");
 }
 
 function storyEventPartsForShot(
@@ -717,6 +737,57 @@ function characterPart(node: CanvasNodeRecord<CharacterAssetNodeData>): PromptDe
   });
 }
 
+function advancedVisualPart(node: CanvasNodeRecord): PromptDebugPart | undefined {
+  const data = dataObject(node);
+  const annotations = objectArray(data.annotations)
+    .map((annotation) =>
+      compactText([
+        optionalText(annotation.label),
+        optionalText(annotation.prompt),
+        optionalText(annotation.note),
+      ]),
+    )
+    .filter(Boolean)
+    .join("; ");
+  const scene = objectData(data.scene);
+  const sceneObjects = objectArray(scene.objects)
+    .map((object) => optionalText(object.label) ?? optionalText(object.kind))
+    .filter(Boolean)
+    .join(", ");
+  const label = node.type === "panorama" ? "Panorama reference" : "3D director reference";
+  const assetIds = uniqueStrings([
+    optionalText(data.assetId),
+    optionalText(data.snapshotAssetId),
+    ...stringArray(data.referenceAssetIds),
+  ].filter((value): value is string => Boolean(value)));
+
+  return partFromText({
+    id: `advanced:${node.type}:${node.id}`,
+    kind: "advanced_visual",
+    label,
+    text: joinLines([
+      labeled("Node", node.title),
+      labeled("Prompt context", optionalText(data.promptContext)),
+      labeled("Asset", optionalText(data.assetId)),
+      labeled("Snapshot", optionalText(data.snapshotAssetId)),
+      labeled("View", viewStateText(data)),
+      labeled("Annotations", annotations),
+      labeled("Scene objects", sceneObjects),
+    ]),
+    channels: ["image", "video"],
+    sourceNodeIds: [node.id],
+    referenceAssetIds: assetIds,
+  });
+}
+
+function viewStateText(data: Record<string, unknown>): string | undefined {
+  return compactText([
+    optionalText(data.yaw) ? `yaw ${optionalText(data.yaw)}` : undefined,
+    optionalText(data.pitch) ? `pitch ${optionalText(data.pitch)}` : undefined,
+    optionalText(data.fov) ? `fov ${optionalText(data.fov)}` : undefined,
+  ]);
+}
+
 function shotPart(
   channel: PromptCompositionChannel,
   node: CanvasNodeRecord,
@@ -764,8 +835,17 @@ function resolveReferenceAssetIds(
         referenceAssetIds?: unknown;
         assetVariants?: unknown;
         selectedVariantId?: unknown;
+        assetId?: unknown;
+        snapshotAssetId?: unknown;
       };
+      const directReferenceAssetIds =
+        node.type === "panorama" || node.type === "director_3d"
+          ? [optionalText(data.assetId), optionalText(data.snapshotAssetId)].filter(
+              (assetId): assetId is string => Boolean(assetId),
+            )
+          : [];
       return [
+        ...directReferenceAssetIds,
         ...stringArray(data.referenceAssetIds),
         ...selectedVariantReferenceAssetIds(data),
       ];
@@ -875,9 +955,22 @@ function uniqueParts(parts: readonly PromptDebugPart[]): PromptDebugPart[] {
 }
 
 function dataObject(node: CanvasNodeRecord): Record<string, unknown> {
-  return typeof node.dataJson === "object" && node.dataJson !== null && !Array.isArray(node.dataJson)
-    ? (node.dataJson as Record<string, unknown>)
+  return objectData(node.dataJson);
+}
+
+function objectData(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
     : {};
+}
+
+function objectArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          typeof item === "object" && item !== null && !Array.isArray(item),
+      )
+    : [];
 }
 
 function labeled(label: string, value: unknown): string | undefined {

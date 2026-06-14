@@ -42,6 +42,8 @@ const ICONS: Record<Phase3CanvasNodeType, React.ComponentType<{ size?: number }>
   character_asset: User,
   location_asset: MapPin,
   prop_asset: Package,
+  panorama: ImageIcon,
+  director_3d: Boxes,
   ai_text: FileText,
   ai_audio: FileAudio,
   image: ImageIcon,
@@ -61,6 +63,8 @@ const ACTION_LABELS: Record<Phase3CanvasNodeType, string> = {
   character_asset: "添加角色节点",
   location_asset: "添加地点节点",
   prop_asset: "添加道具节点",
+  panorama: "添加全景节点",
+  director_3d: "添加 3D 导演台",
   ai_text: "添加 AI 文本",
   ai_audio: "添加 AI 音频",
   image: "添加图片节点",
@@ -73,6 +77,7 @@ const TOOLBAR_FAMILY_ORDER: CanvasNodeFamily[] = [
   "source_media",
   "ai_generation",
   "media_operation",
+  "advanced_visual",
   "layout_helper",
 ];
 

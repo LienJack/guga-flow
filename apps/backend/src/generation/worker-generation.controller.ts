@@ -38,6 +38,7 @@ export class WorkerGenerationController {
       body.packageOutput,
       body.assetAnalysisOutput,
       body.mediaMetadataOutput,
+      body.sceneFrameExtractionOutput,
       body.assetPromptPolishOutput,
       body.assetImageGenerationOutput,
       body.textGenerationOutput,

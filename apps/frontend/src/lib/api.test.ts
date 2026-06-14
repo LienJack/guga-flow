@@ -18,6 +18,7 @@ import {
   createMediaMetadataJob,
   createProgrammableProvider,
   createProject,
+  createSceneFrameExtractionJob,
   createCanvasPage,
   createCanvasEdge,
   createCanvasNode,
@@ -651,6 +652,12 @@ describe("frontend api client", () => {
       outputKind: "image",
       referenceAssetIds: ["asset_1"],
     });
+    await createSceneFrameExtractionJob("project_1", {
+      operation: "scene_frame_extraction",
+      assetId: "asset_video_1",
+      sourceNodeId: "source_video_1",
+      frameCount: 4,
+    });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -753,6 +760,19 @@ describe("frontend api client", () => {
           sourceNodeId: "image_1",
           outputKind: "image",
           referenceAssetIds: ["asset_1"],
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      12,
+      "http://localhost:3002/api/v1/projects/project_1/generation/jobs/scene-frame-extraction",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          operation: "scene_frame_extraction",
+          assetId: "asset_video_1",
+          sourceNodeId: "source_video_1",
+          frameCount: 4,
         }),
       }),
     );

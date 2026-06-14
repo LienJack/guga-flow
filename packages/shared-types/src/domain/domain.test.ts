@@ -62,6 +62,8 @@ import {
   PROJECT_ASPECT_RATIOS,
   SCRIPT_ADAPTATION_STRATEGIES,
   SCRIPT_DRAFT_STATUSES,
+  SCENE_FRAME_EXTRACTION_OPERATIONS,
+  SCENE_FRAME_EXTRACTION_STRATEGIES,
   SETTINGS_CENTER_MODULES,
   SETTINGS_CENTER_MODULE_STATUSES,
   SKILL_TEMPLATE_INDEX_STATUSES,
@@ -138,6 +140,7 @@ import {
   type CreateProductionAgentActionResult,
   type CreateCanvasNodeInput,
   type CreateNovelDocumentInput,
+  type Director3DNodeData,
   type DeleteCanvasEdgeResult,
   type DeleteCanvasNodeResult,
   type DeleteNovelDocumentResult,
@@ -173,11 +176,13 @@ import {
   type RecallAgentMemoriesResult,
   type ResolvedGenerationSettings,
   type SaveCanvasSnapshotInput,
+  type SceneFrameExtractionJobInput,
   type SceneFrameNodeData,
   type SceneNodeData,
   type ProjectSettingsSummaryResult,
   type ProjectSettingsExportPayload,
   type ProjectSettingsImportValidationResult,
+  type PanoramaNodeData,
   type ShotToImageJobInput,
   type ShotNodeData,
   type ScriptDraftRecord,
@@ -1183,6 +1188,8 @@ describe("shared domain constants", () => {
       "character_asset",
       "location_asset",
       "prop_asset",
+      "panorama",
+      "director_3d",
       "ai_text",
       "ai_audio",
       "image",
@@ -1206,6 +1213,53 @@ describe("shared domain constants", () => {
       previewUrl: "/api/v1/projects/project_1/assets/asset_image_1/preview",
     };
     expect(sourceImageData.importMethod).toBe("drag_drop");
+
+    const panoramaData: PanoramaNodeData = {
+      assetId: "asset_pano_1",
+      label: "Launch bay 360",
+      yaw: 15,
+      pitch: -5,
+      fov: 82,
+      promptContext: "Use as spatial reference for the launch bay.",
+      annotations: [{ annotationId: "anno_1", label: "Control wall", yaw: 28, pitch: 0 }],
+    };
+    const directorData: Director3DNodeData = {
+      promptContext: "Keep the subject between the console and backlight.",
+      snapshotAssetId: "asset_snapshot_1",
+      scene: {
+        version: 1,
+        objects: [
+          {
+            objectId: "subject",
+            kind: "box",
+            position: { x: 0, y: 1, z: 0 },
+          },
+        ],
+      },
+    };
+    const sceneFrameInput: SceneFrameExtractionJobInput = {
+      operation: "scene_frame_extraction",
+      projectId: "project_1",
+      sourceAssetId: "asset_video_1",
+      sourceNodeId: "source_video_1",
+      provider: "mock-scene-detector",
+      model: "scene-frame-v1",
+      strategy: "scene_segments",
+      frameCount: 4,
+    };
+
+    expect(CANVAS_NODE_REGISTRY.panorama.family).toBe("advanced_visual");
+    expect(CANVAS_NODE_REGISTRY.director_3d.family).toBe("advanced_visual");
+    expect(CANVAS_NODE_INPUT_SLOTS.director_3d?.[0]?.inputRole).toBe("prompt_context");
+    expect(panoramaData.annotations?.[0]?.label).toBe("Control wall");
+    expect(directorData.scene?.objects[0]?.kind).toBe("box");
+    expect(SCENE_FRAME_EXTRACTION_OPERATIONS).toEqual(["scene_frame_extraction"]);
+    expect(SCENE_FRAME_EXTRACTION_STRATEGIES).toEqual([
+      "scene_segments",
+      "sampled_interval",
+      "exact_timestamps",
+    ]);
+    expect(sceneFrameInput.operation).toBe("scene_frame_extraction");
 
     const shotData: ShotNodeData = {
       visualDescription: "Wide shot of the launch platform at sunrise.",
@@ -2191,6 +2245,45 @@ describe("shared domain constants", () => {
     expect(after.image.prompt).toContain("edited location prompt");
     expect(after.image.prompt).not.toContain("Hero identity prompt");
     expect(after.image.prompt).not.toContain("Location prompt text");
+  });
+
+  it("composes advanced visual references from panorama nodes into Shot prompt context", () => {
+    const graph = promptComposerGraph();
+    const result = composeShotPrompt({
+      ...graph,
+      shotNodeId: "shot_1",
+      nodes: [
+        ...graph.nodes,
+        canvasNode<PanoramaNodeData>("panorama_1", "panorama", "Launch Bay 360", {
+          assetId: "asset_panorama_main",
+          promptContext: "Use the panorama to keep the control wall behind the hero.",
+          referenceAssetIds: ["asset_panorama_detail"],
+          annotations: [
+            {
+              annotationId: "anno_control_wall",
+              label: "Control wall",
+              yaw: 24,
+              pitch: -2,
+              prompt: "glowing control wall behind subject",
+            },
+          ],
+        }),
+      ],
+      edges: [...graph.edges, canvasEdge("edge_panorama", "panorama_1", "shot_1", "derived_from")],
+      assets: [
+        ...graph.assets,
+        assetListItem("asset_panorama_main", "image"),
+        assetListItem("asset_panorama_detail", "image"),
+      ],
+    });
+
+    expect(result.sourceNodeIds.advancedNodeIds).toEqual(["panorama_1"]);
+    expect(result.referenceAssetIds).toEqual(
+      expect.arrayContaining(["asset_panorama_main", "asset_panorama_detail"]),
+    );
+    expect(result.debugParts.map((part) => part.kind)).toContain("advanced_visual");
+    expect(result.image.prompt).toContain("Use the panorama to keep the control wall behind the hero.");
+    expect(result.image.prompt).toContain("glowing control wall behind subject");
   });
 
   it("exports Phase 8 generation job inputs, outputs, and queue summary contracts", () => {

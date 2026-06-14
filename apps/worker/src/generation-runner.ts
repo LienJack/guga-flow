@@ -78,6 +78,11 @@ export async function runOneGenerationJob(
       options.logger?.info(`Media metadata job ${job.id} succeeded.`);
       return { status: "succeeded", jobId: job.id };
     }
+    if ("sceneFrameExtractionOutput" in result) {
+      await options.client.succeedSceneFrameExtractionJob(job.id, result.sceneFrameExtractionOutput);
+      options.logger?.info(`Scene frame extraction job ${job.id} succeeded.`);
+      return { status: "succeeded", jobId: job.id };
+    }
     if ("assetPromptPolishOutput" in result) {
       await options.client.succeedAssetPromptPolishJob(job.id, result.assetPromptPolishOutput);
       options.logger?.info(`Asset prompt polish job ${job.id} succeeded.`);

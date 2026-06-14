@@ -22,6 +22,8 @@ enum CanvasNodeType {
   location_asset
   style_asset
   prop_asset
+  panorama
+  director_3d
   ai_text
   ai_audio
   image

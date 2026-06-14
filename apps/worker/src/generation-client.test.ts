@@ -141,6 +141,59 @@ describe("generation worker client configuration", () => {
     );
   });
 
+  it("posts scene frame extraction success payloads", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ id: "job_scene_1" })));
+    const client = new HttpGenerationWorkerClient(
+      "http://localhost:3002/api/v1",
+      fetchImpl as unknown as typeof fetch,
+      "worker-secret",
+    );
+
+    await client.succeedSceneFrameExtractionJob("job_scene_1", {
+      operation: "scene_frame_extraction",
+      provider: "mock-scene-detector",
+      model: "scene-frame-v1",
+      sourceAssetId: "asset_video_1",
+      sourceNodeId: "source_video_1",
+      strategy: "scene_segments",
+      frames: [
+        {
+          frameId: "frame-1",
+          orderIndex: 0,
+          timestampMs: 0,
+          sceneIndex: 0,
+          providerOutput: {
+            assetId: "provider_frame_1",
+            storageKey: "project_1/scene-frames/job_scene_1-1.png",
+            mimeType: "image/png",
+            provider: "mock-scene-detector",
+            model: "scene-frame-v1",
+            prompt: "Frame 1",
+            referenceAssetIds: ["asset_video_1"],
+          },
+        },
+      ],
+      scenes: [
+        {
+          segmentId: "scene-0",
+          orderIndex: 0,
+          startMs: 0,
+          endMs: 1200,
+          representativeFrameId: "frame-1",
+        },
+      ],
+      completedAt: "2026-06-14T00:00:00.000Z",
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:3002/api/v1/worker/generation/jobs/job_scene_1/succeed",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("sceneFrameExtractionOutput"),
+      }),
+    );
+  });
+
   it("posts asset prompt polish and image generation success payloads", async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ id: "job_asset_1" })));
     const client = new HttpGenerationWorkerClient(

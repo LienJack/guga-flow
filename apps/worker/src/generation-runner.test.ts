@@ -10,6 +10,7 @@ import type {
   ImageRefinementJobInput,
   ImageToVideoJobInput,
   MediaMetadataJobInput,
+  SceneFrameExtractionJobInput,
   ShotToImageJobInput,
 } from "@guga-flow/shared-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,6 +26,7 @@ type WorkerGenerationJobInput =
   | AssetPromptPolishJobInput
   | AssetImageGenerationJobInput
   | MediaMetadataJobInput
+  | SceneFrameExtractionJobInput
   | ImageRefinementJobInput
   | ImageToVideoJobInput
   | AiTextGenerationJobInput
@@ -51,6 +53,7 @@ function createClientMock(): GenerationWorkerClient {
       model: "mock-vision-v1",
     })),
     succeedMediaMetadataJob: vi.fn(async () => jobRecord("job_media_done", mediaMetadataInput())),
+    succeedSceneFrameExtractionJob: vi.fn(async () => jobRecord("job_scene_frames_done", sceneFrameExtractionInput())),
     succeedAssetPromptPolishJob: vi.fn(async () => jobRecord("job_polish_done", assetPromptPolishInput())),
     succeedAssetImageGenerationJob: vi.fn(async () => jobRecord("job_asset_image_done", assetImageGenerationInput())),
     succeedTextGenerationJob: vi.fn(async () => jobRecord("job_text_done", aiTextInput())),
@@ -487,6 +490,40 @@ describe("generation worker runner", () => {
     expect(result).toEqual({ status: "succeeded", jobId: "job_media" });
   });
 
+  it("executes claimed scene frame extraction jobs and reports frame output", async () => {
+    vi.mocked(client.claimNextJob).mockResolvedValue({
+      job: jobRecord("job_scene_frames", sceneFrameExtractionInput(), {
+        operation: "asset_classification",
+        provider: "mock-scene-detector",
+      }),
+    });
+
+    const result = await runOneGenerationJob({ client, registry });
+
+    expect(client.succeedSceneFrameExtractionJob).toHaveBeenCalledWith(
+      "job_scene_frames",
+      expect.objectContaining({
+        operation: "scene_frame_extraction",
+        provider: "mock-scene-detector",
+        sourceAssetId: "asset_video_silent",
+        sourceNodeId: "source_video_1",
+        frames: expect.arrayContaining([
+          expect.objectContaining({
+            frameId: "frame-1",
+            providerOutput: expect.objectContaining({
+              mimeType: "image/png",
+              referenceAssetIds: ["asset_video_silent"],
+            }),
+          }),
+        ]),
+        scenes: expect.arrayContaining([expect.objectContaining({ representativeFrameId: "frame-1" })]),
+      }),
+    );
+    expect(registry.imageProviders.get).not.toHaveBeenCalled();
+    expect(registry.videoProviders.get).not.toHaveBeenCalled();
+    expect(result).toEqual({ status: "succeeded", jobId: "job_scene_frames" });
+  });
+
   it("executes claimed asset prompt polish jobs and reports polished prompts", async () => {
     vi.mocked(client.claimNextJob).mockResolvedValue({
       job: jobRecord("job_polish", assetPromptPolishInput(), {
@@ -830,6 +867,19 @@ function mediaMetadataInput(): MediaMetadataJobInput {
   };
 }
 
+function sceneFrameExtractionInput(): SceneFrameExtractionJobInput {
+  return {
+    operation: "scene_frame_extraction",
+    projectId: "project_1",
+    sourceAssetId: "asset_video_silent",
+    sourceNodeId: "source_video_1",
+    provider: "mock-scene-detector",
+    model: "scene-frame-v1",
+    strategy: "scene_segments",
+    frameCount: 3,
+  };
+}
+
 function jobRecord(
   id: string,
   inputJson: WorkerGenerationJobInput,
@@ -852,6 +902,9 @@ function jobRecord(
 
 function jobOperationForInput(input: WorkerGenerationJobInput): GenerationJobRecord["operation"] {
   if (input.operation === "media_metadata") {
+    return "asset_classification";
+  }
+  if (input.operation === "scene_frame_extraction") {
     return "asset_classification";
   }
   if (input.operation === "asset_prompt_polish") {

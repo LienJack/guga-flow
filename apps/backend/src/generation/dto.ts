@@ -7,6 +7,7 @@ import type {
   CreateAssetImageGenerationJobInput,
   CreateAssetPromptPolishJobInput,
   CreateMediaMetadataJobInput,
+  CreateSceneFrameExtractionJobInput,
   CreateBatchImagesToVideosJobInput,
   CreateBatchShotsToImagesJobInput,
   AnyImageProviderId,
@@ -21,6 +22,8 @@ import type {
   Phase8GenerationOperation,
   ProjectAspectRatio,
   ProviderFailure,
+  SceneFrameExtractionJobOutput,
+  SceneFrameExtractionStrategy,
   VideoReferenceMediaInput,
   VideoProviderResolution,
   WorkerProviderRuntimeConfigInput,
@@ -32,6 +35,7 @@ import {
   MANAGED_PROVIDER_KINDS,
   PHASE_8_GENERATION_OPERATIONS,
   PROJECT_ASPECT_RATIOS,
+  SCENE_FRAME_EXTRACTION_STRATEGIES,
   VIDEO_PROVIDER_RESOLUTIONS,
 } from "@guga-flow/shared-types";
 import {
@@ -228,6 +232,47 @@ export class CreateMediaMetadataJobDto implements CreateMediaMetadataJobInput {
   @IsOptional()
   @IsBoolean()
   overwrite?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  forceFailure?: boolean;
+}
+
+export class CreateSceneFrameExtractionJobDto implements CreateSceneFrameExtractionJobInput {
+  @IsIn(["scene_frame_extraction"])
+  operation!: "scene_frame_extraction";
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  assetId!: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  sourceNodeId?: string;
+
+  @IsOptional()
+  @IsIn(SCENE_FRAME_EXTRACTION_STRATEGIES)
+  strategy?: SceneFrameExtractionStrategy;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(24)
+  frameCount?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(24)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  timestampsMs?: number[];
+
+  @IsOptional()
+  @IsBoolean()
+  createStoryboardBoard?: boolean;
 
   @IsOptional()
   @IsBoolean()
@@ -448,6 +493,10 @@ export class WorkerGenerationJobSucceedDto implements WorkerGenerationJobSucceed
   @IsOptional()
   @IsObject()
   mediaMetadataOutput?: MediaMetadataJobOutput;
+
+  @IsOptional()
+  @IsObject()
+  sceneFrameExtractionOutput?: SceneFrameExtractionJobOutput;
 
   @IsOptional()
   @IsObject()

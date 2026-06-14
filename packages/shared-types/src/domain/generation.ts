@@ -170,6 +170,16 @@ export type AssetAnalysisOperation = (typeof ASSET_ANALYSIS_OPERATIONS)[number];
 export const MEDIA_METADATA_OPERATIONS = ["media_metadata"] as const;
 export type MediaMetadataOperation = (typeof MEDIA_METADATA_OPERATIONS)[number];
 
+export const SCENE_FRAME_EXTRACTION_OPERATIONS = ["scene_frame_extraction"] as const;
+export type SceneFrameExtractionOperation = (typeof SCENE_FRAME_EXTRACTION_OPERATIONS)[number];
+
+export const SCENE_FRAME_EXTRACTION_STRATEGIES = [
+  "scene_segments",
+  "sampled_interval",
+  "exact_timestamps",
+] as const;
+export type SceneFrameExtractionStrategy = (typeof SCENE_FRAME_EXTRACTION_STRATEGIES)[number];
+
 export const ASSET_PROMPT_OPERATIONS = [
   "asset_prompt_polish",
   "asset_image_generation",
@@ -1298,6 +1308,7 @@ export interface GenerationJobListResult<
     | EditorExportJobOutput
     | AssetAnalysisJobOutput
     | MediaMetadataJobOutput
+    | SceneFrameExtractionJobOutput
     | AssetPromptPolishJobOutput
     | AssetImageGenerationJobOutput,
 > {
@@ -1395,6 +1406,7 @@ export interface WorkerGenerationJobSucceedInput {
   packageOutput?: EditorExportPackageOutput;
   assetAnalysisOutput?: AssetAnalysisJobOutput;
   mediaMetadataOutput?: MediaMetadataJobOutput;
+  sceneFrameExtractionOutput?: SceneFrameExtractionJobOutput;
   assetPromptPolishOutput?: AssetPromptPolishJobOutput;
   assetImageGenerationOutput?: AssetImageGenerationJobOutput;
   textGenerationOutput?: AiTextGenerationJobOutput;
@@ -1425,6 +1437,7 @@ export type GenerationJobInput =
   | AgentCanvasActionJobInput
   | AssetAnalysisJobInput
   | MediaMetadataJobInput
+  | SceneFrameExtractionJobInput
   | AssetPromptPolishJobInput
   | AssetImageGenerationJobInput
   | ShotToImageJobInput
@@ -1720,6 +1733,68 @@ export interface MediaMetadataJobOutput {
   createThumbnail: boolean;
   generationJobId?: string;
   results: MediaMetadataItemOutput[];
+  completedAt: string;
+}
+
+export interface SceneFrameExtractionJobInput {
+  operation: SceneFrameExtractionOperation;
+  projectId: string;
+  sourceAssetId: string;
+  sourceNodeId?: string;
+  provider: "mock-scene-detector" | string;
+  model?: string;
+  strategy: SceneFrameExtractionStrategy;
+  frameCount: number;
+  timestampsMs?: number[];
+  createStoryboardBoard?: boolean;
+  forceFailure?: boolean;
+}
+
+export interface CreateSceneFrameExtractionJobInput {
+  operation: SceneFrameExtractionOperation;
+  assetId: string;
+  sourceNodeId?: string;
+  strategy?: SceneFrameExtractionStrategy;
+  frameCount?: number;
+  timestampsMs?: number[];
+  createStoryboardBoard?: boolean;
+  forceFailure?: boolean;
+}
+
+export interface CreateSceneFrameExtractionJobResult {
+  job: GenerationJobRecord<SceneFrameExtractionJobInput>;
+  queueSummary: GenerationQueueSummary;
+}
+
+export interface SceneFrameExtractionFrameOutput {
+  frameId: string;
+  orderIndex: number;
+  timestampMs: number;
+  sceneIndex?: number;
+  label?: string;
+  assetId?: string;
+  providerOutput: GeneratedMediaProviderOutput;
+}
+
+export interface SceneFrameExtractionSegmentOutput {
+  segmentId: string;
+  orderIndex: number;
+  startMs: number;
+  endMs: number;
+  title?: string;
+  representativeFrameId?: string;
+}
+
+export interface SceneFrameExtractionJobOutput {
+  operation: SceneFrameExtractionOperation;
+  provider: string;
+  model?: string;
+  generationJobId?: string;
+  sourceAssetId: string;
+  sourceNodeId?: string;
+  strategy: SceneFrameExtractionStrategy;
+  frames: SceneFrameExtractionFrameOutput[];
+  scenes: SceneFrameExtractionSegmentOutput[];
   completedAt: string;
 }
 

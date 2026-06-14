@@ -23,6 +23,7 @@ import type {
   ProgrammableProviderRuntimeConfig,
   ProviderConfigParams,
   ProviderFailure,
+  SceneFrameExtractionJobOutput,
 } from "@guga-flow/shared-types";
 
 export interface GenerationExecutorRegistry {
@@ -59,6 +60,10 @@ export type GenerationExecutorResult =
   | {
       status: "succeeded";
       mediaMetadataOutput: MediaMetadataJobOutput;
+    }
+  | {
+      status: "succeeded";
+      sceneFrameExtractionOutput: SceneFrameExtractionJobOutput;
     }
   | {
       status: "succeeded";
@@ -136,6 +141,21 @@ export async function executeGenerationJob(
     return {
       status: "succeeded",
       mediaMetadataOutput: mockMediaMetadataOutput(job.id, input),
+    };
+  }
+
+  if (input.operation === "scene_frame_extraction") {
+    if (input.forceFailure) {
+      throw new ProviderError({
+        provider: input.provider,
+        code: "MOCK_SCENE_FRAME_EXTRACTION_FAILED",
+        message: "Mock scene frame extraction failure requested.",
+        retryable: true,
+      });
+    }
+    return {
+      status: "succeeded",
+      sceneFrameExtractionOutput: mockSceneFrameExtractionOutput(job.id, input),
     };
   }
 
@@ -596,6 +616,71 @@ function mockMediaMetadataOutput(
           : undefined,
         derivatives: [],
         strategy,
+      };
+    }),
+    completedAt: new Date().toISOString(),
+  };
+}
+
+function mockSceneFrameExtractionOutput(
+  jobId: string,
+  input: Extract<GenerationJobInput, { operation: "scene_frame_extraction" }>,
+): SceneFrameExtractionJobOutput {
+  const safeJobId = jobId.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const timestamps = input.timestampsMs?.length
+    ? input.timestampsMs.slice(0, 24)
+    : Array.from({ length: Math.min(Math.max(input.frameCount, 1), 24) }, (_, index) => index * 1250);
+  const frames = timestamps.map((timestampMs, index) => {
+    const frameId = `frame-${index + 1}`;
+    return {
+      frameId,
+      orderIndex: index,
+      timestampMs,
+      sceneIndex: input.strategy === "scene_segments" ? index : Math.floor(index / 2),
+      label: `Frame ${index + 1}`,
+      providerOutput: {
+        assetId: `mock-scene-frame-${safeJobId}-${index + 1}`,
+        storageKey: `${input.projectId}/scene-frames/${safeJobId}-${index + 1}.png`,
+        mimeType: "image/png",
+        provider: input.provider,
+        model: input.model ?? "scene-frame-v1",
+        prompt: `Frame ${index + 1} extracted from video asset ${input.sourceAssetId} at ${timestampMs}ms.`,
+        referenceAssetIds: [input.sourceAssetId],
+        width: 1280,
+        height: 720,
+        rawJson: {
+          mock: true,
+          operation: input.operation,
+          sourceAssetId: input.sourceAssetId,
+          timestampMs,
+          strategy: input.strategy,
+        },
+      },
+    };
+  });
+
+  const sceneIndices = Array.from(new Set(frames.map((frame) => frame.sceneIndex ?? frame.orderIndex)));
+
+  return {
+    operation: "scene_frame_extraction",
+    provider: input.provider,
+    model: input.model,
+    generationJobId: jobId,
+    sourceAssetId: input.sourceAssetId,
+    sourceNodeId: input.sourceNodeId,
+    strategy: input.strategy,
+    frames,
+    scenes: sceneIndices.map((sceneIndex) => {
+      const sceneFrames = frames.filter((frame) => (frame.sceneIndex ?? frame.orderIndex) === sceneIndex);
+      const firstFrame = sceneFrames[0];
+      const lastFrame = sceneFrames[sceneFrames.length - 1];
+      return {
+        segmentId: `scene-${sceneIndex}`,
+        orderIndex: sceneIndex,
+        startMs: firstFrame?.timestampMs ?? 0,
+        endMs: (lastFrame?.timestampMs ?? 0) + 1250,
+        title: `Scene ${(sceneIndex + 1).toString().padStart(2, "0")}`,
+        ...(firstFrame ? { representativeFrameId: firstFrame.frameId } : {}),
       };
     }),
     completedAt: new Date().toISOString(),

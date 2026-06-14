@@ -144,6 +144,16 @@ export class PropAssetBusinessNodeShapeUtil extends BaseBusinessNodeShapeUtil {
   protected override readonly nodeType = "prop_asset" as const;
 }
 
+export class PanoramaBusinessNodeShapeUtil extends BaseBusinessNodeShapeUtil {
+  static override type = BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE.panorama;
+  protected override readonly nodeType = "panorama" as const;
+}
+
+export class Director3dBusinessNodeShapeUtil extends BaseBusinessNodeShapeUtil {
+  static override type = BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE.director_3d;
+  protected override readonly nodeType = "director_3d" as const;
+}
+
 export class AiTextBusinessNodeShapeUtil extends BaseBusinessNodeShapeUtil {
   static override type = BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE.ai_text;
   protected override readonly nodeType = "ai_text" as const;
@@ -181,6 +191,8 @@ export const businessNodeShapeUtils = [
   CharacterAssetBusinessNodeShapeUtil,
   LocationAssetBusinessNodeShapeUtil,
   PropAssetBusinessNodeShapeUtil,
+  PanoramaBusinessNodeShapeUtil,
+  Director3dBusinessNodeShapeUtil,
   AiTextBusinessNodeShapeUtil,
   AiAudioBusinessNodeShapeUtil,
   ImageBusinessNodeShapeUtil,

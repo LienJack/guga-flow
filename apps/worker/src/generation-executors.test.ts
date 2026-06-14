@@ -8,6 +8,7 @@ import type {
   ImageToVideoJobInput,
   MediaMetadataJobInput,
   ProgrammableProviderManifest,
+  SceneFrameExtractionJobInput,
   ShotToImageJobInput,
 } from "@guga-flow/shared-types";
 import type { VideoGenerationInput } from "@guga-flow/provider-contracts";
@@ -154,6 +155,45 @@ describe("generation executors", () => {
               "no_audio_stream_marked_hasAudio_false",
             ]),
           },
+        ],
+      },
+    });
+  });
+
+  it("executes scene frame extraction jobs with deterministic frame outputs", async () => {
+    const result = await executeGenerationJob(jobRecord(sceneFrameExtractionInput()));
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      sceneFrameExtractionOutput: {
+        operation: "scene_frame_extraction",
+        provider: "mock-scene-detector",
+        model: "scene-frame-v1",
+        sourceAssetId: "asset_video_1",
+        sourceNodeId: "source_video_1",
+        strategy: "exact_timestamps",
+        frames: [
+          expect.objectContaining({
+            frameId: "frame-1",
+            orderIndex: 0,
+            timestampMs: 0,
+            providerOutput: expect.objectContaining({
+              storageKey: "project_1/scene-frames/job_1-1.png",
+              mimeType: "image/png",
+              referenceAssetIds: ["asset_video_1"],
+            }),
+          }),
+          expect.objectContaining({
+            frameId: "frame-2",
+            orderIndex: 1,
+            timestampMs: 1200,
+          }),
+        ],
+        scenes: [
+          expect.objectContaining({
+            segmentId: "scene-0",
+            representativeFrameId: "frame-1",
+          }),
         ],
       },
     });
@@ -331,6 +371,21 @@ function mediaMetadataInput(): MediaMetadataJobInput {
   };
 }
 
+function sceneFrameExtractionInput(): SceneFrameExtractionJobInput {
+  return {
+    operation: "scene_frame_extraction",
+    projectId: "project_1",
+    sourceAssetId: "asset_video_1",
+    sourceNodeId: "source_video_1",
+    provider: "mock-scene-detector",
+    model: "scene-frame-v1",
+    strategy: "exact_timestamps",
+    frameCount: 2,
+    timestampsMs: [0, 1200],
+    createStoryboardBoard: true,
+  };
+}
+
 function assetPromptPolishInput(): AssetPromptPolishJobInput {
   return {
     operation: "asset_prompt_polish",
@@ -364,6 +419,7 @@ function jobRecord<
     | AiTextGenerationJobInput
     | AiAudioGenerationJobInput
     | MediaMetadataJobInput
+    | SceneFrameExtractionJobInput
     | AssetPromptPolishJobInput
     | AssetImageGenerationJobInput,
 >(
@@ -389,6 +445,9 @@ function jobRecord<
 
 function jobOperationForInput(input: GenerationJobInput): GenerationJobRecord["operation"] {
   if (input.operation === "media_metadata") {
+    return "asset_classification";
+  }
+  if (input.operation === "scene_frame_extraction") {
     return "asset_classification";
   }
   if (input.operation === "asset_prompt_polish") {

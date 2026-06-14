@@ -20,6 +20,7 @@ vi.mock("../../lib/api", () => ({
   createCanvasNode: vi.fn(),
   createEditorExport: vi.fn(),
   createGenerationJob: vi.fn(),
+  createSceneFrameExtractionJob: vi.fn(),
   deleteAsset: vi.fn(),
   deleteCanvasEdge: vi.fn(),
   editorExportDownloadUrl: vi.fn((projectId: string, exportId: string) => `/exports/${projectId}/${exportId}.zip`),
@@ -79,6 +80,58 @@ const secondVideoNode: CanvasNodeRecord = {
   tldrawShapeId: "shape:video-2",
   title: "Shot 002 Video",
   dataJson: { assetId: "asset_video_2", durationSeconds: 4 },
+};
+
+const panoramaNode: CanvasNodeRecord = {
+  ...shotNode,
+  id: "panorama_1",
+  tldrawShapeId: "shape:panorama-1",
+  type: "panorama",
+  title: "Launch Bay 360",
+  dataJson: {
+    assetId: "asset_panorama_1",
+    yaw: 18,
+    pitch: -4,
+    fov: 88,
+    promptContext: "Keep the control wall behind the hero.",
+    annotations: [
+      {
+        annotationId: "anno_wall",
+        label: "Control wall",
+        yaw: 24,
+        pitch: -2,
+        prompt: "glowing control wall behind subject",
+      },
+    ],
+  },
+};
+
+const director3DNode: CanvasNodeRecord = {
+  ...shotNode,
+  id: "director_3d_1",
+  tldrawShapeId: "shape:director-3d-1",
+  type: "director_3d",
+  title: "Blocking Stage",
+  dataJson: {
+    promptContext: "Subject stays between the console and backlight.",
+    snapshotAssetId: "asset_snapshot_1",
+    scene: {
+      version: 1,
+      background: "#101820",
+      objects: [
+        {
+          objectId: "subject",
+          kind: "box",
+          position: { x: 0, y: 1, z: 0 },
+        },
+        {
+          objectId: "key-light",
+          kind: "sphere",
+          position: { x: 1.2, y: 1.6, z: -0.8 },
+        },
+      ],
+    },
+  },
 };
 
 const edge: CanvasEdgeRecord = {
@@ -265,6 +318,31 @@ describe("CanvasInspector", () => {
     expect(html).toContain("Identity Prompt");
     expect(html).toContain("consistent Ari identity");
     expect(html).toContain("Reference images");
+  });
+
+  it("renders panorama preview context and annotations", () => {
+    const html = renderInspector({
+      nodes: [panoramaNode],
+      selection: { kind: "business-node", nodeId: panoramaNode.id },
+    });
+
+    expect(html).toContain("Panorama preview");
+    expect(html).toContain("/assets/project_1/asset_panorama_1");
+    expect(html).toContain("Keep the control wall behind the hero.");
+    expect(html).toContain("Control wall");
+    expect(html).toContain("glowing control wall behind subject");
+  });
+
+  it("renders the 3D director preview and snapshot action", () => {
+    const html = renderInspector({
+      nodes: [director3DNode],
+      selection: { kind: "business-node", nodeId: director3DNode.id },
+    });
+
+    expect(html).toContain("3D director");
+    expect(html).toContain("Subject stays between the console and backlight.");
+    expect(html).toContain("asset_snapshot_1");
+    expect(html).toContain("Capture Snapshot");
   });
 
   it("renders imported story event and lifecycle trace in the Inspector", () => {

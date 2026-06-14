@@ -8,6 +8,7 @@ import {
   CreateAssetPromptPolishJobDto,
   CreateGenerationJobDto,
   CreateMediaMetadataJobDto,
+  CreateSceneFrameExtractionJobDto,
 } from "./dto";
 import { GenerationService } from "./generation.service";
 
@@ -34,6 +35,14 @@ export class GenerationController {
     @Body() body: CreateMediaMetadataJobDto,
   ) {
     return this.generationService.createMediaMetadataJob(projectId, body);
+  }
+
+  @Post("scene-frame-extraction")
+  createSceneFrameExtractionJob(
+    @Param("projectId") projectId: string,
+    @Body() body: CreateSceneFrameExtractionJobDto,
+  ) {
+    return this.generationService.createSceneFrameExtractionJob(projectId, body);
   }
 
   @Post("asset-prompt-polish")

@@ -10,7 +10,11 @@ import type {
   SourceMediaImportMethod,
   SourceMediaNodeData,
 } from "@guga-flow/shared-types";
-import { getCanvasNodeRegistryItem, PHASE_3_CANVAS_NODE_TYPES } from "@guga-flow/shared-types";
+import {
+  DIRECTOR_3D_SCENE_VERSION,
+  getCanvasNodeRegistryItem,
+  PHASE_3_CANVAS_NODE_TYPES,
+} from "@guga-flow/shared-types";
 
 export interface BusinessNodeDefinition {
   label: string;
@@ -143,6 +147,22 @@ export const BUSINESS_NODE_DEFINITIONS = {
     detailFallback: "Object continuity and prompt context",
     tone: "asset",
   }),
+  panorama: defineBusinessNode("panorama", {
+    label: "Panorama",
+    shortLabel: "360",
+    defaultTitle: "Panorama Reference",
+    summaryFallback: "360 visual reference",
+    detailFallback: "View state, annotations, and prompt context",
+    tone: "media",
+  }),
+  director_3d: defineBusinessNode("director_3d", {
+    label: "3D Director",
+    shortLabel: "3D",
+    defaultTitle: "3D Director",
+    summaryFallback: "Controlled 3D blocking scene",
+    detailFallback: "Camera, objects, and screenshot asset",
+    tone: "media",
+  }),
   ai_text: defineBusinessNode("ai_text", {
     label: "AI Text",
     shortLabel: "AI Text",
@@ -269,6 +289,62 @@ export function createDefaultBusinessNodeData<TType extends Phase3CanvasNodeType
         propPrompt: "",
         referenceAssetIds: [],
         assetVariants: [],
+      } as Phase3CanvasNodeData<TType>;
+    case "panorama":
+      return {
+        label: "",
+        yaw: 0,
+        pitch: 0,
+        fov: 75,
+        promptContext: "",
+        annotations: [],
+        referenceAssetIds: [],
+      } as Phase3CanvasNodeData<TType>;
+    case "director_3d":
+      return {
+        promptContext: "",
+        referenceAssetIds: [],
+        scene: {
+          version: DIRECTOR_3D_SCENE_VERSION,
+          background: "#101820",
+          camera: {
+            position: { x: 4, y: 3, z: 6 },
+            target: { x: 0, y: 0.75, z: 0 },
+            fov: 45,
+          },
+          light: {
+            color: "#ffffff",
+            intensity: 1.4,
+            position: { x: 3, y: 5, z: 4 },
+          },
+          objects: [
+            {
+              objectId: "subject",
+              kind: "box",
+              label: "Subject block",
+              color: "#4f8cff",
+              position: { x: 0, y: 0.65, z: 0 },
+              scale: { x: 1.1, y: 1.3, z: 1 },
+            },
+            {
+              objectId: "camera-mark",
+              kind: "sphere",
+              label: "Camera mark",
+              color: "#f4c542",
+              position: { x: -1.8, y: 0.35, z: 1.2 },
+              scale: { x: 0.45, y: 0.45, z: 0.45 },
+            },
+            {
+              objectId: "floor",
+              kind: "plane",
+              label: "Stage floor",
+              color: "#2c3340",
+              position: { x: 0, y: 0, z: 0 },
+              rotation: { x: -1.5708, y: 0, z: 0 },
+              scale: { x: 5, y: 5, z: 1 },
+            },
+          ],
+        },
       } as Phase3CanvasNodeData<TType>;
     case "ai_text":
       return {
@@ -545,8 +621,12 @@ function titleFromData(type: Phase3CanvasNodeType, data: Record<string, unknown>
     case "location_asset":
     case "prop_asset":
       return text(data, "name");
+    case "panorama":
+      return text(data, "label");
     case "scene_frame":
       return text(data, "label");
+    case "director_3d":
+      return text(data, "promptContext");
     case "editor_package":
       return text(data, "packageName");
     default:
@@ -585,6 +665,10 @@ function summaryForNode(
       return firstText(text(data, "environment"), text(data, "visualStyle"), fallback);
     case "prop_asset":
       return firstText(text(data, "description"), text(data, "visualStyle"), text(data, "category"), fallback);
+    case "panorama":
+      return firstText(text(data, "promptContext"), text(data, "label"), text(data, "assetId"), fallback);
+    case "director_3d":
+      return firstText(text(data, "promptContext"), text(data, "snapshotAssetId"), directorObjectText(data), fallback);
     case "ai_text":
       return firstText(text(data, "outputText"), text(data, "prompt"), fallback);
     case "ai_audio":
@@ -680,6 +764,19 @@ function detailForNode(
         ],
         fallback,
       );
+    case "panorama":
+      return compact(
+        [
+          text(data, "assetId"),
+          numberText(data, "yaw", "deg yaw"),
+          numberText(data, "pitch", "deg pitch"),
+          numberText(data, "fov", "deg fov"),
+          annotationCountText(data),
+        ],
+        fallback,
+      );
+    case "director_3d":
+      return compact([directorObjectText(data), text(data, "snapshotAssetId")], fallback);
     case "ai_text":
       return compact(
         [
@@ -708,6 +805,23 @@ function detailForNode(
     case "editor_package":
       return compact([text(data, "format"), text(data, "assetId")], fallback);
   }
+}
+
+function annotationCountText(data: Record<string, unknown>): string {
+  const annotationCount = objectArray(data.annotations).filter((item) => text(item, "annotationId")).length;
+  if (annotationCount === 0) {
+    return "";
+  }
+  return `${annotationCount} annotation${annotationCount === 1 ? "" : "s"}`;
+}
+
+function directorObjectText(data: Record<string, unknown>): string {
+  const scene = objectData(data.scene);
+  const objectCount = objectArray(scene.objects).filter((item) => text(item, "objectId")).length;
+  if (objectCount === 0) {
+    return "";
+  }
+  return `${objectCount} 3D object${objectCount === 1 ? "" : "s"}`;
 }
 
 function compact(values: string[], fallback: string): string {

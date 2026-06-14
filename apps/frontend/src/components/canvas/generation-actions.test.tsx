@@ -24,6 +24,7 @@ vi.mock("../../lib/api", () => ({
   createBatchImagesToVideosJobs: vi.fn(),
   createBatchShotsToImagesJobs: vi.fn(),
   createGenerationJob: vi.fn(),
+  createSceneFrameExtractionJob: vi.fn(),
   getProjectImageProviderCatalog: vi.fn(),
   getProjectVideoProviderCatalog: vi.fn(),
   listSkillTemplates: vi.fn(async () => ({ templates: [] })),
@@ -204,6 +205,20 @@ describe("GenerationActions", () => {
     expect(html).toContain("Generate Audio");
     expect(html).toContain("Audio prompt");
     expect(html).toContain("Read Ari&#x27;s line as a tense whisper.");
+    expect(html).not.toContain("Provider");
+  });
+
+  it("renders scene frame extraction controls for video-backed nodes", () => {
+    const html = renderToStaticMarkup(
+      <GenerationActions
+        generationJobs={[]}
+        projectId="project_1"
+        node={node("source_video_1", "source_video", { assetId: "asset_video_1" })}
+      />,
+    );
+
+    expect(html).toContain("Generation");
+    expect(html).toContain("Extract Frames");
     expect(html).not.toContain("Provider");
   });
 

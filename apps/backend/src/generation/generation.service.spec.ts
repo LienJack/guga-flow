@@ -23,6 +23,8 @@ import type {
   LlmProviderCatalogResult,
   ProviderFailure,
   ResolvedGenerationSettings,
+  SceneFrameExtractionJobInput,
+  SceneFrameExtractionJobOutput,
   ShotPromptCompositionResult,
   ShotNodeData,
   ShotToImageJobInput,
@@ -1826,6 +1828,161 @@ describe("GenerationService", () => {
     expect(result.outputJson).toEqual({ ...output, generationJobId: "job_1" });
   });
 
+  it("creates scene frame extraction jobs for source video assets", async () => {
+    prisma.canvasNode.findFirst.mockResolvedValue(
+      canvasNode("source_video_1", "source_video", "Source Video", { assetId: "asset_video_1" }),
+    );
+
+    const result = await service.createSceneFrameExtractionJob("project_1", {
+      operation: "scene_frame_extraction",
+      assetId: "asset_video_1",
+      sourceNodeId: "source_video_1",
+      frameCount: 3,
+      createStoryboardBoard: true,
+    });
+
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        operation: "asset_classification",
+        provider: "mock-scene-detector",
+        model: "scene-frame-v1",
+        sourceNodeId: "source_video_1",
+        inputJson: expect.objectContaining({
+          operation: "scene_frame_extraction",
+          sourceAssetId: "asset_video_1",
+          sourceNodeId: "source_video_1",
+          frameCount: 3,
+          createStoryboardBoard: true,
+        }),
+      }),
+    });
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "source_video_1" },
+      data: { status: "queued" },
+    });
+    expect(result.job.inputJson.operation).toBe("scene_frame_extraction");
+  });
+
+  it("completes scene frame extraction jobs by creating frame assets and source metadata", async () => {
+    const input: SceneFrameExtractionJobInput = {
+      operation: "scene_frame_extraction",
+      projectId: "project_1",
+      sourceAssetId: "asset_video_1",
+      sourceNodeId: "source_video_1",
+      provider: "mock-scene-detector",
+      model: "scene-frame-v1",
+      strategy: "scene_segments",
+      frameCount: 2,
+    };
+    const output: SceneFrameExtractionJobOutput = {
+      operation: "scene_frame_extraction",
+      provider: "mock-scene-detector",
+      model: "scene-frame-v1",
+      sourceAssetId: "asset_video_1",
+      sourceNodeId: "source_video_1",
+      strategy: "scene_segments",
+      frames: [
+        {
+          frameId: "frame-1",
+          orderIndex: 0,
+          timestampMs: 0,
+          sceneIndex: 0,
+          providerOutput: {
+            assetId: "provider_frame_1",
+            storageKey: "project_1/scene-frames/job_1-1.png",
+            mimeType: "image/png",
+            provider: "mock-scene-detector",
+            model: "scene-frame-v1",
+            prompt: "Frame 1",
+            referenceAssetIds: ["asset_video_1"],
+          },
+        },
+        {
+          frameId: "frame-2",
+          orderIndex: 1,
+          timestampMs: 1200,
+          sceneIndex: 1,
+          providerOutput: {
+            assetId: "provider_frame_2",
+            storageKey: "project_1/scene-frames/job_1-2.png",
+            mimeType: "image/png",
+            provider: "mock-scene-detector",
+            model: "scene-frame-v1",
+            prompt: "Frame 2",
+            referenceAssetIds: ["asset_video_1"],
+          },
+        },
+      ],
+      scenes: [
+        {
+          segmentId: "scene-0",
+          orderIndex: 0,
+          startMs: 0,
+          endMs: 1200,
+          representativeFrameId: "frame-1",
+        },
+      ],
+      completedAt: "2026-06-14T00:00:00.000Z",
+    };
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "asset_classification",
+        status: "running",
+        provider: "mock-scene-detector",
+        model: "scene-frame-v1",
+        sourceNodeId: "source_video_1",
+        inputJson: input,
+      }),
+    );
+    prisma.canvasNode.findFirst.mockResolvedValue(
+      canvasNode("source_video_1", "source_video", "Source Video", { assetId: "asset_video_1" }),
+    );
+
+    const result = await service.succeedJob(
+      "job_1",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      output,
+    );
+
+    expect(assetsService.createGeneratedAsset).toHaveBeenCalledTimes(2);
+    expect(assetsService.createGeneratedAsset).toHaveBeenCalledWith(
+      "project_1",
+      expect.objectContaining({
+        purpose: "shot_keyframe",
+        metadataJson: expect.objectContaining({
+          operation: "scene_frame_extraction",
+          sourceAssetId: "asset_video_1",
+          timestampMs: 0,
+        }),
+      }),
+      expect.any(Object),
+    );
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "source_video_1" },
+      data: {
+        status: "succeeded",
+        dataJson: expect.objectContaining({
+          sceneFrameExtraction: expect.objectContaining({
+            frameAssetIds: ["asset_generated_1", "asset_generated_2"],
+            scenes: output.scenes,
+          }),
+        }),
+      },
+    });
+    expect(result.outputJson).toMatchObject({
+      operation: "scene_frame_extraction",
+      generationJobId: "job_1",
+      frames: [
+        expect.objectContaining({ assetId: "asset_generated_1" }),
+        expect.objectContaining({ assetId: "asset_generated_2" }),
+      ],
+    });
+  });
+
   it("completes asset prompt polish jobs by applying prompt metadata", async () => {
     const input = {
       operation: "asset_prompt_polish" as const,
@@ -1872,7 +2029,16 @@ describe("GenerationService", () => {
       }),
     );
 
-    const result = await service.succeedJob("job_1", undefined, undefined, undefined, undefined, undefined, output);
+    const result = await service.succeedJob(
+      "job_1",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      output,
+    );
 
     expect(assetsService.applyAssetPromptPolish).toHaveBeenCalledWith("project_1", {
       ...output,
@@ -1927,6 +2093,7 @@ describe("GenerationService", () => {
     );
     const result = await service.succeedJob(
       "job_1",
+      undefined,
       undefined,
       undefined,
       undefined,
@@ -2000,6 +2167,7 @@ describe("GenerationService", () => {
 
     const result = await service.succeedJob(
       "job_1",
+      undefined,
       undefined,
       undefined,
       undefined,

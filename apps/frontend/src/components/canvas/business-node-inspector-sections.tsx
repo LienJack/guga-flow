@@ -93,6 +93,18 @@ export const BUSINESS_NODE_FIELDS = {
     { key: "consistencyPrompt", label: "Consistency Prompt", multiline: true },
     { key: "propPrompt", label: "Prop Prompt", multiline: true },
   ],
+  panorama: [
+    { key: "label", label: "Label" },
+    { key: "assetId", label: "Panorama Asset ID" },
+    { key: "yaw", label: "Yaw", inputType: "number" },
+    { key: "pitch", label: "Pitch", inputType: "number" },
+    { key: "fov", label: "FOV", inputType: "number" },
+    { key: "promptContext", label: "Prompt Context", multiline: true },
+  ],
+  director_3d: [
+    { key: "promptContext", label: "Prompt Context", multiline: true },
+    { key: "snapshotAssetId", label: "Snapshot Asset ID" },
+  ],
   ai_text: [
     { key: "prompt", label: "Prompt", multiline: true },
     { key: "outputText", label: "Output Text", multiline: true },

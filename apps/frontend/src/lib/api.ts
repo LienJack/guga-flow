@@ -45,6 +45,8 @@ import type {
   CreateAssetPromptPolishJobResult,
   CreateMediaMetadataJobInput,
   CreateMediaMetadataJobResult,
+  CreateSceneFrameExtractionJobInput,
+  CreateSceneFrameExtractionJobResult,
   CreateWorkflowDefinitionInput,
   CreateWorkflowVersionInput,
   CreateWorkflowRunInput,
@@ -509,6 +511,19 @@ export function createMediaMetadataJob(
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function createSceneFrameExtractionJob(
+  projectId: string,
+  input: CreateSceneFrameExtractionJobInput,
+): Promise<CreateSceneFrameExtractionJobResult> {
+  return requestJson<CreateSceneFrameExtractionJobResult>(
+    `/projects/${projectId}/generation/jobs/scene-frame-extraction`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 export function createAssetPromptPolishJob(

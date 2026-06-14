@@ -65,7 +65,7 @@ export function getSemanticBindingRelation(
   targetNode: CanvasNodeRecord,
 ): SemanticCanvasEdgeRelation | null {
   if (
-    isSourceMediaNodeType(sourceNode.type) &&
+    isContextSourceNodeType(sourceNode.type) &&
     resolveCanvasInputSlot({ sourceType: sourceNode.type, targetType: targetNode.type })
   ) {
     return "derived_from";
@@ -143,12 +143,14 @@ export function buildSemanticCanvasEdgeInput(input: {
   return edgeInput;
 }
 
-function isSourceMediaNodeType(sourceType: string): boolean {
+function isContextSourceNodeType(sourceType: string): boolean {
   if (
     sourceType !== "source_text" &&
     sourceType !== "source_image" &&
     sourceType !== "source_video" &&
-    sourceType !== "source_audio"
+    sourceType !== "source_audio" &&
+    sourceType !== "panorama" &&
+    sourceType !== "director_3d"
   ) {
     return false;
   }

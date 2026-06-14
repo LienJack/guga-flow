@@ -35,6 +35,8 @@ import type {
   CreateAssetPromptPolishJobResult,
   CreateMediaMetadataJobInput,
   CreateMediaMetadataJobResult,
+  CreateSceneFrameExtractionJobInput,
+  CreateSceneFrameExtractionJobResult,
   CreateGenerationJobInput,
   EditorExportJobInput,
   EditorExportJobOutput,
@@ -66,6 +68,8 @@ import type {
   ProjectAspectRatio,
   ResolvedGenerationSettings,
   RetryGenerationJobResult,
+  SceneFrameExtractionJobInput,
+  SceneFrameExtractionJobOutput,
   ShotNodeData,
   ShotPromptCompositionResult,
   ShotToImageJobInput,
@@ -169,6 +173,7 @@ type WorkerGenerationJobInput =
   | DirectGenerationJobInput
   | AssetAnalysisJobInput
   | MediaMetadataJobInput
+  | SceneFrameExtractionJobInput
   | AssetPromptPolishJobInput
   | AssetImageGenerationJobInput
   | WorkflowRunJobInput
@@ -316,6 +321,9 @@ function assertJobInput(value: unknown): WorkerGenerationJobInput {
     return value as WorkerGenerationJobInput;
   }
   if (input.operation === "media_metadata") {
+    return value as WorkerGenerationJobInput;
+  }
+  if (input.operation === "scene_frame_extraction") {
     return value as WorkerGenerationJobInput;
   }
   if (input.operation === "asset_prompt_polish" || input.operation === "asset_image_generation") {
@@ -480,6 +488,83 @@ export class GenerationService {
 
     return {
       job: this.toGenerationJobRecord<MediaMetadataJobInput>(job),
+      queueSummary: await this.getQueueSummary(projectId),
+    };
+  }
+
+  async createSceneFrameExtractionJob(
+    projectId: string,
+    input: CreateSceneFrameExtractionJobInput,
+  ): Promise<CreateSceneFrameExtractionJobResult> {
+    if (input.operation !== "scene_frame_extraction") {
+      throw new BadRequestException("Scene frame extraction operation is not supported");
+    }
+
+    const asset = await this.assetsService.getAsset(projectId, input.assetId);
+    if (asset.type !== "video") {
+      throw new BadRequestException("Scene frame extraction requires a video asset");
+    }
+    if (asset.sizeBytes && asset.sizeBytes > MAX_UPLOAD_BYTES) {
+      throw new BadRequestException("Scene frame extraction asset is too large");
+    }
+
+    if (input.sourceNodeId) {
+      const sourceNode = (await this.prisma.canvasNode.findFirst({
+        where: { id: input.sourceNodeId, projectId },
+      })) as CanvasNodeModel | null;
+      if (!sourceNode) {
+        throw new NotFoundException("Scene frame extraction source node not found");
+      }
+      if (sourceNode.type !== "source_video" && sourceNode.type !== "video") {
+        throw new BadRequestException("Scene frame extraction source node must be a video node");
+      }
+      const sourceData = dataObject(sourceNode.dataJson);
+      const sourceAssetId = optionalString(sourceData.assetId);
+      if (sourceAssetId && sourceAssetId !== asset.id) {
+        throw new BadRequestException("Scene frame extraction source node asset does not match");
+      }
+    }
+
+    const timestampsMs = Array.from(
+      new Set((input.timestampsMs ?? []).filter((value) => Number.isInteger(value) && value >= 0)),
+    ).slice(0, 24);
+    const frameCount = timestampsMs.length
+      ? timestampsMs.length
+      : Math.min(Math.max(input.frameCount ?? 4, 1), 24);
+    const jobInput: SceneFrameExtractionJobInput = {
+      operation: "scene_frame_extraction",
+      projectId,
+      sourceAssetId: asset.id,
+      ...(input.sourceNodeId ? { sourceNodeId: input.sourceNodeId } : {}),
+      provider: "mock-scene-detector",
+      model: "scene-frame-v1",
+      strategy: input.strategy ?? (timestampsMs.length ? "exact_timestamps" : "scene_segments"),
+      frameCount,
+      ...(timestampsMs.length ? { timestampsMs } : {}),
+      ...(input.createStoryboardBoard === true ? { createStoryboardBoard: true } : {}),
+      ...(input.forceFailure === true ? { forceFailure: true } : {}),
+    };
+
+    const job = await this.runTransaction(async (tx) => {
+      const created = (await tx.generationJob.create({
+        data: {
+          projectId,
+          operation: "asset_classification",
+          status: "queued",
+          provider: jobInput.provider,
+          model: jobInput.model,
+          sourceNodeId: jobInput.sourceNodeId,
+          inputJson: jsonValue(jobInput),
+        },
+      })) as GenerationJobModel;
+      if (jobInput.sourceNodeId) {
+        await this.updateNodeStatus(tx, jobInput.sourceNodeId, "queued");
+      }
+      return created;
+    });
+
+    return {
+      job: this.toGenerationJobRecord<SceneFrameExtractionJobInput>(job),
       queueSummary: await this.getQueueSummary(projectId),
     };
   }
@@ -989,6 +1074,7 @@ export class GenerationService {
     packageOutput?: EditorExportPackageOutput,
     assetAnalysisOutput?: AssetAnalysisJobOutput,
     mediaMetadataOutput?: MediaMetadataJobOutput,
+    sceneFrameExtractionOutput?: SceneFrameExtractionJobOutput,
     assetPromptPolishOutput?: AssetPromptPolishJobOutput,
     assetImageGenerationOutput?: AssetImageGenerationJobOutput,
     textGenerationOutput?: AiTextGenerationJobOutput,
@@ -1000,6 +1086,7 @@ export class GenerationService {
       | EditorExportJobOutput
       | AssetAnalysisJobOutput
       | MediaMetadataJobOutput
+      | SceneFrameExtractionJobOutput
       | AssetPromptPolishJobOutput
       | AssetImageGenerationJobOutput
       | AiTextGenerationJobOutput
@@ -1022,6 +1109,12 @@ export class GenerationService {
         throw new BadRequestException("Media metadata completion requires metadata output");
       }
       return this.succeedMediaMetadataJob(existing, input, mediaMetadataOutput);
+    }
+    if (input.operation === "scene_frame_extraction") {
+      if (!sceneFrameExtractionOutput) {
+        throw new BadRequestException("Scene frame extraction completion requires frame output");
+      }
+      return this.succeedSceneFrameExtractionJob(existing, input, sceneFrameExtractionOutput);
     }
     if (input.operation === "asset_prompt_polish") {
       if (!assetPromptPolishOutput) {
@@ -1245,6 +1338,120 @@ export class GenerationService {
     })) as GenerationJobModel;
 
     return this.toGenerationJobRecord<MediaMetadataJobInput, MediaMetadataJobOutput>(completed);
+  }
+
+  private async succeedSceneFrameExtractionJob(
+    existing: GenerationJobModel,
+    input: SceneFrameExtractionJobInput,
+    output: SceneFrameExtractionJobOutput,
+  ): Promise<GenerationJobRecord<SceneFrameExtractionJobInput, SceneFrameExtractionJobOutput>> {
+    if (output.operation !== "scene_frame_extraction") {
+      throw new BadRequestException("Scene frame extraction output operation does not match the claimed job");
+    }
+    if (output.sourceAssetId !== input.sourceAssetId) {
+      throw new BadRequestException("Scene frame extraction output source asset does not match");
+    }
+    if (output.sourceNodeId && output.sourceNodeId !== input.sourceNodeId) {
+      throw new BadRequestException("Scene frame extraction output source node does not match");
+    }
+    if (!output.frames.length) {
+      throw new BadRequestException("Scene frame extraction completion requires at least one frame");
+    }
+
+    const completed = await this.runTransaction(async (tx) => {
+      const claimed = await tx.generationJob.updateMany({
+        where: { id: existing.id, status: { in: WORKER_ACTIVE_JOB_STATUSES } },
+        data: { errorMessage: null },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException("Only active generation jobs can succeed");
+      }
+
+      const completedFrames: SceneFrameExtractionJobOutput["frames"] = [];
+      for (const frame of output.frames) {
+        if (!frame.providerOutput.mimeType.startsWith("image/")) {
+          throw new BadRequestException("Scene frame extraction frames must be image outputs");
+        }
+        if (frame.providerOutput.provider !== existing.provider) {
+          throw new BadRequestException("Scene frame extraction provider does not match the claimed job");
+        }
+        const frameAsset = await this.assetsService.createGeneratedAsset(
+          existing.projectId,
+          {
+            purpose: "shot_keyframe",
+            providerOutput: frame.providerOutput,
+            metadataJson: {
+              generationJobId: existing.id,
+              operation: input.operation,
+              sourceAssetId: input.sourceAssetId,
+              sourceNodeId: input.sourceNodeId,
+              frameId: frame.frameId,
+              orderIndex: frame.orderIndex,
+              timestampMs: frame.timestampMs,
+              sceneIndex: frame.sceneIndex,
+            },
+          },
+          tx,
+        );
+        completedFrames.push({
+          ...frame,
+          assetId: frameAsset.id,
+        });
+      }
+
+      const completedOutput: SceneFrameExtractionJobOutput = {
+        ...output,
+        generationJobId: output.generationJobId ?? existing.id,
+        ...(input.sourceNodeId ? { sourceNodeId: input.sourceNodeId } : {}),
+        frames: completedFrames,
+      };
+
+      if (input.sourceNodeId) {
+        const sourceNode = (await tx.canvasNode.findFirst({
+          where: { id: input.sourceNodeId, projectId: existing.projectId },
+        })) as CanvasNodeModel | null;
+        if (!sourceNode) {
+          throw new NotFoundException("Scene frame extraction source node not found");
+        }
+        const sourceData = dataObject(sourceNode.dataJson);
+        await tx.canvasNode.update({
+          where: { id: sourceNode.id },
+          data: {
+            status: "succeeded",
+            dataJson: jsonValue({
+              ...sourceData,
+              sceneFrameExtraction: {
+                generationJobId: existing.id,
+                sourceAssetId: input.sourceAssetId,
+                strategy: input.strategy,
+                frameAssetIds: completedFrames.map((frame) => frame.assetId).filter(Boolean),
+                frames: completedFrames.map((frame) => ({
+                  frameId: frame.frameId,
+                  orderIndex: frame.orderIndex,
+                  timestampMs: frame.timestampMs,
+                  sceneIndex: frame.sceneIndex,
+                  label: frame.label,
+                  assetId: frame.assetId,
+                })),
+                scenes: output.scenes,
+                createdAt: completedOutput.completedAt,
+              },
+            }),
+          },
+        });
+      }
+
+      return (await tx.generationJob.update({
+        where: { id: existing.id },
+        data: {
+          status: "succeeded",
+          outputJson: jsonValue(completedOutput),
+          errorMessage: null,
+        },
+      })) as GenerationJobModel;
+    });
+
+    return this.toGenerationJobRecord<SceneFrameExtractionJobInput, SceneFrameExtractionJobOutput>(completed);
   }
 
   private async succeedAssetPromptPolishJob(
@@ -2304,6 +2511,22 @@ export class GenerationService {
           labelledField(data, "locationPrompt", "Location prompt"),
           labelledField(data, "consistencyPrompt", "Consistency prompt"),
         ]);
+      case "panorama":
+        return compactText([
+          labelledField(data, "label", "Panorama"),
+          labelledField(data, "promptContext", "Prompt context"),
+          labelledField(data, "assetId", "Panorama asset"),
+          labelledField(data, "yaw", "Yaw"),
+          labelledField(data, "pitch", "Pitch"),
+          labelledField(data, "fov", "FOV"),
+          this.annotationSummary(data.annotations),
+        ]);
+      case "director_3d":
+        return compactText([
+          labelledField(data, "promptContext", "Prompt context"),
+          labelledField(data, "snapshotAssetId", "Snapshot asset"),
+          this.directorSceneSummary(data.scene),
+        ]);
       case "ai_text":
         return compactText([
           labelledField(data, "outputText", "Generated text"),
@@ -2324,6 +2547,31 @@ export class GenerationService {
           optionalString(node.title) ? `Title: ${optionalString(node.title)}` : undefined,
         ]);
     }
+  }
+
+  private annotationSummary(value: unknown): string | undefined {
+    const annotations = Array.isArray(value)
+      ? value
+          .map((item) => dataObject(item))
+          .map((item) => compactText([
+            optionalString(item.label),
+            optionalString(item.prompt),
+            optionalString(item.note),
+          ]))
+          .filter(Boolean)
+      : [];
+    return annotations.length ? `Annotations: ${annotations.join("; ")}` : undefined;
+  }
+
+  private directorSceneSummary(value: unknown): string | undefined {
+    const scene = dataObject(value);
+    const objects = Array.isArray(scene.objects)
+      ? scene.objects
+          .map((item) => dataObject(item))
+          .map((item) => optionalString(item.label) ?? optionalString(item.kind))
+          .filter(Boolean)
+      : [];
+    return objects.length ? `Scene objects: ${objects.join(", ")}` : undefined;
   }
 
   private async buildAiAudioGenerationInput(

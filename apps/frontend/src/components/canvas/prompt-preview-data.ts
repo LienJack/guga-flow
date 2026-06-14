@@ -37,6 +37,7 @@ const PART_KIND_LABELS: Record<PromptDebugPartKind, string> = {
   location: "Location",
   character: "Character",
   character_lifecycle: "Character lifecycle",
+  advanced_visual: "Advanced visual",
   shot: "Shot",
   model_suffix: "Model suffix",
   negative_prompt: "Negative prompt",

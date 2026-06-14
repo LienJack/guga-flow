@@ -18,7 +18,7 @@ import type {
   VideoProviderMode,
 } from "@guga-flow/shared-types";
 import { filterSkillTemplateSummaries } from "@guga-flow/shared-types";
-import { Ban, FileAudio, FileText, ImagePlus, RotateCcw, Video } from "lucide-react";
+import { Ban, FileAudio, FileText, Film, ImagePlus, RotateCcw, Video } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 
 import {
@@ -26,6 +26,7 @@ import {
   createBatchImagesToVideosJobs,
   createBatchShotsToImagesJobs,
   createGenerationJob,
+  createSceneFrameExtractionJob,
   getProjectImageProviderCatalog,
   getProjectVideoProviderCatalog,
   listSkillTemplates,
@@ -146,6 +147,8 @@ export function GenerationActions({
   const hasRefinementAction = actions.some((action) => action.operation === "image_refinement");
   const hasTextAction = actions.some((action) => action.operation === "ai_text_generation");
   const hasAudioAction = actions.some((action) => action.operation === "ai_audio_generation");
+  const sceneFrameAssetId = sceneFrameExtractionAssetId(node);
+  const hasSceneFrameExtractionAction = Boolean(sceneFrameAssetId);
   const trimmedRefinementPrompt = refinementPrompt.trim();
   const trimmedTextPrompt = textPrompt.trim();
   const trimmedAudioPrompt = audioPrompt.trim();
@@ -287,7 +290,7 @@ export function GenerationActions({
     }
   }, [node.id, node.type]);
 
-  if (!actions.length) {
+  if (!actions.length && !hasSceneFrameExtractionAction) {
     return null;
   }
 
@@ -311,6 +314,32 @@ export function GenerationActions({
         ),
       );
       setLastResult(t("generation.queued"));
+      onGenerationChanged?.(result.queueSummary);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("generation.requestFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleExtractSceneFrames() {
+    if (!sceneFrameAssetId) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setLastResult(null);
+
+    try {
+      const result = await createSceneFrameExtractionJob(projectId, {
+        operation: "scene_frame_extraction",
+        assetId: sceneFrameAssetId,
+        sourceNodeId: node.id,
+        strategy: "scene_segments",
+        frameCount: 4,
+        createStoryboardBoard: true,
+      });
+      setLastResult(t("generation.framesQueued"));
       onGenerationChanged?.(result.queueSummary);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t("generation.requestFailed"));
@@ -478,6 +507,17 @@ export function GenerationActions({
             </button>
           );
         })}
+        {hasSceneFrameExtractionAction ? (
+          <button
+            className="primary-action compact"
+            type="button"
+            disabled={busy || Boolean(activeJob)}
+            onClick={() => void handleExtractSceneFrames()}
+          >
+            <Film size={15} aria-hidden="true" />
+            {t("generation.extractFrames")}
+          </button>
+        ) : null}
         {activeJob ? (
           <button
             className="ghost-action compact"
@@ -1333,6 +1373,14 @@ function aiAudioPromptFromNode(node: CanvasNodeRecord): string {
     return data.scriptText;
   }
   return typeof data?.prompt === "string" ? data.prompt : "";
+}
+
+function sceneFrameExtractionAssetId(node: CanvasNodeRecord): string | undefined {
+  if (node.type !== "source_video" && node.type !== "video") {
+    return undefined;
+  }
+  const data = node.dataJson as { assetId?: unknown } | undefined;
+  return typeof data?.assetId === "string" && data.assetId.trim() ? data.assetId : undefined;
 }
 
 function imageProviderSupportsMode(

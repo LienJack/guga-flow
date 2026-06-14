@@ -14,6 +14,8 @@ export const CANVAS_NODE_TYPES = [
   "location_asset",
   "style_asset",
   "prop_asset",
+  "panorama",
+  "director_3d",
   "ai_text",
   "ai_audio",
   "image",
@@ -167,6 +169,22 @@ export const CANVAS_NODE_REGISTRY = {
     description: "Prop reference facts for object continuity and prompt context.",
     capabilities: ["accepts_text", "accepts_image", "produces_text", "has_preview"],
   },
+  panorama: {
+    type: "panorama",
+    family: "advanced_visual",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.advanced_visual,
+    label: "Panorama",
+    description: "360 panorama reference with camera view state, annotations, and prompt context.",
+    capabilities: ["accepts_text", "accepts_image", "produces_text", "produces_asset", "has_preview"],
+  },
+  director_3d: {
+    type: "director_3d",
+    family: "advanced_visual",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.advanced_visual,
+    label: "3D Director",
+    description: "Controlled Three.js scene reference for camera blocking and screenshot assets.",
+    capabilities: ["accepts_text", "accepts_image", "produces_text", "produces_asset", "has_preview"],
+  },
   ai_text: {
     type: "ai_text",
     family: "ai_generation",
@@ -256,6 +274,8 @@ export const PHASE_3_CANVAS_NODE_TYPES = [
   "character_asset",
   "location_asset",
   "prop_asset",
+  "panorama",
+  "director_3d",
   "ai_text",
   "ai_audio",
   "image",
@@ -340,6 +360,8 @@ export const CANVAS_NODE_OUTPUT_KINDS = {
   shot: ["text"],
   character_asset: ["text", "image", "audio"],
   location_asset: ["text", "image", "video"],
+  panorama: ["text", "image"],
+  director_3d: ["text", "image"],
   ai_text: ["text"],
   ai_audio: ["audio"],
   image: ["image"],
@@ -467,6 +489,42 @@ export const CANVAS_NODE_INPUT_SLOTS = {
       inputRole: "location_reference",
       required: false,
       maxConnections: 2,
+    },
+  ],
+  panorama: [
+    {
+      id: "prompt_text",
+      label: "Prompt context",
+      inputKind: "text",
+      inputRole: "prompt_context",
+      required: false,
+      maxConnections: 4,
+    },
+    {
+      id: "reference_image",
+      label: "Panorama source image",
+      inputKind: "image",
+      inputRole: "reference_image",
+      required: false,
+      maxConnections: 2,
+    },
+  ],
+  director_3d: [
+    {
+      id: "prompt_text",
+      label: "Prompt context",
+      inputKind: "text",
+      inputRole: "prompt_context",
+      required: false,
+      maxConnections: 6,
+    },
+    {
+      id: "reference_image",
+      label: "Reference image",
+      inputKind: "image",
+      inputRole: "reference_image",
+      required: false,
+      maxConnections: 4,
     },
   ],
   ai_text: [
@@ -762,6 +820,77 @@ export interface PropAssetNodeData {
   assetKey?: string;
 }
 
+export interface PanoramaAnnotationData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  annotationId: string;
+  label: string;
+  yaw: number;
+  pitch: number;
+  note?: string;
+  prompt?: string;
+  color?: string;
+}
+
+export interface PanoramaNodeData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  assetId?: string;
+  label?: string;
+  yaw?: number;
+  pitch?: number;
+  fov?: number;
+  promptContext?: string;
+  annotations?: PanoramaAnnotationData[];
+  referenceAssetIds?: string[];
+}
+
+export const DIRECTOR_3D_SCENE_VERSION = 1 as const;
+
+export interface Director3DVectorData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface Director3DSceneObjectData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  objectId: string;
+  kind: "box" | "sphere" | "plane";
+  label?: string;
+  color?: string;
+  position: Director3DVectorData;
+  rotation?: Director3DVectorData;
+  scale?: Director3DVectorData;
+}
+
+export interface Director3DSceneData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  version: typeof DIRECTOR_3D_SCENE_VERSION;
+  background?: string;
+  camera?: {
+    [key: string]: CanvasSnapshotJson | undefined;
+    position?: Director3DVectorData;
+    target?: Director3DVectorData;
+    fov?: number;
+  };
+  light?: {
+    [key: string]: CanvasSnapshotJson | undefined;
+    color?: string;
+    intensity?: number;
+    position?: Director3DVectorData;
+  };
+  objects: Director3DSceneObjectData[];
+}
+
+export interface Director3DNodeData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  scene?: Director3DSceneData;
+  promptContext?: string;
+  snapshotAssetId?: string;
+  snapshotCapturedAt?: string;
+  referenceAssetIds?: string[];
+}
+
 export const SOURCE_MEDIA_IMPORT_METHODS = ["drag_drop", "asset_library", "manual"] as const;
 export type SourceMediaImportMethod = (typeof SOURCE_MEDIA_IMPORT_METHODS)[number];
 
@@ -889,6 +1018,8 @@ export interface Phase3CanvasNodeDataByType {
   character_asset: CharacterAssetNodeData;
   location_asset: LocationAssetNodeData;
   prop_asset: PropAssetNodeData;
+  panorama: PanoramaNodeData;
+  director_3d: Director3DNodeData;
   ai_text: AiTextNodeData;
   ai_audio: AiAudioNodeData;
   image: ImageNodeData;

@@ -271,6 +271,10 @@ function isSourceMediaNodeType(value: string): boolean {
   return value === "source_text" || value === "source_image" || value === "source_video" || value === "source_audio";
 }
 
+function isContextSourceNodeType(value: string): boolean {
+  return isSourceMediaNodeType(value) || value === "panorama" || value === "director_3d";
+}
+
 function isNodeStatus(value: unknown): value is NodeStatus {
   return typeof value === "string" && NODE_STATUSES.includes(value as never);
 }
@@ -1791,7 +1795,7 @@ export class CanvasService {
       if (sourceNode.id === targetNode.id) {
         throw new BadRequestException("Variant edges cannot reference the same node");
       }
-      if (sourceNode.type !== targetNode.type && !isSourceMediaNodeType(sourceNode.type)) {
+      if (sourceNode.type !== targetNode.type && !isContextSourceNodeType(sourceNode.type)) {
         throw new BadRequestException("Variant edges must connect nodes of the same type");
       }
       return;
@@ -1868,7 +1872,7 @@ export class CanvasService {
     return (
       relation === "derived_from" &&
       sourceNode.type !== targetNode.type &&
-      (isSourceMediaNodeType(sourceNode.type) || targetNode.type === "ai_audio")
+      (isContextSourceNodeType(sourceNode.type) || targetNode.type === "ai_audio")
     );
   }
 

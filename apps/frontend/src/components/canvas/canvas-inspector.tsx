@@ -1,12 +1,17 @@
 import type {
   CanvasEdgeRecord,
   CanvasNodeRecord,
+  CanvasSnapshotJson,
   CharacterAssetNodeData,
   CharacterLifecycleStageData,
   CharacterStageReferenceData,
+  Director3DNodeData,
+  Director3DSceneData,
   GenerationJobRecord,
   GenerationQueueSummary,
   ImageNodeData,
+  PanoramaAnnotationData,
+  PanoramaNodeData,
   ProjectDetail,
   ShotNodeData,
   StoryBlueprintNodeData,
@@ -14,9 +19,11 @@ import type {
   UpdateCanvasNodeInput,
   VideoNodeData,
 } from "@guga-flow/shared-types";
-import React from "react";
+import { DIRECTOR_3D_SCENE_VERSION } from "@guga-flow/shared-types";
+import React, { useEffect, useRef, useState } from "react";
+import * as THREE from "three";
 
-import { updateCanvasNode } from "../../lib/api";
+import { assetPreviewUrl, updateCanvasNode, uploadAsset } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { AssetLibrary } from "../projects/asset-library";
 import { type CanvasGraphState } from "./canvas-edge-data";
@@ -135,6 +142,19 @@ export function CanvasInspector({
             const result = await saveNode(projectId, selectedNode.id, input);
             onNodeUpdated(result);
           }}
+        />
+      ) : null}
+      {selectedNode?.type === "panorama" ? (
+        <PanoramaPreviewPanel
+          node={selectedNode as CanvasNodeRecord<PanoramaNodeData>}
+          projectId={projectId}
+        />
+      ) : null}
+      {selectedNode?.type === "director_3d" ? (
+        <Director3DPanel
+          node={selectedNode as CanvasNodeRecord<Director3DNodeData>}
+          projectId={projectId}
+          onNodeUpdated={onNodeUpdated}
         />
       ) : null}
       {selectedNode ? <NodeTracePanel node={selectedNode} nodes={nodes} /> : null}
@@ -263,6 +283,204 @@ function QueueMetric({
     <div className={`queue-metric ${warning ? "warning" : ""}`}>
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function PanoramaPreviewPanel({
+  node,
+  projectId,
+}: {
+  node: CanvasNodeRecord<PanoramaNodeData>;
+  projectId: string;
+}) {
+  const data = objectData(node.dataJson) as PanoramaNodeData;
+  const annotations = panoramaAnnotations(data.annotations);
+
+  return (
+    <section className="generation-panel" aria-label="Panorama preview">
+      <div className="section-heading-row">
+        <h3>Panorama preview</h3>
+        <span className="status-chip">{annotations.length}</span>
+      </div>
+      {data.assetId ? (
+        <div
+          style={{
+            aspectRatio: "16 / 9",
+            background: "#0f172a",
+            borderRadius: 8,
+            overflow: "hidden",
+          }}
+        >
+          <img
+            alt={node.title ?? "Panorama"}
+            src={assetPreviewUrl(projectId, data.assetId)}
+            style={{ display: "block", height: "100%", objectFit: "cover", width: "100%" }}
+          />
+        </div>
+      ) : (
+        <InspectorState title="No panorama asset" value="Attach an image asset id to preview." />
+      )}
+      <dl className="settings-fact-grid">
+        <Fact label="Yaw" value={numberLabel(data.yaw, "deg")} />
+        <Fact label="Pitch" value={numberLabel(data.pitch, "deg")} />
+        <Fact label="FOV" value={numberLabel(data.fov, "deg")} />
+        <Fact label="Asset" value={data.assetId} />
+      </dl>
+      {data.promptContext ? <p>{data.promptContext}</p> : null}
+      {annotations.length ? (
+        <TraceList title="Annotations">
+          {annotations.map((annotation) => (
+            <li key={annotation.annotationId}>
+              <strong>{annotation.label}</strong>
+              <span>{compactText([annotation.prompt, annotation.note]) || "View marker"}</span>
+              <small>
+                {compactText([
+                  numberLabel(annotation.yaw, "deg yaw"),
+                  numberLabel(annotation.pitch, "deg pitch"),
+                ])}
+              </small>
+            </li>
+          ))}
+        </TraceList>
+      ) : null}
+    </section>
+  );
+}
+
+function Director3DPanel({
+  node,
+  onNodeUpdated,
+  projectId,
+}: {
+  node: CanvasNodeRecord<Director3DNodeData>;
+  onNodeUpdated(node: CanvasNodeRecord): void;
+  projectId: string;
+}) {
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const data = objectData(node.dataJson) as Director3DNodeData;
+  const sceneData = directorSceneData(data.scene);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) {
+      return;
+    }
+
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    } catch (error) {
+      setRenderError(error instanceof Error ? error.message : "3D preview unavailable");
+      return;
+    }
+
+    setRenderError(null);
+    renderer.domElement.setAttribute("data-testid", "director-3d-canvas");
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    mount.replaceChildren(renderer.domElement);
+    rendererRef.current = renderer;
+
+    const { animatedObjects, camera, scene } = createDirectorThreeScene(sceneData);
+    let animationFrame = 0;
+
+    const resize = () => {
+      const width = Math.max(Math.floor(mount.clientWidth || 300), 240);
+      const height = 220;
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    };
+    const render = () => {
+      for (const object of animatedObjects) {
+        object.rotation.y += 0.006;
+      }
+      renderer.render(scene, camera);
+      animationFrame = window.requestAnimationFrame(render);
+    };
+
+    resize();
+    render();
+    window.addEventListener("resize", resize);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", resize);
+      disposeThreeScene(scene);
+      renderer.dispose();
+      if (rendererRef.current === renderer) {
+        rendererRef.current = null;
+      }
+      mount.replaceChildren();
+    };
+  }, [node.id, node.dataJson]);
+
+  async function handleCapture() {
+    const renderer = rendererRef.current;
+    if (!renderer) {
+      setCaptureError("3D preview is not ready");
+      return;
+    }
+    setCaptureBusy(true);
+    setCaptureError(null);
+    try {
+      const blob = await canvasBlob(renderer.domElement);
+      const file = new File([blob], `director-3d-${node.id}.png`, { type: "image/png" });
+      const asset = await uploadAsset(projectId, { file, purpose: "canvas_fragment" });
+      const result = await updateCanvasNode(projectId, node.id, {
+        dataJson: {
+          ...(objectData(node.dataJson) as Record<string, CanvasSnapshotJson>),
+          snapshotAssetId: asset.id,
+          snapshotCapturedAt: new Date().toISOString(),
+        },
+      });
+      onNodeUpdated(result.node);
+    } catch (error) {
+      setCaptureError(error instanceof Error ? error.message : "Unable to capture 3D snapshot");
+    } finally {
+      setCaptureBusy(false);
+    }
+  }
+
+  return (
+    <section className="generation-panel" aria-label="3D director preview">
+      <div className="section-heading-row">
+        <h3>3D director</h3>
+        <span className="status-chip">{sceneData.objects.length}</span>
+      </div>
+      <div
+        ref={mountRef}
+        data-testid="director-3d-preview"
+        style={{
+          background: sceneData.background ?? "#101820",
+          borderRadius: 8,
+          minHeight: 220,
+          overflow: "hidden",
+        }}
+      />
+      {renderError ? <p className="form-error">{renderError}</p> : null}
+      <dl className="settings-fact-grid">
+        <Fact label="Objects" value={String(sceneData.objects.length)} />
+        <Fact label="Snapshot" value={data.snapshotAssetId} />
+      </dl>
+      {data.promptContext ? <p>{data.promptContext}</p> : null}
+      <button className="primary-action compact" type="button" disabled={captureBusy} onClick={handleCapture}>
+        Capture Snapshot
+      </button>
+      {captureError ? <p className="form-error">{captureError}</p> : null}
+    </section>
+  );
+}
+
+function Fact({ label, value }: { label: string; value?: string }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value?.trim() || "None"}</dd>
     </div>
   );
 }
@@ -552,6 +770,220 @@ function textValue(value: unknown): string | undefined {
   }
   const text = value.trim();
   return text ? text : undefined;
+}
+
+function panoramaAnnotations(value: unknown): PanoramaAnnotationData[] {
+  return objectArray(value)
+    .map((item) => {
+      const note = textValue(item.note);
+      const prompt = textValue(item.prompt);
+      const color = textValue(item.color);
+      return {
+        annotationId: textValue(item.annotationId) ?? "",
+        label: textValue(item.label) ?? "",
+        yaw: finiteNumber(item.yaw) ?? 0,
+        pitch: finiteNumber(item.pitch) ?? 0,
+        ...(note ? { note } : {}),
+        ...(prompt ? { prompt } : {}),
+        ...(color ? { color } : {}),
+      };
+    })
+    .filter((annotation) => annotation.annotationId && annotation.label);
+}
+
+function numberLabel(value: unknown, suffix: string): string | undefined {
+  const numberValue = finiteNumber(value);
+  if (numberValue === undefined) {
+    return undefined;
+  }
+  return `${numberValue}${suffix ? ` ${suffix}` : ""}`;
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+const DEFAULT_DIRECTOR_SCENE: Director3DSceneData = {
+  version: DIRECTOR_3D_SCENE_VERSION,
+  background: "#101820",
+  camera: {
+    position: { x: 4, y: 3, z: 6 },
+    target: { x: 0, y: 0.75, z: 0 },
+    fov: 45,
+  },
+  light: {
+    color: "#ffffff",
+    intensity: 1.4,
+    position: { x: 3, y: 5, z: 4 },
+  },
+  objects: [
+    {
+      objectId: "subject",
+      kind: "box",
+      label: "Subject block",
+      color: "#4f8cff",
+      position: { x: 0, y: 0.65, z: 0 },
+      scale: { x: 1.1, y: 1.3, z: 1 },
+    },
+    {
+      objectId: "camera-mark",
+      kind: "sphere",
+      label: "Camera mark",
+      color: "#f4c542",
+      position: { x: -1.8, y: 0.35, z: 1.2 },
+      scale: { x: 0.45, y: 0.45, z: 0.45 },
+    },
+    {
+      objectId: "floor",
+      kind: "plane",
+      label: "Stage floor",
+      color: "#2c3340",
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: -1.5708, y: 0, z: 0 },
+      scale: { x: 5, y: 5, z: 1 },
+    },
+  ],
+};
+
+function directorSceneData(value: unknown): Director3DSceneData {
+  const raw = objectData(value);
+  const objects = objectArray(raw.objects)
+    .map((item) => {
+      let kind: "box" | "sphere" | "plane" = "box";
+      if (item.kind === "sphere" || item.kind === "plane") {
+        kind = item.kind;
+      }
+      const label = textValue(item.label);
+      const color = textValue(item.color);
+      return {
+        objectId: textValue(item.objectId) ?? "",
+        kind,
+        ...(label ? { label } : {}),
+        ...(color ? { color } : {}),
+        position: vectorData(item.position, { x: 0, y: 0.5, z: 0 }),
+        rotation: vectorData(item.rotation, { x: 0, y: 0, z: 0 }),
+        scale: vectorData(item.scale, { x: 1, y: 1, z: 1 }),
+      };
+    })
+    .filter((item) => item.objectId);
+
+  if (!objects.length) {
+    return DEFAULT_DIRECTOR_SCENE;
+  }
+
+  const camera = objectData(raw.camera);
+  const light = objectData(raw.light);
+  return {
+    version: DIRECTOR_3D_SCENE_VERSION,
+    background: textValue(raw.background) ?? DEFAULT_DIRECTOR_SCENE.background ?? "#101820",
+    camera: {
+      position: vectorData(camera.position, DEFAULT_DIRECTOR_SCENE.camera?.position ?? { x: 4, y: 3, z: 6 }),
+      target: vectorData(camera.target, DEFAULT_DIRECTOR_SCENE.camera?.target ?? { x: 0, y: 0.75, z: 0 }),
+      fov: finiteNumber(camera.fov) ?? DEFAULT_DIRECTOR_SCENE.camera?.fov ?? 45,
+    },
+    light: {
+      color: textValue(light.color) ?? DEFAULT_DIRECTOR_SCENE.light?.color ?? "#ffffff",
+      intensity: finiteNumber(light.intensity) ?? DEFAULT_DIRECTOR_SCENE.light?.intensity ?? 1.4,
+      position: vectorData(light.position, DEFAULT_DIRECTOR_SCENE.light?.position ?? { x: 3, y: 5, z: 4 }),
+    },
+    objects,
+  };
+}
+
+function vectorData(value: unknown, fallback: { x: number; y: number; z: number }) {
+  const raw = objectData(value);
+  return {
+    x: finiteNumber(raw.x) ?? fallback.x,
+    y: finiteNumber(raw.y) ?? fallback.y,
+    z: finiteNumber(raw.z) ?? fallback.z,
+  };
+}
+
+function createDirectorThreeScene(sceneData: Director3DSceneData): {
+  animatedObjects: THREE.Object3D[];
+  camera: THREE.PerspectiveCamera;
+  scene: THREE.Scene;
+} {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(sceneData.background ?? "#101820");
+
+  const camera = new THREE.PerspectiveCamera(sceneData.camera?.fov ?? 45, 1, 0.1, 100);
+  const cameraPosition = sceneData.camera?.position ?? { x: 4, y: 3, z: 6 };
+  const cameraTarget = sceneData.camera?.target ?? { x: 0, y: 0.75, z: 0 };
+  camera.position.set(cameraPosition.x, cameraPosition.y, cameraPosition.z);
+  camera.lookAt(cameraTarget.x, cameraTarget.y, cameraTarget.z);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+  const light = new THREE.DirectionalLight(
+    new THREE.Color(sceneData.light?.color ?? "#ffffff"),
+    sceneData.light?.intensity ?? 1.4,
+  );
+  const lightPosition = sceneData.light?.position ?? { x: 3, y: 5, z: 4 };
+  light.position.set(lightPosition.x, lightPosition.y, lightPosition.z);
+  scene.add(light);
+
+  const animatedObjects: THREE.Object3D[] = [];
+  for (const object of sceneData.objects) {
+    const mesh = new THREE.Mesh(
+      geometryForDirectorObject(object.kind),
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color(object.color ?? "#4f8cff"),
+        roughness: 0.55,
+        metalness: 0.08,
+      }),
+    );
+    mesh.name = object.label ?? object.objectId;
+    mesh.position.set(object.position.x, object.position.y, object.position.z);
+    if (object.rotation) {
+      mesh.rotation.set(object.rotation.x, object.rotation.y, object.rotation.z);
+    }
+    if (object.scale) {
+      mesh.scale.set(object.scale.x, object.scale.y, object.scale.z);
+    }
+    scene.add(mesh);
+    if (object.kind !== "plane") {
+      animatedObjects.push(mesh);
+    }
+  }
+
+  return { animatedObjects, camera, scene };
+}
+
+function geometryForDirectorObject(kind: "box" | "sphere" | "plane"): THREE.BufferGeometry {
+  if (kind === "sphere") {
+    return new THREE.SphereGeometry(0.7, 32, 16);
+  }
+  if (kind === "plane") {
+    return new THREE.PlaneGeometry(1, 1);
+  }
+  return new THREE.BoxGeometry(1, 1, 1);
+}
+
+function disposeThreeScene(scene: THREE.Scene) {
+  scene.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    mesh.geometry?.dispose();
+    const material = mesh.material;
+    if (Array.isArray(material)) {
+      for (const item of material) {
+        item.dispose();
+      }
+    } else {
+      material?.dispose();
+    }
+  });
+}
+
+function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("Canvas did not produce an image"));
+        return;
+      }
+      resolve(blob);
+    }, "image/png");
+  });
 }
 
 async function saveNode(
