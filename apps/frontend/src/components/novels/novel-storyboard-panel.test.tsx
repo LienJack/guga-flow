@@ -1,6 +1,7 @@
 import type {
   NovelDocumentRecord,
   NovelEventGraphRecord,
+  ScriptDraftRecord,
   StoryboardDraftRecord,
   StoryboardResult,
 } from "@guga-flow/shared-types";
@@ -139,6 +140,81 @@ function eventGraph(): NovelEventGraphRecord {
   };
 }
 
+function scriptDraft(): ScriptDraftRecord {
+  return {
+    id: "script_1",
+    projectId: "project_1",
+    novelDocumentId: "novel_1",
+    version: 1,
+    title: "Rooftop Script v1",
+    strategy: "short_drama",
+    status: "draft",
+    workspace: {
+      storySkeleton: {
+        title: "Rooftop Script v1",
+        logline: "The hero follows a rooftop signal.",
+        sourceChapterIndexes: [1],
+        sourceEventIds: ["chapter_1_event_1"],
+        beats: [
+          {
+            beatId: "beat_1",
+            orderIndex: 1,
+            title: "Signal",
+            summary: "The hero sees the signal.",
+            chapterIndex: 1,
+            eventIds: ["chapter_1_event_1"],
+          },
+        ],
+      },
+      adaptationStrategy: {
+        strategy: "short_drama",
+        summary: "Open with the strongest visual hook.",
+        targetFormat: "Short-drama",
+        supervisionNotes: "Check event coverage.",
+      },
+      script: {
+        title: "Rooftop Script v1",
+        logline: "The hero follows a rooftop signal.",
+        strategy: "short_drama",
+        scenes: [
+          {
+            sceneId: "script_scene_1",
+            orderIndex: 1,
+            title: "Opening",
+            summary: "The hero sees the signal.",
+            beats: [
+              {
+                beatId: "beat_1",
+                orderIndex: 1,
+                title: "Signal",
+                summary: "The hero sees the signal.",
+                chapterIndex: 1,
+                eventIds: ["chapter_1_event_1"],
+              },
+            ],
+          },
+        ],
+      },
+    },
+    script: {
+      title: "Rooftop Script v1",
+      logline: "The hero follows a rooftop signal.",
+      strategy: "short_drama",
+      scenes: [
+        {
+          sceneId: "script_scene_1",
+          orderIndex: 1,
+          title: "Opening",
+          summary: "The hero sees the signal.",
+          beats: [],
+        },
+      ],
+    },
+    createdAt: "2026-06-12T00:00:00.000Z",
+    updatedAt: "2026-06-12T00:00:00.000Z",
+  };
+}
+
 describe("NovelStoryboardPanel", () => {
   it("renders novel source controls and a storyboard draft preview", () => {
     const html = renderToStaticMarkup(
@@ -147,6 +223,7 @@ describe("NovelStoryboardPanel", () => {
         initialNovels={[novel()]}
         initialDraft={draft()}
         initialEventGraph={eventGraph()}
+        initialScriptDrafts={[scriptDraft()]}
       />,
     );
 
@@ -164,6 +241,11 @@ describe("NovelStoryboardPanel", () => {
     expect(html).toContain("Script");
     expect(html).toContain("Create script");
     expect(html).toContain("Faithful");
+    expect(html).toContain("Workspace");
+    expect(html).toContain("Skeleton beats");
+    expect(html).toContain("Adaptation strategy");
+    expect(html).toContain("Script scenes");
+    expect(html).toContain("Save workspace");
     expect(html).toContain("Save draft");
     expect(html).toContain("Mark ready");
     expect(html).toContain("Import");

@@ -695,6 +695,53 @@ describe("shared domain constants", () => {
       title: "Rooftop Signal v1",
       strategy: "short_drama",
       status: "draft",
+      workspace: {
+        storySkeleton: {
+          title: "Rooftop Signal v1",
+          logline: "A compact script draft.",
+          sourceChapterIndexes: [1],
+          sourceEventIds: ["event_1"],
+          beats: [
+            {
+              beatId: "beat_1",
+              orderIndex: 1,
+              title: "Signal",
+              summary: "Hero sees the signal.",
+              chapterIndex: 1,
+              eventIds: ["event_1"],
+            },
+          ],
+        },
+        adaptationStrategy: {
+          strategy: "short_drama",
+          summary: "Keep the signal as the first hook.",
+          targetFormat: "Short-drama",
+          supervisionNotes: "Review event coverage before storyboard generation.",
+        },
+        script: {
+          title: "Rooftop Signal v1",
+          logline: "A compact script draft.",
+          strategy: "short_drama",
+          scenes: [
+            {
+              sceneId: "script_scene_1",
+              orderIndex: 1,
+              title: "Opening",
+              summary: "Hero sees the signal.",
+              beats: [
+                {
+                  beatId: "beat_1",
+                  orderIndex: 1,
+                  title: "Signal",
+                  summary: "Hero sees the signal.",
+                  chapterIndex: 1,
+                  eventIds: ["event_1"],
+                },
+              ],
+            },
+          ],
+        },
+      },
       script: {
         title: "Rooftop Signal v1",
         logline: "A compact script draft.",
@@ -711,6 +758,7 @@ describe("shared domain constants", () => {
                 orderIndex: 1,
                 title: "Signal",
                 summary: "Hero sees the signal.",
+                chapterIndex: 1,
                 eventIds: ["event_1"],
               },
             ],
@@ -722,6 +770,7 @@ describe("shared domain constants", () => {
     };
 
     expect(scriptDraft.script.scenes[0]?.beats[0]?.eventIds).toEqual(["event_1"]);
+    expect(scriptDraft.workspace.storySkeleton.sourceChapterIndexes).toEqual([1]);
   });
 
   it("models TF-16 audio bindings across nodes and editor export clips", () => {

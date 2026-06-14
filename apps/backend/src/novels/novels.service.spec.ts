@@ -93,16 +93,32 @@ function novelEventGraph(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function scriptDraft(overrides: Record<string, unknown> = {}) {
+function scriptWorkspace(overrides: Record<string, unknown> = {}) {
   return {
-    id: "script_1",
-    projectId: "project_1",
-    novelDocumentId: "novel_1",
-    version: 1,
-    title: "Rooftop Signal Script v1",
-    strategy: "short_drama",
-    status: "draft",
-    scriptJson: {
+    storySkeleton: {
+      title: "Rooftop Signal Script v1",
+      logline: "Short-drama adaptation of Rooftop Signal across 1 scene.",
+      sourceChapterIndexes: [1],
+      sourceEventIds: ["chapter_1_event_1"],
+      beats: [
+        {
+          beatId: "beat_1",
+          orderIndex: 1,
+          title: "Chapter 1 Event 1",
+          summary: "The hero finds the signal under the rain.",
+          chapterIndex: 1,
+          sourceExcerpt: "The hero finds the signal under the rain.",
+          eventIds: ["chapter_1_event_1"],
+        },
+      ],
+    },
+    adaptationStrategy: {
+      strategy: "short_drama",
+      summary: "Short-drama adaptation using the first signal event.",
+      targetFormat: "Short-drama",
+      supervisionNotes: "Review event coverage before storyboard generation.",
+    },
+    script: {
       title: "Rooftop Signal Script v1",
       logline: "Short-drama adaptation of Rooftop Signal across 1 scene.",
       strategy: "short_drama",
@@ -118,6 +134,7 @@ function scriptDraft(overrides: Record<string, unknown> = {}) {
               orderIndex: 1,
               title: "Chapter 1 Event 1",
               summary: "The hero finds the signal under the rain.",
+              chapterIndex: 1,
               sourceExcerpt: "The hero finds the signal under the rain.",
               eventIds: ["chapter_1_event_1"],
             },
@@ -127,6 +144,20 @@ function scriptDraft(overrides: Record<string, unknown> = {}) {
         },
       ],
     },
+    ...overrides,
+  };
+}
+
+function scriptDraft(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "script_1",
+    projectId: "project_1",
+    novelDocumentId: "novel_1",
+    version: 1,
+    title: "Rooftop Signal Script v1",
+    strategy: "short_drama",
+    status: "draft",
+    scriptJson: scriptWorkspace(),
     createdAt,
     updatedAt,
     ...overrides,
@@ -508,12 +539,84 @@ describe("NovelsService", () => {
           version: 1,
           strategy: "short_drama",
           status: "draft",
+          scriptJson: expect.objectContaining({
+            storySkeleton: expect.objectContaining({
+              sourceEventIds: ["chapter_1_event_1"],
+              sourceChapterIndexes: [1],
+            }),
+            adaptationStrategy: expect.objectContaining({
+              strategy: "short_drama",
+            }),
+            script: expect.objectContaining({
+              title: "Rooftop Signal Script v1",
+            }),
+          }),
         }),
       }),
     );
     expect(result.scriptDraft.script.scenes[0]?.beats[0]?.eventIds).toEqual([
       "chapter_1_event_1",
     ]);
+    expect(result.scriptDraft.workspace.storySkeleton.sourceEventIds).toEqual([
+      "chapter_1_event_1",
+    ]);
+    expect(result.scriptDraft.workspace.adaptationStrategy.supervisionNotes).toContain(
+      "Review skeleton",
+    );
+  });
+
+  it("updates editable script draft workspace fields", async () => {
+    const workspace = scriptWorkspace();
+    prisma.novelDocument.findFirst.mockResolvedValue(novel());
+    prisma.scriptDraft.findFirst.mockResolvedValue(scriptDraft({ scriptJson: workspace }));
+    prisma.scriptDraft.update.mockImplementation(async ({ data }) =>
+      scriptDraft({
+        ...data,
+        scriptJson: data.scriptJson,
+      }),
+    );
+
+    const result = await service.updateScriptDraft("project_1", "novel_1", "script_1", {
+      workspace: {
+        ...workspace,
+        storySkeleton: {
+          ...workspace.storySkeleton,
+          logline: "Updated skeleton logline.",
+        },
+        adaptationStrategy: {
+          ...workspace.adaptationStrategy,
+          strategy: "visual_first",
+          revisionNotes: "Lean into the rooftop silhouette.",
+        },
+        script: {
+          ...workspace.script,
+          title: "Visual Rooftop Signal",
+          logline: "Updated script logline.",
+          strategy: "visual_first",
+        },
+      },
+    });
+
+    expect(prisma.scriptDraft.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "script_1" },
+        data: expect.objectContaining({
+          title: "Visual Rooftop Signal",
+          strategy: "visual_first",
+          status: "draft",
+          scriptJson: expect.objectContaining({
+            storySkeleton: expect.objectContaining({
+              logline: "Updated skeleton logline.",
+            }),
+            adaptationStrategy: expect.objectContaining({
+              revisionNotes: "Lean into the rooftop silhouette.",
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(result.scriptDraft.workspace.script.logline).toBe("Updated script logline.");
+    expect(result.scriptDraft.strategy).toBe("visual_first");
   });
 
   it("exports script drafts as plain text and marks them exported", async () => {
@@ -524,6 +627,8 @@ describe("NovelsService", () => {
 
     expect(result.filename).toBe("rooftop-signal-script-v1-v1.txt");
     expect(result.content).toContain("# Rooftop Signal Script v1");
+    expect(result.content).toContain("## Story Skeleton");
+    expect(result.content).toContain("## Adaptation Strategy");
     expect(result.content).toContain("Chapter 1 Event 1");
     expect(prisma.scriptDraft.update).toHaveBeenCalledWith({
       where: { id: "script_1" },

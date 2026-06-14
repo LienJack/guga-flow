@@ -9,6 +9,7 @@ export interface ScriptBeat {
   orderIndex: number;
   title: string;
   summary: string;
+  chapterIndex?: number;
   sourceExcerpt?: string;
   eventIds?: string[];
 }
@@ -30,6 +31,28 @@ export interface ScriptDraftContent {
   scenes: ScriptScene[];
 }
 
+export interface ScriptStorySkeleton {
+  title: string;
+  logline: string;
+  sourceChapterIndexes: number[];
+  sourceEventIds: string[];
+  beats: ScriptBeat[];
+}
+
+export interface ScriptAdaptationPlan {
+  strategy: ScriptAdaptationStrategy;
+  summary: string;
+  targetFormat: string;
+  supervisionNotes?: string;
+  revisionNotes?: string;
+}
+
+export interface ScriptDraftWorkspace {
+  storySkeleton: ScriptStorySkeleton;
+  adaptationStrategy: ScriptAdaptationPlan;
+  script: ScriptDraftContent;
+}
+
 export interface ScriptDraftRecord {
   id: string;
   projectId: string;
@@ -38,6 +61,7 @@ export interface ScriptDraftRecord {
   title: string;
   strategy: ScriptAdaptationStrategy;
   status: ScriptDraftStatus;
+  workspace: ScriptDraftWorkspace;
   script: ScriptDraftContent;
   createdAt: string;
   updatedAt: string;
@@ -49,6 +73,15 @@ export interface CreateScriptDraftInput {
 }
 
 export interface CreateScriptDraftResult {
+  scriptDraft: ScriptDraftRecord;
+}
+
+export interface UpdateScriptDraftInput {
+  title?: string;
+  workspace?: ScriptDraftWorkspace;
+}
+
+export interface UpdateScriptDraftResult {
   scriptDraft: ScriptDraftRecord;
 }
 

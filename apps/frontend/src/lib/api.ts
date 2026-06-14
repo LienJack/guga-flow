@@ -109,6 +109,8 @@ import type {
   UpdateProjectInput,
   UpdateNovelChapterInput,
   UpdateNovelChapterResult,
+  UpdateScriptDraftInput,
+  UpdateScriptDraftResult,
   ValidateProjectSettingsImportInput,
   UpdateCanvasNodeGeometryInput,
   UpdateCanvasNodeGeometryResult,
@@ -518,6 +520,21 @@ export function createScriptDraft(
     `/projects/${projectId}/novels/${novelId}/script-drafts`,
     {
       method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function updateScriptDraft(
+  projectId: string,
+  novelId: string,
+  scriptDraftId: string,
+  input: UpdateScriptDraftInput,
+): Promise<UpdateScriptDraftResult> {
+  return requestJson<UpdateScriptDraftResult>(
+    `/projects/${projectId}/novels/${novelId}/script-drafts/${scriptDraftId}`,
+    {
+      method: "PATCH",
       body: JSON.stringify(input),
     },
   );

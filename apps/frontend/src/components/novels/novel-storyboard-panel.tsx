@@ -10,7 +10,10 @@ import type {
   NovelDocumentRecord,
   NovelEventGraphRecord,
   ScriptAdaptationStrategy,
+  ScriptBeat,
   ScriptDraftRecord,
+  ScriptDraftWorkspace,
+  ScriptScene,
   StoryboardDraftRecord,
   StoryboardResult,
 } from "@guga-flow/shared-types";
@@ -37,6 +40,7 @@ import {
   markStoryboardDraftReady,
   updateNovelChapter,
   updateNovelDocument,
+  updateScriptDraft,
   updateStoryboardDraft,
 } from "../../lib/api";
 import { CreativeAgentEntry } from "./creative-agent-entry";
@@ -57,6 +61,7 @@ interface NovelStoryboardPanelProps {
   initialNovels?: NovelDocumentRecord[];
   initialDraft?: StoryboardDraftRecord;
   initialEventGraph?: NovelEventGraphRecord;
+  initialScriptDrafts?: ScriptDraftRecord[];
   onStoryboardImported?: (result: ImportStoryboardToCanvasResult) => void;
 }
 
@@ -81,6 +86,7 @@ export function NovelStoryboardPanel({
   initialNovels = [],
   initialDraft,
   initialEventGraph,
+  initialScriptDrafts = [],
   onStoryboardImported,
 }: NovelStoryboardPanelProps) {
   const [novels, setNovels] = useState<NovelDocumentRecord[]>(initialNovels);
@@ -99,7 +105,14 @@ export function NovelStoryboardPanel({
   const [chapterDetail, setChapterDetail] = useState<NovelChapterDetail | undefined>();
   const [chapterTitle, setChapterTitle] = useState("");
   const [chapterContent, setChapterContent] = useState("");
-  const [scriptDrafts, setScriptDrafts] = useState<ScriptDraftRecord[]>([]);
+  const [scriptDrafts, setScriptDrafts] = useState<ScriptDraftRecord[]>(initialScriptDrafts);
+  const [selectedScriptDraftId, setSelectedScriptDraftId] = useState<string | undefined>(
+    initialScriptDrafts[0]?.id,
+  );
+  const [scriptWorkspace, setScriptWorkspace] = useState<ScriptDraftWorkspace | undefined>(
+    initialScriptDrafts[0] ? cloneWorkspace(initialScriptDrafts[0].workspace) : undefined,
+  );
+  const [scriptWorkspaceDirty, setScriptWorkspaceDirty] = useState(false);
   const [scriptStrategy, setScriptStrategy] = useState<ScriptAdaptationStrategy>("faithful");
   const [draftDirty, setDraftDirty] = useState(false);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
@@ -110,6 +123,10 @@ export function NovelStoryboardPanel({
   const selectedNovel = useMemo(
     () => novels.find((novel) => novel.id === selectedNovelId),
     [novels, selectedNovelId],
+  );
+  const selectedScriptDraft = useMemo(
+    () => scriptDrafts.find((scriptDraft) => scriptDraft.id === selectedScriptDraftId),
+    [scriptDrafts, selectedScriptDraftId],
   );
   const draftState = buildStoryboardDraftUiState(
     draft && storyboard ? { ...draft, storyboard, readyForImport: draftDirty ? false : draft.readyForImport } : draft,
@@ -159,6 +176,9 @@ export function NovelStoryboardPanel({
     setChapterTitle("");
     setChapterContent("");
     setScriptDrafts([]);
+    setSelectedScriptDraftId(undefined);
+    setScriptWorkspace(undefined);
+    setScriptWorkspaceDirty(false);
     setConfirmNewVersion(false);
   }, [selectedNovel]);
 
@@ -258,6 +278,11 @@ export function NovelStoryboardPanel({
       .then((result) => {
         if (!ignore) {
           setScriptDrafts(result.scriptDrafts);
+          setSelectedScriptDraftId((current) =>
+            current && result.scriptDrafts.some((scriptDraft) => scriptDraft.id === current)
+              ? current
+              : result.scriptDrafts[0]?.id,
+          );
         }
       })
       .catch((loadError: unknown) => {
@@ -270,6 +295,11 @@ export function NovelStoryboardPanel({
       ignore = true;
     };
   }, [projectId, selectedNovelId]);
+
+  useEffect(() => {
+    setScriptWorkspace(selectedScriptDraft ? cloneWorkspace(selectedScriptDraft.workspace) : undefined);
+    setScriptWorkspaceDirty(false);
+  }, [selectedScriptDraft]);
 
   useEffect(() => {
     if (!selectedNovelId) {
@@ -430,7 +460,28 @@ export function NovelStoryboardPanel({
         result.scriptDraft,
         ...current.filter((draftItem) => draftItem.id !== result.scriptDraft.id),
       ]);
+      setSelectedScriptDraftId(result.scriptDraft.id);
+      setScriptWorkspace(cloneWorkspace(result.scriptDraft.workspace));
+      setScriptWorkspaceDirty(false);
       setNotice("Script draft created");
+    });
+  }
+
+  async function handleSaveScriptWorkspace() {
+    if (!selectedNovel || !selectedScriptDraft || !scriptWorkspace) {
+      return;
+    }
+    await runAction("script", async () => {
+      const result = await updateScriptDraft(projectId, selectedNovel.id, selectedScriptDraft.id, {
+        workspace: scriptWorkspace,
+      });
+      setScriptDrafts((current) =>
+        current.map((item) => (item.id === result.scriptDraft.id ? result.scriptDraft : item)),
+      );
+      setSelectedScriptDraftId(result.scriptDraft.id);
+      setScriptWorkspace(cloneWorkspace(result.scriptDraft.workspace));
+      setScriptWorkspaceDirty(false);
+      setNotice("Script workspace saved");
     });
   }
 
@@ -628,6 +679,64 @@ export function NovelStoryboardPanel({
     }
   }
 
+  function updateScriptWorkspace(
+    updater: (workspace: ScriptDraftWorkspace) => ScriptDraftWorkspace,
+  ) {
+    setScriptWorkspace((current) => {
+      if (!current) {
+        return current;
+      }
+      setScriptWorkspaceDirty(true);
+      return updater(current);
+    });
+  }
+
+  function updateSkeleton<K extends keyof ScriptDraftWorkspace["storySkeleton"]>(
+    key: K,
+    value: ScriptDraftWorkspace["storySkeleton"][K],
+  ) {
+    updateScriptWorkspace((workspace) => ({
+      ...workspace,
+      storySkeleton: {
+        ...workspace.storySkeleton,
+        [key]: value,
+      },
+    }));
+  }
+
+  function updateAdaptation<K extends keyof ScriptDraftWorkspace["adaptationStrategy"]>(
+    key: K,
+    value: ScriptDraftWorkspace["adaptationStrategy"][K],
+  ) {
+    updateScriptWorkspace((workspace) => {
+      const nextAdaptation = {
+        ...workspace.adaptationStrategy,
+        [key]: value,
+      };
+      return {
+        ...workspace,
+        adaptationStrategy: nextAdaptation,
+        script:
+          key === "strategy"
+            ? { ...workspace.script, strategy: value as ScriptAdaptationStrategy }
+            : workspace.script,
+      };
+    });
+  }
+
+  function updateScript<K extends keyof ScriptDraftWorkspace["script"]>(
+    key: K,
+    value: ScriptDraftWorkspace["script"][K],
+  ) {
+    updateScriptWorkspace((workspace) => ({
+      ...workspace,
+      script: {
+        ...workspace.script,
+        [key]: value,
+      },
+    }));
+  }
+
   function handleCreativeStoryboardCreated(result: CreateCreativeStoryboardResult) {
     replaceNovel(result.novel);
     setSelectedNovelId(result.novel.id);
@@ -823,12 +932,17 @@ export function NovelStoryboardPanel({
             <ul className="script-draft-list">
               {scriptDrafts.map((scriptDraft) => (
                 <li className="script-draft-row" key={scriptDraft.id}>
-                  <div>
-                    <strong>{scriptDraft.title}</strong>
+                  <button
+                    className={`novel-select ${selectedScriptDraftId === scriptDraft.id ? "active" : ""}`}
+                    type="button"
+                    onClick={() => setSelectedScriptDraftId(scriptDraft.id)}
+                  >
+                    <FileText size={15} aria-hidden="true" />
+                    <span>{scriptDraft.title}</span>
                     <span>
                       v{scriptDraft.version} · {formatScriptStrategy(scriptDraft.strategy)} · {scriptDraft.status}
                     </span>
-                  </div>
+                  </button>
                   <div className="storyboard-action-row">
                     <button
                       className="ghost-action compact"
@@ -853,6 +967,17 @@ export function NovelStoryboardPanel({
               ))}
             </ul>
           )}
+          {selectedScriptDraft && scriptWorkspace ? (
+            <ScriptWorkspaceEditor
+              busy={Boolean(busyAction)}
+              dirty={scriptWorkspaceDirty}
+              workspace={scriptWorkspace}
+              onAdaptationChange={updateAdaptation}
+              onSave={() => void handleSaveScriptWorkspace()}
+              onScriptChange={updateScript}
+              onSkeletonChange={updateSkeleton}
+            />
+          ) : null}
         </section>
       ) : null}
 
@@ -943,6 +1068,151 @@ interface ChapterEventWorkbenchProps {
   onChapterContentChange: (content: string) => void;
   onUpdateChapter: (event: FormEvent<HTMLFormElement>) => void;
   onExtractChapterEvents: () => void;
+}
+
+interface ScriptWorkspaceEditorProps {
+  busy: boolean;
+  dirty: boolean;
+  workspace: ScriptDraftWorkspace;
+  onSkeletonChange: <K extends keyof ScriptDraftWorkspace["storySkeleton"]>(
+    key: K,
+    value: ScriptDraftWorkspace["storySkeleton"][K],
+  ) => void;
+  onAdaptationChange: <K extends keyof ScriptDraftWorkspace["adaptationStrategy"]>(
+    key: K,
+    value: ScriptDraftWorkspace["adaptationStrategy"][K],
+  ) => void;
+  onScriptChange: <K extends keyof ScriptDraftWorkspace["script"]>(
+    key: K,
+    value: ScriptDraftWorkspace["script"][K],
+  ) => void;
+  onSave: () => void;
+}
+
+function ScriptWorkspaceEditor({
+  busy,
+  dirty,
+  workspace,
+  onAdaptationChange,
+  onSave,
+  onScriptChange,
+  onSkeletonChange,
+}: ScriptWorkspaceEditorProps) {
+  return (
+    <form
+      className="novel-detail-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave();
+      }}
+    >
+      <div className="panel-heading compact">
+        <h2>Workspace</h2>
+        <span>{dirty ? "Edited" : "Saved"}</span>
+      </div>
+      <label className="field-label">
+        <span>Skeleton title</span>
+        <input
+          name="script-skeleton-title"
+          value={workspace.storySkeleton.title}
+          onChange={(event) => onSkeletonChange("title", event.target.value)}
+        />
+      </label>
+      <label className="field-label">
+        <span>Story skeleton</span>
+        <textarea
+          name="script-skeleton-logline"
+          rows={3}
+          value={workspace.storySkeleton.logline}
+          onChange={(event) => onSkeletonChange("logline", event.target.value)}
+        />
+      </label>
+      <label className="field-label">
+        <span>Skeleton beats</span>
+        <textarea
+          name="script-skeleton-beats"
+          rows={4}
+          value={scriptBeatsText(workspace.storySkeleton.beats)}
+          onChange={(event) =>
+            onSkeletonChange("beats", scriptBeatsFromText(event.target.value, workspace.storySkeleton.beats))
+          }
+        />
+      </label>
+      <div className="storyboard-action-row">
+        <label className="field-label script-strategy-field">
+          <span>Strategy</span>
+          <select
+            name="workspace-script-strategy"
+            value={workspace.adaptationStrategy.strategy}
+            onChange={(event) => onAdaptationChange("strategy", event.target.value as ScriptAdaptationStrategy)}
+          >
+            <option value="faithful">Faithful</option>
+            <option value="short_drama">Short drama</option>
+            <option value="visual_first">Visual first</option>
+          </select>
+        </label>
+      </div>
+      <label className="field-label">
+        <span>Adaptation strategy</span>
+        <textarea
+          name="script-adaptation-summary"
+          rows={3}
+          value={workspace.adaptationStrategy.summary}
+          onChange={(event) => onAdaptationChange("summary", event.target.value)}
+        />
+      </label>
+      <label className="field-label">
+        <span>Supervision</span>
+        <textarea
+          name="script-supervision-notes"
+          rows={2}
+          value={workspace.adaptationStrategy.supervisionNotes ?? ""}
+          onChange={(event) => onAdaptationChange("supervisionNotes", event.target.value)}
+        />
+      </label>
+      <label className="field-label">
+        <span>Revision</span>
+        <textarea
+          name="script-revision-notes"
+          rows={2}
+          value={workspace.adaptationStrategy.revisionNotes ?? ""}
+          onChange={(event) => onAdaptationChange("revisionNotes", event.target.value)}
+        />
+      </label>
+      <label className="field-label">
+        <span>Script title</span>
+        <input
+          name="workspace-script-title"
+          value={workspace.script.title}
+          onChange={(event) => onScriptChange("title", event.target.value)}
+        />
+      </label>
+      <label className="field-label">
+        <span>Script logline</span>
+        <textarea
+          name="workspace-script-logline"
+          rows={3}
+          value={workspace.script.logline}
+          onChange={(event) => onScriptChange("logline", event.target.value)}
+        />
+      </label>
+      <label className="field-label">
+        <span>Script scenes</span>
+        <textarea
+          name="workspace-script-scenes"
+          rows={5}
+          value={scriptScenesText(workspace.script.scenes)}
+          onChange={(event) =>
+            onScriptChange("scenes", scriptScenesFromText(event.target.value, workspace.script.scenes))
+          }
+        />
+      </label>
+      <button className="primary-action compact" type="submit" disabled={busy || !dirty}>
+        <Save size={15} aria-hidden="true" />
+        Save workspace
+      </button>
+    </form>
+  );
 }
 
 function ChapterEventWorkbench({
@@ -1067,6 +1337,60 @@ function ChapterEventWorkbench({
 function toChapterSummary(chapter: NovelChapterDetail): NovelChapterSummary {
   const { content: _content, events: _events, ...summary } = chapter;
   return summary;
+}
+
+function cloneWorkspace(workspace: ScriptDraftWorkspace): ScriptDraftWorkspace {
+  return JSON.parse(JSON.stringify(workspace)) as ScriptDraftWorkspace;
+}
+
+function scriptBeatsText(beats: readonly ScriptBeat[]): string {
+  return beats.map((beat) => `${beat.title}: ${beat.summary}`).join("\n");
+}
+
+function scriptBeatsFromText(value: string, current: readonly ScriptBeat[]): ScriptBeat[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const currentBeat = current[index];
+      const [titlePart, ...summaryParts] = line.split(":");
+      const summary = summaryParts.join(":").trim() || line;
+      return {
+        ...(currentBeat ?? {
+          beatId: `beat_${index + 1}`,
+          eventIds: [],
+        }),
+        orderIndex: index + 1,
+        title: titlePart?.trim() || `Beat ${index + 1}`,
+        summary,
+      };
+    });
+}
+
+function scriptScenesText(scenes: readonly ScriptScene[]): string {
+  return scenes.map((scene) => `${scene.title}: ${scene.summary}`).join("\n");
+}
+
+function scriptScenesFromText(value: string, current: readonly ScriptScene[]): ScriptScene[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const currentScene = current[index];
+      const [titlePart, ...summaryParts] = line.split(":");
+      const summary = summaryParts.join(":").trim() || line;
+      return {
+        ...(currentScene ?? {
+          sceneId: `script_scene_${index + 1}`,
+          beats: [],
+        }),
+        orderIndex: index + 1,
+        title: titlePart?.trim() || `Scene ${index + 1}`,
+        summary,
+      };
+    });
 }
 
 function chapterStatusLabel(state: NovelChapterSummary["eventState"]): string {

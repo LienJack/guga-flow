@@ -9,6 +9,7 @@ import {
   ImportNovelSourceDto,
   UpdateNovelChapterDto,
   UpdateNovelDocumentDto,
+  UpdateScriptDraftDto,
   UpdateStoryboardDraftDto,
 } from "./dto";
 import { NovelsService } from "./novels.service";
@@ -124,6 +125,16 @@ export class NovelsController {
     @Body() body: CreateScriptDraftDto,
   ) {
     return this.novelsService.createScriptDraft(projectId, novelId, body ?? {});
+  }
+
+  @Patch(":novelId/script-drafts/:scriptDraftId")
+  updateScriptDraft(
+    @Param("projectId") projectId: string,
+    @Param("novelId") novelId: string,
+    @Param("scriptDraftId") scriptDraftId: string,
+    @Body() body: UpdateScriptDraftDto,
+  ) {
+    return this.novelsService.updateScriptDraft(projectId, novelId, scriptDraftId, body ?? {});
   }
 
   @Get(":novelId/script-drafts/:scriptDraftId/export")

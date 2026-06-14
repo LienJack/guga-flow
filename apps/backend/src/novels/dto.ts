@@ -10,6 +10,7 @@ import type {
   NovelLanguage,
   NovelSourceType,
   UpdateNovelChapterInput,
+  UpdateScriptDraftInput,
   UpdateStoryboardDraftInput,
   UpdateNovelDocumentInput,
 } from "@guga-flow/shared-types";
@@ -192,4 +193,15 @@ export class CreateScriptDraftDto implements CreateScriptDraftInput {
   @IsOptional()
   @IsIn(SCRIPT_ADAPTATION_STRATEGIES)
   strategy?: ScriptAdaptationStrategy;
+}
+
+export class UpdateScriptDraftDto implements UpdateScriptDraftInput {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  title?: string;
+
+  @IsOptional()
+  workspace?: UpdateScriptDraftInput["workspace"];
 }

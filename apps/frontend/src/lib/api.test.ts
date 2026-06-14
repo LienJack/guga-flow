@@ -78,6 +78,7 @@ import {
   sendEditorExportToLocalEditor,
   updateStoryboardDraft,
   updateNovelChapter,
+  updateScriptDraft,
   undoAgentCanvasAction,
   createWorkflowDefinition,
   createWorkflowVersion,
@@ -1272,6 +1273,37 @@ describe("frontend api client", () => {
     await getNovelEventGraph("project_1", "novel_1");
     await listScriptDrafts("project_1", "novel_1");
     await createScriptDraft("project_1", "novel_1", { strategy: "short_drama" });
+    await updateScriptDraft("project_1", "novel_1", "script_1", {
+      workspace: {
+        storySkeleton: {
+          title: "Rooftop story",
+          logline: "Skeleton logline",
+          sourceChapterIndexes: [1],
+          sourceEventIds: ["chapter_1_event_1"],
+          beats: [
+            {
+              beatId: "beat_1",
+              orderIndex: 1,
+              title: "Opening beat",
+              summary: "Hero sees the signal.",
+              chapterIndex: 1,
+              eventIds: ["chapter_1_event_1"],
+            },
+          ],
+        },
+        adaptationStrategy: {
+          strategy: "short_drama",
+          summary: "Short drama hook first.",
+          targetFormat: "Short-drama",
+        },
+        script: {
+          title: "Rooftop story",
+          logline: "Script logline",
+          strategy: "short_drama",
+          scenes: [],
+        },
+      },
+    });
     await exportScriptDraft("project_1", "novel_1", "script_1");
     await generateStoryboardFromScriptDraft("project_1", "novel_1", "script_1");
 
@@ -1366,11 +1398,19 @@ describe("frontend api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       12,
+      "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/script-drafts/script_1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining("storySkeleton"),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      13,
       "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/script-drafts/script_1/export",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      13,
+      14,
       "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/script-drafts/script_1/generate-storyboard",
       expect.objectContaining({ method: "POST" }),
     );

@@ -31,13 +31,16 @@ import type {
   CreateScriptDraftInput,
   CreateScriptDraftResult,
   ScriptAdaptationStrategy,
+  ScriptAdaptationPlan,
   ScriptBeat,
   ScriptDraftContent,
   ScriptDraftListResult,
   ScriptDraftRecord,
   ScriptDraftStatus,
+  ScriptDraftWorkspace,
   ScriptExportResult,
   ScriptScene,
+  ScriptStorySkeleton,
   StoryboardResult,
   StoryTimelineEvent,
   StorySeedReference,
@@ -49,6 +52,8 @@ import type {
   UpdateNovelChapterResult,
   UpdateNovelDocumentInput,
   UpdateNovelDocumentResult,
+  UpdateScriptDraftInput,
+  UpdateScriptDraftResult,
 } from "@guga-flow/shared-types";
 import {
   CREATIVE_AGENT_MODES,
@@ -352,6 +357,16 @@ function uniqueStrings(values: readonly string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
+function uniqueNumbers(values: readonly unknown[]): number[] {
+  return Array.from(
+    new Set(
+      values.filter(
+        (value): value is number => typeof value === "number" && Number.isInteger(value) && value > 0,
+      ),
+    ),
+  ).sort((left, right) => left - right);
+}
+
 function optionalDataString(value: unknown, key: string): string | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return undefined;
@@ -557,7 +572,7 @@ export class NovelsService {
     const version = (latestDrafts[0]?.version ?? 0) + 1;
     const eventGraph = await this.findLatestEventGraph(projectId, novel.id);
     const title = normalizeOptionalText(input.title) ?? `${novel.title} Script v${version}`;
-    const script = this.buildScriptDraftContent(
+    const workspace = this.buildScriptWorkspace(
       novel,
       strategy,
       version,
@@ -570,10 +585,38 @@ export class NovelsService {
         projectId,
         novelDocumentId: novel.id,
         version,
-        title: script.title,
+        title: workspace.script.title,
         strategy,
         status: "draft",
-        scriptJson: jsonValue(script),
+        scriptJson: jsonValue(workspace),
+      },
+    })) as ScriptDraftModel;
+
+    return { scriptDraft: this.toScriptDraftRecord(scriptDraft) };
+  }
+
+  async updateScriptDraft(
+    projectId: string,
+    novelId: string,
+    scriptDraftId: string,
+    input: UpdateScriptDraftInput,
+  ): Promise<UpdateScriptDraftResult> {
+    const existing = await this.findScriptDraft(projectId, novelId, scriptDraftId);
+    const current = this.toScriptDraftRecord(existing);
+    const workspace = this.normalizeScriptWorkspace(
+      input.workspace ?? current.workspace,
+      {
+        title: normalizeOptionalText(input.title) ?? current.title,
+        strategy: current.strategy,
+      },
+    );
+    const scriptDraft = (await this.prisma.scriptDraft.update({
+      where: { id: existing.id },
+      data: {
+        title: workspace.script.title,
+        strategy: workspace.adaptationStrategy.strategy,
+        status: "draft",
+        scriptJson: jsonValue(workspace),
       },
     })) as ScriptDraftModel;
 
@@ -595,7 +638,7 @@ export class NovelsService {
     return {
       scriptDraftId: scriptDraft.id,
       filename: this.scriptExportFilename(record),
-      content: this.scriptExportContent(record.script),
+      content: this.scriptWorkspaceExportContent(record.workspace),
     };
   }
 
@@ -1057,12 +1100,82 @@ export class NovelsService {
     };
   }
 
+  private buildScriptWorkspace(
+    novel: NovelDocumentModel,
+    strategy: ScriptAdaptationStrategy,
+    version: number,
+    eventGraph?: NovelEventGraphRecord,
+    title = `${novel.title} Script v${version}`,
+  ): ScriptDraftWorkspace {
+    const script = this.buildScriptDraftContent(novel, strategy, version, eventGraph, title);
+    const storySkeleton = this.buildStorySkeleton(script, eventGraph);
+    return {
+      storySkeleton,
+      adaptationStrategy: this.buildAdaptationPlan(novel, strategy, script, storySkeleton),
+      script,
+    };
+  }
+
+  private buildStorySkeleton(
+    script: ScriptDraftContent,
+    eventGraph?: NovelEventGraphRecord,
+  ): ScriptStorySkeleton {
+    const beats = script.scenes.flatMap((scene) => scene.beats);
+    const sourceEventIds = uniqueStrings(beats.flatMap((beat) => beat.eventIds ?? []));
+    const chapterIndexes = new Set<number>();
+    const eventById = new Map((eventGraph?.events ?? []).map((event) => [event.eventId, event]));
+    const skeletonBeats = beats.map((beat) => {
+      const sourceEvent = (beat.eventIds ?? []).map((eventId) => eventById.get(eventId)).find(Boolean);
+      if (sourceEvent?.chapterIndex) {
+        chapterIndexes.add(sourceEvent.chapterIndex);
+      }
+      return {
+        ...beat,
+        ...(sourceEvent?.chapterIndex ? { chapterIndex: sourceEvent.chapterIndex } : {}),
+      };
+    });
+
+    return {
+      title: script.title,
+      logline: script.logline,
+      sourceChapterIndexes: Array.from(chapterIndexes).sort((left, right) => left - right),
+      sourceEventIds,
+      beats: skeletonBeats,
+    };
+  }
+
+  private buildAdaptationPlan(
+    novel: NovelDocumentModel,
+    strategy: ScriptAdaptationStrategy,
+    script: ScriptDraftContent,
+    storySkeleton: ScriptStorySkeleton,
+  ): ScriptAdaptationPlan {
+    const strategyLabel =
+      strategy === "short_drama"
+        ? "Short-drama"
+        : strategy === "visual_first"
+          ? "Visual-first"
+          : "Faithful";
+    const eventCoverage =
+      storySkeleton.sourceEventIds.length > 0
+        ? `${storySkeleton.sourceEventIds.length} event${storySkeleton.sourceEventIds.length === 1 ? "" : "s"}`
+        : "source prose";
+
+    return {
+      strategy,
+      summary: `${strategyLabel} adaptation of ${novel.title} using ${eventCoverage} across ${script.scenes.length} scene${script.scenes.length === 1 ? "" : "s"}.`,
+      targetFormat: strategyLabel,
+      supervisionNotes: "Review skeleton coverage, scene order, and visual clarity before storyboard generation.",
+    };
+  }
+
   private scriptBeatsFromEventGraph(eventGraph: NovelEventGraphRecord): ScriptBeat[] {
     return eventGraph.events.slice(0, 12).map((event, index) => ({
       beatId: `beat_${index + 1}`,
       orderIndex: index + 1,
       title: event.title ?? `Event ${index + 1}`,
       summary: truncateText(event.summary, 220),
+      ...(event.chapterIndex ? { chapterIndex: event.chapterIndex } : {}),
       ...(event.sourceExcerpt ? { sourceExcerpt: event.sourceExcerpt } : {}),
       eventIds: [event.eventId],
     }));
@@ -1118,7 +1231,55 @@ export class NovelsService {
   }
 
   private scriptExportContent(script: ScriptDraftContent): string {
-    const lines = [`# ${script.title}`, "", script.logline, "", `Strategy: ${script.strategy}`, ""];
+    const workspace = this.normalizeScriptWorkspace(
+      {
+        storySkeleton: {
+          title: script.title,
+          logline: script.logline,
+          sourceChapterIndexes: [],
+          sourceEventIds: [],
+          beats: script.scenes.flatMap((scene) => scene.beats),
+        },
+        adaptationStrategy: {
+          strategy: script.strategy,
+          summary: `Script strategy: ${script.strategy}`,
+          targetFormat: script.strategy,
+        },
+        script,
+      },
+      { title: script.title, strategy: script.strategy },
+    );
+    return this.scriptWorkspaceExportContent(workspace);
+  }
+
+  private scriptWorkspaceExportContent(workspace: ScriptDraftWorkspace): string {
+    const lines = [
+      `# ${workspace.script.title}`,
+      "",
+      workspace.script.logline,
+      "",
+      "## Story Skeleton",
+      "",
+      workspace.storySkeleton.logline,
+      "",
+      ...workspace.storySkeleton.beats.map(
+        (beat) => `- ${beat.orderIndex}. ${beat.title}: ${beat.summary}`,
+      ),
+      "",
+      "## Adaptation Strategy",
+      "",
+      `Strategy: ${workspace.adaptationStrategy.strategy}`,
+      `Target: ${workspace.adaptationStrategy.targetFormat}`,
+      workspace.adaptationStrategy.summary,
+    ];
+    if (workspace.adaptationStrategy.supervisionNotes) {
+      lines.push("", `Supervision: ${workspace.adaptationStrategy.supervisionNotes}`);
+    }
+    if (workspace.adaptationStrategy.revisionNotes) {
+      lines.push("", `Revision: ${workspace.adaptationStrategy.revisionNotes}`);
+    }
+    lines.push("", "## Script", "");
+    const script = workspace.script;
     script.scenes.forEach((scene) => {
       lines.push(`## ${scene.orderIndex}. ${scene.title}`, "", scene.summary);
       if (scene.dialogue) {
@@ -1758,6 +1919,10 @@ export class NovelsService {
 
   private toScriptDraftRecord(draft: ScriptDraftModel): ScriptDraftRecord {
     const strategy = this.normalizeScriptStrategy(draft.strategy as ScriptAdaptationStrategy);
+    const workspace = this.toScriptWorkspace(draft.scriptJson, {
+      title: draft.title,
+      strategy,
+    });
     return {
       id: draft.id,
       projectId: draft.projectId,
@@ -1766,10 +1931,8 @@ export class NovelsService {
       title: draft.title,
       strategy,
       status: this.toScriptDraftStatus(draft.status),
-      script: this.toScriptContent(draft.scriptJson, {
-        title: draft.title,
-        strategy,
-      }),
+      workspace,
+      script: workspace.script,
       createdAt: toIsoString(draft.createdAt),
       updatedAt: toIsoString(draft.updatedAt),
     };
@@ -1911,6 +2074,120 @@ export class NovelsService {
       : "draft";
   }
 
+  private toScriptWorkspace(
+    value: unknown,
+    fallback: { title: string; strategy: ScriptAdaptationStrategy },
+  ): ScriptDraftWorkspace {
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      if (
+        typeof record.storySkeleton === "object" &&
+        record.storySkeleton !== null &&
+        typeof record.adaptationStrategy === "object" &&
+        record.adaptationStrategy !== null &&
+        typeof record.script === "object" &&
+        record.script !== null
+      ) {
+        return this.normalizeScriptWorkspace(record, fallback);
+      }
+    }
+
+    const script = this.toScriptContent(value, fallback);
+    return this.normalizeScriptWorkspace(
+      {
+        storySkeleton: {
+          title: script.title,
+          logline: script.logline,
+          sourceChapterIndexes: [],
+          sourceEventIds: uniqueStrings(script.scenes.flatMap((scene) =>
+            scene.beats.flatMap((beat) => beat.eventIds ?? []),
+          )),
+          beats: script.scenes.flatMap((scene) => scene.beats),
+        },
+        adaptationStrategy: {
+          strategy: script.strategy,
+          summary: `Script strategy: ${script.strategy}`,
+          targetFormat: script.strategy,
+        },
+        script,
+      },
+      fallback,
+    );
+  }
+
+  private normalizeScriptWorkspace(
+    value: unknown,
+    fallback: { title: string; strategy: ScriptAdaptationStrategy },
+  ): ScriptDraftWorkspace {
+    const record =
+      typeof value === "object" && value !== null && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    const parsedScript = this.toScriptContent(record.script, fallback);
+    const adaptationStrategy = this.toAdaptationPlan(record.adaptationStrategy, parsedScript);
+    const script = {
+      ...parsedScript,
+      strategy: adaptationStrategy.strategy,
+    };
+    return {
+      storySkeleton: this.toStorySkeleton(record.storySkeleton, script),
+      adaptationStrategy,
+      script,
+    };
+  }
+
+  private toStorySkeleton(value: unknown, script: ScriptDraftContent): ScriptStorySkeleton {
+    const record =
+      typeof value === "object" && value !== null && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    const beats = Array.isArray(record.beats)
+      ? record.beats.flatMap((beat, beatIndex) => this.toScriptBeat(beat, beatIndex))
+      : script.scenes.flatMap((scene) => scene.beats);
+    const sourceEventIds = Array.isArray(record.sourceEventIds)
+      ? uniqueStrings(record.sourceEventIds.filter((item): item is string => typeof item === "string"))
+      : uniqueStrings(beats.flatMap((beat) => beat.eventIds ?? []));
+    const sourceChapterIndexes = Array.isArray(record.sourceChapterIndexes)
+      ? uniqueNumbers(record.sourceChapterIndexes)
+      : uniqueNumbers(beats.map((beat) => beat.chapterIndex));
+
+    return {
+      title: typeof record.title === "string" && record.title.trim() ? record.title : script.title,
+      logline:
+        typeof record.logline === "string" && record.logline.trim()
+          ? record.logline
+          : script.logline,
+      sourceChapterIndexes,
+      sourceEventIds,
+      beats,
+    };
+  }
+
+  private toAdaptationPlan(value: unknown, script: ScriptDraftContent): ScriptAdaptationPlan {
+    const record =
+      typeof value === "object" && value !== null && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    const strategy = this.normalizeScriptStrategy(record.strategy as ScriptAdaptationStrategy | undefined);
+    return {
+      strategy,
+      summary:
+        typeof record.summary === "string" && record.summary.trim()
+          ? record.summary
+          : `Script strategy: ${strategy}`,
+      targetFormat:
+        typeof record.targetFormat === "string" && record.targetFormat.trim()
+          ? record.targetFormat
+          : strategy,
+      ...(typeof record.supervisionNotes === "string" && record.supervisionNotes.trim()
+        ? { supervisionNotes: record.supervisionNotes }
+        : {}),
+      ...(typeof record.revisionNotes === "string" && record.revisionNotes.trim()
+        ? { revisionNotes: record.revisionNotes }
+        : {}),
+    };
+  }
+
   private toScriptContent(
     value: unknown,
     fallback: { title: string; strategy: ScriptAdaptationStrategy },
@@ -2003,6 +2280,9 @@ export class NovelsService {
             ? record.title
             : `Beat ${orderIndex}`,
         summary,
+        ...(typeof record.chapterIndex === "number" && Number.isInteger(record.chapterIndex) && record.chapterIndex > 0
+          ? { chapterIndex: record.chapterIndex }
+          : {}),
         ...(typeof record.sourceExcerpt === "string" && record.sourceExcerpt.trim()
           ? { sourceExcerpt: record.sourceExcerpt }
           : {}),
