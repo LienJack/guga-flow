@@ -26,6 +26,7 @@ import {
   isEditableShortcutTarget,
 } from "./canvas-productivity-panel";
 import { CanvasSaveStatusBadge } from "./canvas-save-status";
+import { ProductionWorkspacePanel } from "./production-workspace-panel";
 
 interface ProjectCanvasWorkspaceProps {
   projectId: string;
@@ -260,6 +261,13 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
             selectedNodeId={selection.kind === "business-node" ? selection.nodeId : undefined}
             searchFocusRequestKey={searchFocusRequestKey}
             onFitToContent={handleFitToContent}
+            onSelectNode={handleSelectCanvasNode}
+          />
+          <ProductionWorkspacePanel
+            nodes={canvasNodes}
+            projectId={projectId}
+            selectedNodeId={selection.kind === "business-node" ? selection.nodeId : undefined}
+            onItemUpdated={handleNodeUpdated}
             onSelectNode={handleSelectCanvasNode}
           />
           <NovelStoryboardPanel

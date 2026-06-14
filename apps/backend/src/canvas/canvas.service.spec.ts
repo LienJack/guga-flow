@@ -90,6 +90,78 @@ function storyboardDraft(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function generationJob(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "job_1",
+    projectId: "project_1",
+    operation: "shot_to_image",
+    status: "queued",
+    provider: "mock-image",
+    model: "mock-image-v1",
+    sourceNodeId: "shot_1",
+    targetNodeId: null,
+    providerTaskId: null,
+    inputJson: {},
+    outputJson: null,
+    errorMessage: null,
+    createdAt,
+    updatedAt,
+    ...overrides,
+  };
+}
+
+function scriptDraft(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "script_1",
+    projectId: "project_1",
+    novelDocumentId: "novel_1",
+    version: 2,
+    title: "Signal Script",
+    strategy: "visual_first",
+    status: "draft",
+    scriptJson: {
+      storySkeleton: {
+        title: "Signal Script",
+        logline: "A hidden signal changes the plan.",
+        sourceChapterIndexes: [1],
+        sourceEventIds: ["event_1"],
+        beats: [
+          {
+            beatId: "beat_1",
+            orderIndex: 1,
+            title: "Signal",
+            summary: "The hero finds the signal.",
+            eventIds: ["event_1"],
+          },
+        ],
+      },
+      adaptationStrategy: {
+        strategy: "visual_first",
+        summary: "Prioritize readable visual beats.",
+        targetFormat: "short drama",
+        revisionNotes: "Keep the signal visible.",
+      },
+      script: {
+        title: "Signal Script",
+        logline: "A hidden signal changes the plan.",
+        strategy: "visual_first",
+        scenes: [
+          {
+            sceneId: "scene_script_1",
+            orderIndex: 1,
+            title: "Control Room",
+            summary: "The hero enters.",
+            beats: [],
+          },
+        ],
+      },
+    },
+    createdAt,
+    updatedAt,
+    ...overrides,
+  };
+}
+
 type MockAsset = ReturnType<typeof asset>;
 type MockCanvasEdge = ReturnType<typeof canvasEdge>;
 type MockCanvasNode = ReturnType<typeof canvasNode>;
@@ -122,6 +194,12 @@ function createPrismaMock() {
     },
     storyboardDraft: {
       findFirst: vi.fn(async (_args: MockFindArgs): Promise<ReturnType<typeof storyboardDraft> | null> => null),
+    },
+    scriptDraft: {
+      findFirst: vi.fn(async (_args: MockFindArgs): Promise<ReturnType<typeof scriptDraft> | null> => null),
+    },
+    generationJob: {
+      findMany: vi.fn(async (_args?: MockFindArgs): Promise<Array<ReturnType<typeof generationJob>>> => []),
     },
     asset: {
       findMany: vi.fn(async (): Promise<MockAsset[]> => []),
@@ -170,6 +248,134 @@ describe("CanvasService", () => {
     expect(result.nodes).toEqual([]);
     expect(result.edges).toEqual([]);
     expect(result.assets).toEqual([]);
+  });
+
+  it("projects a production workspace from script, canvas, assets, and jobs", async () => {
+    prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
+    prisma.canvasNode.findMany.mockResolvedValue([
+      canvasNode({
+        id: "scene_1",
+        type: "scene",
+        title: "Control Room",
+        dataJson: { synopsis: "Screens glow." },
+        updatedAt,
+      }),
+      canvasNode({
+        id: "shot_1",
+        type: "shot",
+        title: "Shot 001",
+        dataJson: {
+          shotNumber: "001",
+          visualDescription: "Hero studies a blinking console.",
+          action: "Hero finds the signal.",
+          imagePrompt: "hero console image",
+          videoPrompt: "slow push toward console",
+          durationSeconds: 4,
+          storyEventIds: ["event_1"],
+          referenceAssetIds: ["asset_ref_1"],
+        },
+        updatedAt,
+      }),
+      canvasNode({
+        id: "character_1",
+        type: "character_asset",
+        title: "Hero",
+        dataJson: {
+          name: "Hero",
+          referenceAssetIds: ["asset_ref_1"],
+          assetVariants: [{ variantId: "hero_v1", status: "selected", assetId: "asset_variant_1" }],
+          scriptAssetSource: { scriptDraftId: "script_1" },
+        },
+        updatedAt,
+      }),
+    ]);
+    prisma.canvasEdge.findMany.mockResolvedValue([
+      canvasEdge({
+        id: "edge_scene",
+        sourceNodeId: "shot_1",
+        targetNodeId: "scene_1",
+        relation: "belongs_to_scene",
+      }),
+    ]);
+    prisma.asset.findMany.mockResolvedValue([asset({ id: "asset_ref_1" })]);
+    prisma.generationJob.findMany.mockResolvedValue([generationJob()]);
+    prisma.scriptDraft.findFirst.mockResolvedValue(scriptDraft());
+
+    const result = await service.getProductionWorkspace("project_1");
+
+    expect(result.scriptPlan).toMatchObject({
+      scriptDraftId: "script_1",
+      title: "Signal Script",
+      sceneCount: 1,
+      beatCount: 1,
+      sourceEventIds: ["event_1"],
+    });
+    expect(result.storyboardTable[0]).toMatchObject({
+      shotNodeId: "shot_1",
+      sceneNodeId: "scene_1",
+      title: "Shot 001",
+      imagePrompt: "hero console image",
+      sourceScriptDraftId: "script_1",
+    });
+    expect(result.assets[0]).toMatchObject({
+      nodeId: "character_1",
+      variantCount: 1,
+      referenceAssetIds: ["asset_ref_1", "asset_variant_1"],
+    });
+    expect(result.summary.generationQueue.queued).toBe(1);
+    expect(result.agentContext.storyboardTableSummary).toContain("1 shots");
+  });
+
+  it("updates production storyboard items by writing back to Shot node data", async () => {
+    prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
+    const existing = canvasNode({
+      id: "shot_1",
+      type: "shot",
+      title: "Shot 001",
+      dataJson: {
+        visualDescription: "Old summary",
+        imagePrompt: "old image",
+        videoPrompt: "old video",
+        durationSeconds: 4,
+      },
+    });
+    const updated = canvasNode({
+      ...existing,
+      title: "Shot 001 revised",
+      dataJson: {
+        visualDescription: "New summary",
+        imagePrompt: "new image",
+        videoPrompt: "new video",
+        durationSeconds: 6,
+      },
+    });
+    prisma.canvasNode.findFirst.mockResolvedValue(existing);
+    prisma.canvasNode.update.mockResolvedValue(updated);
+    prisma.canvasNode.findMany.mockResolvedValue([updated]);
+
+    const result = await service.updateProductionWorkspaceItem("project_1", "shot_1", {
+      itemType: "storyboard_item",
+      title: "Shot 001 revised",
+      summary: "New summary",
+      imagePrompt: "new image",
+      videoPrompt: "new video",
+      durationSeconds: 6,
+    });
+
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "shot_1" },
+      data: {
+        title: "Shot 001 revised",
+        dataJson: {
+          visualDescription: "New summary",
+          imagePrompt: "new image",
+          videoPrompt: "new video",
+          durationSeconds: 6,
+        },
+      },
+    });
+    expect(result.updatedNode.title).toBe("Shot 001 revised");
+    expect(result.workspace.storyboardItems[0]?.summary).toBe("New summary");
   });
 
   it("saves snapshots and returns the updated canvas document", async () => {

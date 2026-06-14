@@ -41,6 +41,7 @@ import type {
   LlmProviderManagementItem,
   NodeStatus,
   Phase3CanvasNodeType,
+  ProductionWorkspaceAgentContext,
   RecallAgentMemoriesInput,
   RecallAgentMemoriesResult,
   ResolveAgentRoleInput,
@@ -164,6 +165,8 @@ const SUPPORTED_CREATE_TYPES = new Map<string, Phase3CanvasNodeType>([
   ["character asset", "character_asset"],
   ["location", "location_asset"],
   ["location asset", "location_asset"],
+  ["prop", "prop_asset"],
+  ["prop asset", "prop_asset"],
   ["image", "image"],
   ["video", "video"],
   ["editor package", "editor_package"],
@@ -284,6 +287,11 @@ export class AgentsService {
     })) as AgentDeploymentModel;
 
     return this.deploymentResult(this.toDeploymentRecord(projectId, row));
+  }
+
+  async getProductionWorkspaceContext(projectId: string): Promise<ProductionWorkspaceAgentContext> {
+    const workspace = await this.canvasService.getProductionWorkspace(projectId);
+    return workspace.agentContext;
   }
 
   async resolveRole(

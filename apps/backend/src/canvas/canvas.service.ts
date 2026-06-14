@@ -25,11 +25,21 @@ import type {
   ImportStoryboardToCanvasResult,
   ExportCanvasFragmentInput,
   ExportCanvasFragmentResult,
+  GenerationJobRecord,
+  GenerationJobStatus,
+  GenerationOperation,
   ImportCanvasFragmentInput,
   ImportCanvasFragmentResult,
   NodeStatus,
+  ProductionWorkspaceAgentContext,
+  ProductionWorkspaceAssetSummary,
+  ProductionWorkspaceProjection,
+  ProductionWorkspaceScriptPlan,
+  ProductionWorkspaceStoryboardItem,
   SaveCanvasSnapshotInput,
   SaveCanvasSnapshotResult,
+  ScriptAdaptationStrategy,
+  ScriptDraftWorkspace,
   StoryboardImportDataJson,
   StoryboardImportDuplicatePolicy,
   StoryboardImportPlannedNode,
@@ -38,13 +48,17 @@ import type {
   UpdateCanvasNodeGeometryResult,
   UpdateCanvasNodeInput,
   UpdateCanvasNodeResult,
+  UpdateProductionWorkspaceItemInput,
+  UpdateProductionWorkspaceItemResult,
 } from "@guga-flow/shared-types";
 import {
   CANVAS_FRAGMENT_FORMAT,
   CANVAS_FRAGMENT_SCHEMA_VERSION,
   CANVAS_EDGE_RELATIONS,
+  GENERATION_JOB_STATUSES,
   NODE_STATUSES,
   PHASE_3_CANVAS_NODE_TYPES,
+  PRODUCTION_WORKSPACE_ITEM_TYPES,
   STORYBOARD_IMPORT_DUPLICATE_POLICIES,
   buildStoryboardImportPlan,
   storyboardImportAssetKey,
@@ -137,6 +151,36 @@ type AssetModel = {
   createdAt: Date | string;
 };
 
+type GenerationJobModel = {
+  id: string;
+  projectId: string;
+  operation: string;
+  status: string;
+  provider: string;
+  model: string | null;
+  sourceNodeId: string | null;
+  targetNodeId: string | null;
+  providerTaskId: string | null;
+  inputJson: unknown;
+  outputJson: unknown | null;
+  errorMessage: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+type ScriptDraftModel = {
+  id: string;
+  projectId: string;
+  novelDocumentId: string;
+  version: number;
+  title: string;
+  strategy: string;
+  status: string;
+  scriptJson: unknown;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
 }
@@ -214,6 +258,24 @@ function getStringArray(value: CanvasSnapshotJson | undefined): string[] {
   return Array.isArray(value) && value.every((item): item is string => typeof item === "string")
     ? uniqueStrings(value)
     : [];
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? uniqueStrings(value.filter((item): item is string => typeof item === "string" && item.trim().length > 0))
+    : [];
+}
+
+function optionalText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function optionalPositiveNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function objectData(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function hasExistingLifecycleStages(value: CanvasSnapshotJson | undefined): boolean {
@@ -477,6 +539,74 @@ export class CanvasService {
     });
 
     return { node: this.toCanvasNodeRecord(node) };
+  }
+
+  async getProductionWorkspace(projectId: string): Promise<ProductionWorkspaceProjection> {
+    const canvas = await this.getCanvas(projectId);
+    const [jobs, scriptDraft] = await Promise.all([
+      this.prisma.generationJob.findMany({
+        where: { projectId },
+        orderBy: { updatedAt: "desc" },
+        take: 50,
+      }),
+      this.prisma.scriptDraft.findFirst({
+        where: { projectId },
+        orderBy: [{ updatedAt: "desc" }, { version: "desc" }],
+      }),
+    ]);
+
+    return this.buildProductionWorkspaceProjection({
+      projectId,
+      nodes: canvas.nodes,
+      edges: canvas.edges,
+      jobs: jobs.map((job) => this.toGenerationJobRecord(job as GenerationJobModel)),
+      scriptDraft: scriptDraft as ScriptDraftModel | null,
+    });
+  }
+
+  async updateProductionWorkspaceItem(
+    projectId: string,
+    itemId: string,
+    input: UpdateProductionWorkspaceItemInput,
+  ): Promise<UpdateProductionWorkspaceItemResult> {
+    if (!PRODUCTION_WORKSPACE_ITEM_TYPES.includes(input.itemType)) {
+      throw new BadRequestException("Production workspace item type is invalid");
+    }
+
+    const existing = await this.findProjectNode(projectId, itemId);
+    if (existing.type !== "shot") {
+      throw new BadRequestException("Production workspace storyboard items must target Shot nodes");
+    }
+
+    const dataJson = this.toNodeDataObject(existing.dataJson);
+    if (input.summary !== undefined) {
+      dataJson.visualDescription = this.normalizeProductionText(input.summary, "Summary");
+    }
+    if (input.imagePrompt !== undefined) {
+      dataJson.imagePrompt = this.normalizeProductionText(input.imagePrompt, "Image prompt");
+    }
+    if (input.videoPrompt !== undefined) {
+      dataJson.videoPrompt = this.normalizeProductionText(input.videoPrompt, "Video prompt");
+    }
+    if (input.durationSeconds !== undefined) {
+      if (!Number.isFinite(input.durationSeconds) || input.durationSeconds <= 0) {
+        throw new BadRequestException("Duration must be a positive number");
+      }
+      dataJson.durationSeconds = input.durationSeconds;
+    }
+
+    const node = await this.prisma.canvasNode.update({
+      where: { id: existing.id },
+      data: {
+        ...(input.title !== undefined ? { title: this.normalizeTitle(input.title) } : {}),
+        dataJson,
+      },
+    });
+
+    return {
+      updatedNode: this.toCanvasNodeRecord(node),
+      workspace: await this.getProductionWorkspace(projectId),
+    };
   }
 
   async updateNodeGeometry(
@@ -1628,6 +1758,216 @@ export class CanvasService {
     }
   }
 
+  private buildProductionWorkspaceProjection(input: {
+    projectId: string;
+    nodes: CanvasNodeRecord[];
+    edges: CanvasEdgeRecord[];
+    jobs: Array<GenerationJobRecord>;
+    scriptDraft: ScriptDraftModel | null;
+  }): ProductionWorkspaceProjection {
+    const nodesById = new Map(input.nodes.map((node) => [node.id, node]));
+    const scriptPlan = input.scriptDraft ? this.productionScriptPlan(input.scriptDraft) : undefined;
+    const storyboardItems = input.nodes
+      .filter((node) => node.type === "shot")
+      .map((node) => this.productionStoryboardItem(node, input.edges, nodesById, scriptPlan))
+      .sort((left, right) => {
+        const leftNumber = Number.parseInt(left.shotNumber ?? "", 10);
+        const rightNumber = Number.parseInt(right.shotNumber ?? "", 10);
+        if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {
+          return leftNumber - rightNumber;
+        }
+        return left.updatedAt.localeCompare(right.updatedAt) || left.title.localeCompare(right.title);
+      });
+    const assets = input.nodes
+      .filter((node) =>
+        node.type === "character_asset" || node.type === "location_asset" || node.type === "prop_asset",
+      )
+      .map((node) => this.productionAssetSummary(node));
+    const generationQueue = this.productionGenerationQueue(input.jobs);
+    const latestUpdatedAt = [
+      ...storyboardItems.map((item) => item.updatedAt),
+      ...input.jobs.map((job) => job.updatedAt),
+      input.scriptDraft ? toIsoString(input.scriptDraft.updatedAt) : undefined,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1);
+    const referenceAssetCount = uniqueStrings([
+      ...storyboardItems.flatMap((item) => item.referenceAssetIds),
+      ...assets.flatMap((asset) => asset.referenceAssetIds),
+    ]).length;
+    const agentContext = this.productionAgentContext({
+      scriptPlan,
+      storyboardItems,
+      assets,
+      generationQueue,
+    });
+
+    return {
+      projectId: input.projectId,
+      ...(scriptPlan ? { scriptPlan } : {}),
+      storyboardTable: storyboardItems,
+      storyboardItems,
+      assets,
+      summary: {
+        shotCount: storyboardItems.length,
+        assetCount: assets.length,
+        referenceAssetCount,
+        ...(latestUpdatedAt ? { latestUpdatedAt } : {}),
+        generationQueue,
+      },
+      agentContext,
+    };
+  }
+
+  private productionScriptPlan(scriptDraft: ScriptDraftModel): ProductionWorkspaceScriptPlan {
+    const workspace = objectData(scriptDraft.scriptJson);
+    const script = objectData(workspace.script);
+    const storySkeleton = objectData(workspace.storySkeleton);
+    const adaptationStrategy = objectData(workspace.adaptationStrategy);
+    const scenes = Array.isArray(script.scenes) ? script.scenes : [];
+    const skeletonBeats = Array.isArray(storySkeleton.beats) ? storySkeleton.beats : [];
+    const sourceEventIds = uniqueStrings([
+      ...stringArray(storySkeleton.sourceEventIds),
+      ...skeletonBeats.flatMap((beat) => stringArray(objectData(beat).eventIds)),
+    ]);
+
+    return {
+      scriptDraftId: scriptDraft.id,
+      version: scriptDraft.version,
+      title: optionalText(script.title) ?? scriptDraft.title,
+      logline: optionalText(script.logline) ?? optionalText(storySkeleton.logline) ?? "",
+      strategy: (
+        optionalText(adaptationStrategy.strategy) ??
+        optionalText(script.strategy) ??
+        scriptDraft.strategy
+      ) as ScriptAdaptationStrategy,
+      sceneCount: scenes.length,
+      beatCount: skeletonBeats.length,
+      sourceEventIds,
+      ...(optionalText(adaptationStrategy.revisionNotes)
+        ? { revisionNotes: optionalText(adaptationStrategy.revisionNotes) }
+        : {}),
+    };
+  }
+
+  private productionStoryboardItem(
+    node: CanvasNodeRecord,
+    edges: readonly CanvasEdgeRecord[],
+    nodesById: ReadonlyMap<string, CanvasNodeRecord>,
+    scriptPlan: ProductionWorkspaceScriptPlan | undefined,
+  ): ProductionWorkspaceStoryboardItem {
+    const data = objectData(node.dataJson);
+    const sceneEdge = edges.find(
+      (edge) => edge.relation === "belongs_to_scene" && edge.sourceNodeId === node.id,
+    );
+    const sceneNode = sceneEdge ? nodesById.get(sceneEdge.targetNodeId) : undefined;
+    const sceneData = objectData(sceneNode?.dataJson);
+    const durationSeconds =
+      optionalPositiveNumber(data.durationSeconds) ?? optionalPositiveNumber(data.durationSec);
+
+    return {
+      itemId: node.id,
+      shotNodeId: node.id,
+      ...(sceneNode ? { sceneNodeId: sceneNode.id } : {}),
+      ...(sceneNode ? { sceneTitle: sceneNode.title ?? optionalText(sceneData.label) ?? "Scene" } : {}),
+      ...(optionalText(data.shotNumber) ? { shotNumber: optionalText(data.shotNumber) } : {}),
+      title: node.title ?? optionalText(data.shotNumber) ?? "Shot",
+      summary: optionalText(data.visualDescription) ?? optionalText(data.action) ?? "",
+      ...(optionalText(data.action) ? { action: optionalText(data.action) } : {}),
+      ...(durationSeconds ? { durationSeconds } : {}),
+      ...(optionalText(data.imagePrompt) ? { imagePrompt: optionalText(data.imagePrompt) } : {}),
+      ...(optionalText(data.videoPrompt) ? { videoPrompt: optionalText(data.videoPrompt) } : {}),
+      status: node.status,
+      storyEventIds: stringArray(data.storyEventIds),
+      referenceAssetIds: stringArray(data.referenceAssetIds),
+      ...(scriptPlan ? { sourceScriptDraftId: scriptPlan.scriptDraftId } : {}),
+      updatedAt: node.updatedAt,
+    };
+  }
+
+  private productionAssetSummary(node: CanvasNodeRecord): ProductionWorkspaceAssetSummary {
+    const data = objectData(node.dataJson);
+    const source = objectData(data.scriptAssetSource);
+    const variants = Array.isArray(data.assetVariants)
+      ? data.assetVariants.filter((variant) => typeof variant === "object" && variant !== null)
+      : [];
+    const variantAssetIds = variants.flatMap((variant) => {
+      const assetId = optionalText(objectData(variant).assetId);
+      return assetId ? [assetId] : [];
+    });
+
+    return {
+      nodeId: node.id,
+      nodeType: node.type as ProductionWorkspaceAssetSummary["nodeType"],
+      title: node.title ?? optionalText(data.name) ?? "Asset",
+      status: node.status,
+      referenceAssetIds: uniqueStrings([...stringArray(data.referenceAssetIds), ...variantAssetIds]),
+      variantCount: variants.length,
+      ...(optionalText(data.selectedVariantId)
+        ? { selectedVariantId: optionalText(data.selectedVariantId) }
+        : {}),
+      ...(optionalText(source.scriptDraftId) ? { sourceScriptDraftId: optionalText(source.scriptDraftId) } : {}),
+      ...(optionalText(data.assetKey) ? { assetKey: optionalText(data.assetKey) } : {}),
+    };
+  }
+
+  private productionAgentContext(input: {
+    scriptPlan?: ProductionWorkspaceScriptPlan;
+    storyboardItems: ProductionWorkspaceStoryboardItem[];
+    assets: ProductionWorkspaceAssetSummary[];
+    generationQueue: ProductionWorkspaceProjection["summary"]["generationQueue"];
+  }): ProductionWorkspaceAgentContext {
+    const sceneCount = new Set(input.storyboardItems.flatMap((item) => item.sceneNodeId ? [item.sceneNodeId] : [])).size;
+    const activeJobs = input.generationQueue.queued + input.generationQueue.running + (input.generationQueue.providerWaiting ?? 0);
+    const storyboardPreview = input.storyboardItems
+      .slice(0, 5)
+      .map((item) => `${item.title}: ${item.summary}`)
+      .join("\n");
+
+    return {
+      scriptPlanSummary: input.scriptPlan
+        ? `${input.scriptPlan.title} v${input.scriptPlan.version}: ${input.scriptPlan.sceneCount} scenes, ${input.scriptPlan.beatCount} beats, strategy ${input.scriptPlan.strategy}.`
+        : "No ScriptDraft plan is available.",
+      storyboardTableSummary: `${input.storyboardItems.length} shots across ${sceneCount} scene containers.`,
+      storyboardSummary: storyboardPreview || "No storyboard shots are available.",
+      assetSummary: `${input.assets.length} production assets, ${input.assets.reduce((sum, asset) => sum + asset.variantCount, 0)} visual variants.`,
+      generationSummary: `${activeJobs} active generation jobs, ${input.generationQueue.failed} failed jobs.`,
+    };
+  }
+
+  private productionGenerationQueue(
+    jobs: readonly GenerationJobRecord[],
+  ): ProductionWorkspaceProjection["summary"]["generationQueue"] {
+    const counts = Object.fromEntries(
+      GENERATION_JOB_STATUSES.map((status) => [status, 0]),
+    ) as Record<GenerationJobStatus, number>;
+    for (const job of jobs) {
+      counts[job.status] += 1;
+    }
+
+    return {
+      counts,
+      queued: counts.queued,
+      running: counts.running,
+      providerWaiting: counts.provider_waiting,
+      succeeded: counts.succeeded,
+      failed: counts.failed,
+      cancelled: counts.cancelled,
+    };
+  }
+
+  private normalizeProductionText(value: string, label: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new BadRequestException(`${label} cannot be empty`);
+    }
+    if (trimmed.length > 2000) {
+      throw new BadRequestException(`${label} is too long`);
+    }
+    return trimmed;
+  }
+
   private toCanvasDocumentRecord(canvasDocument: CanvasDocumentModel): CanvasDocumentRecord {
     const snapshotJson = isCanvasSnapshotJson(canvasDocument.snapshotJson)
       ? canvasDocument.snapshotJson
@@ -1695,6 +2035,27 @@ export class CanvasService {
       createdAt: toIsoString(asset.createdAt),
       previewKind: previewKindForMime(asset.mimeType),
       previewUrl: `/api/v1/projects/${asset.projectId}/assets/${asset.id}/preview`,
+    };
+  }
+
+  private toGenerationJobRecord(job: GenerationJobModel): GenerationJobRecord {
+    return {
+      id: job.id,
+      projectId: job.projectId,
+      operation: job.operation as GenerationOperation,
+      status: GENERATION_JOB_STATUSES.includes(job.status as GenerationJobStatus)
+        ? (job.status as GenerationJobStatus)
+        : "failed",
+      provider: job.provider,
+      model: job.model ?? undefined,
+      sourceNodeId: job.sourceNodeId ?? undefined,
+      targetNodeId: job.targetNodeId ?? undefined,
+      providerTaskId: job.providerTaskId ?? undefined,
+      inputJson: job.inputJson,
+      outputJson: job.outputJson ?? undefined,
+      errorMessage: job.errorMessage ?? undefined,
+      createdAt: toIsoString(job.createdAt),
+      updatedAt: toIsoString(job.updatedAt),
     };
   }
 }

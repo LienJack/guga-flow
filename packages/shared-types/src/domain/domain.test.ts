@@ -40,6 +40,7 @@ import {
   NOVEL_SOURCE_TYPES,
   PHASE_8_GENERATION_OPERATIONS,
   PHASE_3_CANVAS_NODE_TYPES,
+  PRODUCTION_WORKSPACE_ITEM_TYPES,
   PROVIDER_CREDENTIAL_UPDATE_ACTIONS,
   PROVIDER_ERROR_CATEGORIES,
   PROVIDER_KINDS,
@@ -1067,6 +1068,7 @@ describe("shared domain constants", () => {
     ]);
     expect(CANVAS_NODE_TYPES).toEqual(expect.arrayContaining([...PHASE_3_CANVAS_NODE_TYPES]));
     expect(SOURCE_MEDIA_IMPORT_METHODS).toEqual(["drag_drop", "asset_library", "manual"]);
+    expect(PRODUCTION_WORKSPACE_ITEM_TYPES).toEqual(["storyboard_item"]);
 
     const sourceImageData: SourceMediaNodeData = {
       assetId: "asset_image_1",

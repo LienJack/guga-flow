@@ -31,6 +31,7 @@ import {
   generationEventsUrl,
   getActiveStoryboardDraft,
   getAgentDeployment,
+  getAgentProductionWorkspaceContext,
   getCurrentSession,
   getEditorExport,
   getImageProviderCatalog,
@@ -48,6 +49,7 @@ import {
   listAssetCollections,
   listProgrammableProviders,
   getProject,
+  getProductionWorkspace,
   importStoryboardToCanvas,
   importCanvasFragment,
   importNovelSource,
@@ -72,6 +74,7 @@ import {
   disableAgentMemory,
   clearAgentMemories,
   updateProject,
+  updateProductionWorkspaceItem,
   validateProjectSettingsImport,
   updateProviderConfig,
   updateProgrammableProviderSource,
@@ -204,6 +207,48 @@ describe("frontend api client", () => {
         }),
         headers: { "Content-Type": "application/json" },
       }),
+    );
+  });
+
+  it("calls production workspace projection endpoints", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getProductionWorkspace("project_1");
+    await updateProductionWorkspaceItem("project_1", "shot_1", {
+      itemType: "storyboard_item",
+      title: "Shot 001 revised",
+      summary: "New summary",
+      imagePrompt: "new image",
+      videoPrompt: "new video",
+      durationSeconds: 6,
+    });
+    await getAgentProductionWorkspaceContext("project_1");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/production-workspace",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/production-workspace/items/shot_1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          itemType: "storyboard_item",
+          title: "Shot 001 revised",
+          summary: "New summary",
+          imagePrompt: "new image",
+          videoPrompt: "new video",
+          durationSeconds: 6,
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:3002/api/v1/projects/project_1/agents/production-workspace-context",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
   });
 

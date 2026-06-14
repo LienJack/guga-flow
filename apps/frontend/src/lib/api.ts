@@ -82,6 +82,8 @@ import type {
   ProviderModelDiscoveryResult,
   ProgrammableProviderDefinitionResult,
   ProgrammableProviderDefinitionSummary,
+  ProductionWorkspaceAgentContext,
+  ProductionWorkspaceProjection,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
   ImportScriptAssetsInput,
@@ -126,6 +128,8 @@ import type {
   UndoAgentCanvasActionResult,
   UpdateAgentDeploymentInput,
   UpdateAgentMemoryInput,
+  UpdateProductionWorkspaceItemInput,
+  UpdateProductionWorkspaceItemResult,
   CreateProgrammableProviderInput,
   UpdateProgrammableProviderSourceInput,
   ActivateProgrammableProviderVersionInput,
@@ -813,6 +817,34 @@ export function recallAgentMemories(
 
 export function getProjectCanvas(projectId: string): Promise<CanvasLoadResult> {
   return requestJson<CanvasLoadResult>(`/projects/${projectId}/canvas`);
+}
+
+export function getProductionWorkspace(projectId: string): Promise<ProductionWorkspaceProjection> {
+  return requestJson<ProductionWorkspaceProjection>(
+    `/projects/${projectId}/canvas/production-workspace`,
+  );
+}
+
+export function updateProductionWorkspaceItem(
+  projectId: string,
+  itemId: string,
+  input: UpdateProductionWorkspaceItemInput,
+): Promise<UpdateProductionWorkspaceItemResult> {
+  return requestJson<UpdateProductionWorkspaceItemResult>(
+    `/projects/${projectId}/canvas/production-workspace/items/${itemId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function getAgentProductionWorkspaceContext(
+  projectId: string,
+): Promise<ProductionWorkspaceAgentContext> {
+  return requestJson<ProductionWorkspaceAgentContext>(
+    `/projects/${projectId}/agents/production-workspace-context`,
+  );
 }
 
 export function saveCanvasSnapshot(

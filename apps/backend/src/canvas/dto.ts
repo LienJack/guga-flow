@@ -11,11 +11,13 @@ import type {
   StoryboardImportDuplicatePolicy,
   UpdateCanvasNodeGeometryInput,
   UpdateCanvasNodeInput,
+  UpdateProductionWorkspaceItemInput,
 } from "@guga-flow/shared-types";
 import {
   CANVAS_EDGE_RELATIONS,
   NODE_STATUSES,
   PHASE_3_CANVAS_NODE_TYPES,
+  PRODUCTION_WORKSPACE_ITEM_TYPES,
   STORYBOARD_IMPORT_DUPLICATE_POLICIES,
 } from "@guga-flow/shared-types";
 import { Type } from "class-transformer";
@@ -164,6 +166,37 @@ export class UpdateCanvasNodeGeometryDto implements UpdateCanvasNodeGeometryInpu
   @Type(() => Number)
   @IsInt()
   zIndex?: number;
+}
+
+export class UpdateProductionWorkspaceItemDto implements UpdateProductionWorkspaceItemInput {
+  @IsIn(PRODUCTION_WORKSPACE_ITEM_TYPES)
+  itemType!: UpdateProductionWorkspaceItemInput["itemType"];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  summary?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  imagePrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  videoPrompt?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  @Min(0.1)
+  durationSeconds?: number;
 }
 
 export class ImportStoryboardToCanvasDto implements ImportStoryboardToCanvasInput {

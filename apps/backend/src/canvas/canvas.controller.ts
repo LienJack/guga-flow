@@ -10,6 +10,7 @@ import {
   SaveCanvasSnapshotDto,
   UpdateCanvasNodeDto,
   UpdateCanvasNodeGeometryDto,
+  UpdateProductionWorkspaceItemDto,
 } from "./dto";
 
 @Controller("projects/:projectId/canvas")
@@ -24,6 +25,20 @@ export class CanvasController {
   @Patch("snapshot")
   saveSnapshot(@Param("projectId") projectId: string, @Body() body: SaveCanvasSnapshotDto) {
     return this.canvasService.saveSnapshot(projectId, body);
+  }
+
+  @Get("production-workspace")
+  getProductionWorkspace(@Param("projectId") projectId: string) {
+    return this.canvasService.getProductionWorkspace(projectId);
+  }
+
+  @Patch("production-workspace/items/:itemId")
+  updateProductionWorkspaceItem(
+    @Param("projectId") projectId: string,
+    @Param("itemId") itemId: string,
+    @Body() body: UpdateProductionWorkspaceItemDto,
+  ) {
+    return this.canvasService.updateProductionWorkspaceItem(projectId, itemId, body);
   }
 
   @Post("nodes")

@@ -7,6 +7,7 @@ export * from "./domain/generation";
 export * from "./domain/novel-events";
 export * from "./domain/prompt-composer";
 export * from "./domain/project";
+export * from "./domain/production-workspace";
 export * from "./domain/script";
 export * from "./domain/settings";
 export * from "./domain/skills";

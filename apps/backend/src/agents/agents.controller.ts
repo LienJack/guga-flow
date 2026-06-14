@@ -34,6 +34,11 @@ export class AgentsController {
     return this.agentsService.getDeployment(projectId);
   }
 
+  @Get("production-workspace-context")
+  getProductionWorkspaceContext(@Param("projectId") projectId: string) {
+    return this.agentsService.getProductionWorkspaceContext(projectId);
+  }
+
   @Patch("deployment")
   updateDeployment(
     @Param("projectId") projectId: string,
