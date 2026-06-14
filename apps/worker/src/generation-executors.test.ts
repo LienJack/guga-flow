@@ -1,4 +1,9 @@
-import type { GenerationJobRecord, ProgrammableProviderManifest, ShotToImageJobInput } from "@guga-flow/shared-types";
+import type {
+  AiTextGenerationJobInput,
+  GenerationJobRecord,
+  ProgrammableProviderManifest,
+  ShotToImageJobInput,
+} from "@guga-flow/shared-types";
 import { describe, expect, it, vi } from "vitest";
 
 import { createGenerationExecutorRegistry, executeGenerationJob } from "./generation-executors";
@@ -67,6 +72,22 @@ describe("generation executors", () => {
       },
     });
   });
+
+  it("executes AI text generation jobs with deterministic mock output", async () => {
+    const input = aiTextInput();
+    const result = await executeGenerationJob(jobRecord(input));
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      textGenerationOutput: {
+        operation: "ai_text_generation",
+        provider: "mock-llm",
+        prompt: "Write a two-beat sequence.",
+        text: expect.stringContaining("Shot 01 (shot)"),
+        sourceNodeIds: ["ai_text_1", "shot_1"],
+      },
+    });
+  });
 });
 
 function shotInput(): ShotToImageJobInput {
@@ -92,11 +113,34 @@ function shotInput(): ShotToImageJobInput {
   };
 }
 
-function jobRecord(input: ShotToImageJobInput): GenerationJobRecord<ShotToImageJobInput> {
+function aiTextInput(): AiTextGenerationJobInput {
+  return {
+    operation: "ai_text_generation",
+    projectId: "project_1",
+    sourceNodeId: "ai_text_1",
+    aiTextNodeId: "ai_text_1",
+    prompt: "Write a two-beat sequence.",
+    context: [
+      {
+        nodeId: "shot_1",
+        nodeType: "shot",
+        title: "Shot 01",
+        text: "Visual description: Ari watches signal lights blink out.",
+      },
+    ],
+    sourceNodeIds: ["ai_text_1", "shot_1"],
+    provider: "mock-llm",
+    model: "mock-storyboard",
+  };
+}
+
+function jobRecord<TInput extends ShotToImageJobInput | AiTextGenerationJobInput>(
+  input: TInput,
+): GenerationJobRecord<TInput> {
   return {
     id: "job_1",
     projectId: input.projectId,
-    operation: "shot_to_image",
+    operation: input.operation,
     status: "running",
     provider: input.provider,
     model: input.model,

@@ -1,4 +1,5 @@
 import type {
+  AiTextNodeData,
   CanvasSnapshotJson,
   CanvasNodeRecord,
   CreateGenerationJobInput,
@@ -15,7 +16,7 @@ import type {
   VideoProviderCatalogResult,
 } from "@guga-flow/shared-types";
 import { filterSkillTemplateSummaries } from "@guga-flow/shared-types";
-import { Ban, ImagePlus, RotateCcw, Video } from "lucide-react";
+import { Ban, FileText, ImagePlus, RotateCcw, Video } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 
 import {
@@ -99,6 +100,7 @@ type DirectGenerationOperation =
   | "shot_to_image"
   | "character_to_image"
   | "location_to_image"
+  | "ai_text_generation"
   | "image_refinement"
   | "image_to_video";
 
@@ -131,13 +133,16 @@ export function GenerationActions({
     videoSettingsForProvider(FALLBACK_VIDEO_PROVIDER),
   );
   const [refinementPrompt, setRefinementPrompt] = useState("");
+  const [textPrompt, setTextPrompt] = useState(() => aiTextPromptFromNode(node));
   const [skillTemplates, setSkillTemplates] = useState<SkillTemplateSummary[]>([]);
   const [selectedSkillTemplateId, setSelectedSkillTemplateId] = useState("");
   const actions = generationActionsForNode(node);
   const hasImageProviderAction = actions.some((action) => isImageProviderOperation(action.operation));
   const hasVideoProviderAction = actions.some((action) => action.operation === "image_to_video");
   const hasRefinementAction = actions.some((action) => action.operation === "image_refinement");
+  const hasTextAction = actions.some((action) => action.operation === "ai_text_generation");
   const trimmedRefinementPrompt = refinementPrompt.trim();
+  const trimmedTextPrompt = textPrompt.trim();
   const requiredImageProviderMode: ImageProviderMode = hasRefinementAction
     ? "image_to_image"
     : "text_to_image";
@@ -264,6 +269,12 @@ export function GenerationActions({
     }
   }, [compatibleSkillTemplates, selectedSkillTemplateId]);
 
+  useEffect(() => {
+    if (node.type === "ai_text") {
+      setTextPrompt(aiTextPromptFromNode(node));
+    }
+  }, [node.id, node.type]);
+
   if (!actions.length) {
     return null;
   }
@@ -283,6 +294,7 @@ export function GenerationActions({
           normalizedVideoSettings,
           trimmedRefinementPrompt,
           selectedSkillTemplate ? [selectedSkillTemplate.id] : [],
+          trimmedTextPrompt,
         ),
       );
       setLastResult(t("generation.queued"));
@@ -333,7 +345,8 @@ export function GenerationActions({
     (operation === "image_refinement" &&
       !imageProviderSupportsMode(selectedProvider, "image_to_image")) ||
     (operation === "image_to_video" && !selectedVideoProvider.enabled) ||
-    (operation === "image_refinement" && !trimmedRefinementPrompt);
+    (operation === "image_refinement" && !trimmedRefinementPrompt) ||
+    (operation === "ai_text_generation" && !trimmedTextPrompt);
 
   function handleInsertPreset() {
     const sourceText = activeSkillTemplateSource(selectedSkillTemplate);
@@ -397,6 +410,19 @@ export function GenerationActions({
             rows={3}
             disabled={busy || Boolean(activeJob)}
             onChange={(event) => setRefinementPrompt(event.target.value)}
+          />
+        </div>
+      ) : null}
+      {hasTextAction ? (
+        <div className="generation-field wide">
+          <label htmlFor={`generation-text-prompt-${node.id}`}>{t("generation.textPrompt")}</label>
+          <textarea
+            id={`generation-text-prompt-${node.id}`}
+            value={textPrompt}
+            maxLength={4000}
+            rows={4}
+            disabled={busy || Boolean(activeJob)}
+            onChange={(event) => setTextPrompt(event.target.value)}
           />
         </div>
       ) : null}
@@ -994,8 +1020,18 @@ export function buildGenerationJobInputForOperation(
   videoSettings: VideoGenerationFormSettings = videoSettingsForProvider(FALLBACK_VIDEO_PROVIDER),
   refinementPrompt = "",
   skillTemplateIds: string[] = [],
+  textPrompt = "",
 ): CreateGenerationJobInput {
   const selectedSkillTemplateIds = skillTemplateIds.length ? { skillTemplateIds } : {};
+  if (operation === "ai_text_generation") {
+    return {
+      operation,
+      sourceNodeId,
+      textPrompt,
+      ...selectedSkillTemplateIds,
+    };
+  }
+
   if (operation === "image_to_video") {
     return {
       operation,
@@ -1048,6 +1084,9 @@ export function buildGenerationJobInputForOperation(
 }
 
 function presetCategoryForActions(actions: readonly GenerationAction[]): SkillTemplatePresetCategory | undefined {
+  if (actions.some((action) => action.operation === "ai_text_generation")) {
+    return "ai-text";
+  }
   if (actions.some((action) => action.operation === "image_to_video")) {
     return "ai-video";
   }
@@ -1183,6 +1222,14 @@ function isImageProviderOperation(operation: DirectGenerationOperation): boolean
   );
 }
 
+function aiTextPromptFromNode(node: CanvasNodeRecord): string {
+  if (node.type !== "ai_text") {
+    return "";
+  }
+  const data = node.dataJson as AiTextNodeData | undefined;
+  return typeof data?.prompt === "string" ? data.prompt : "";
+}
+
 function imageProviderSupportsMode(
   provider: ImageProviderCatalogItem,
   requiredMode: ImageProviderMode,
@@ -1247,6 +1294,16 @@ function generationActionsForNode(node: CanvasNodeRecord): GenerationAction[] {
         icon: ImagePlus,
         labelKey: "generation.refineImage",
         operation: "image_refinement",
+      },
+    ];
+  }
+
+  if (node.type === "ai_text") {
+    return [
+      {
+        icon: FileText,
+        labelKey: "generation.generateText",
+        operation: "ai_text_generation",
       },
     ];
   }

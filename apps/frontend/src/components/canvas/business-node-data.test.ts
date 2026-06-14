@@ -220,6 +220,29 @@ describe("business node data helpers", () => {
     expect(model.detail).toBe("Prompt, duration, and asset link");
   });
 
+  it("surfaces AI Text output and context on cards", () => {
+    const data = createDefaultBusinessNodeData("ai_text");
+    const model = buildBusinessNodeCardModel({
+      ...baseNode,
+      type: "ai_text",
+      title: "Scene outline",
+      dataJson: {
+        ...data,
+        prompt: "Write a two-beat sequence.",
+        outputText: "Beat 1: Ari sees the relay fail.",
+        contextSummary: "Shot 01 (shot), Ari (character_asset)",
+        provider: "mock-llm",
+        model: "mock-storyboard",
+      },
+    });
+
+    expect(data).toHaveProperty("prompt");
+    expect(data).toHaveProperty("outputText");
+    expect(model.summary).toContain("Beat 1");
+    expect(model.detail).toContain("Shot 01");
+    expect(model.detail).toContain("mock-llm");
+  });
+
   it("builds source media node data from Asset records", () => {
     const data = createSourceMediaNodeData({
       id: "asset_image_1",

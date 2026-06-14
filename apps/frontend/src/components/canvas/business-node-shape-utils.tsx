@@ -139,6 +139,11 @@ export class LocationAssetBusinessNodeShapeUtil extends BaseBusinessNodeShapeUti
   protected override readonly nodeType = "location_asset" as const;
 }
 
+export class AiTextBusinessNodeShapeUtil extends BaseBusinessNodeShapeUtil {
+  static override type = BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE.ai_text;
+  protected override readonly nodeType = "ai_text" as const;
+}
+
 export class ImageBusinessNodeShapeUtil extends BaseBusinessNodeShapeUtil {
   static override type = BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE.image;
   protected override readonly nodeType = "image" as const;
@@ -165,6 +170,7 @@ export const businessNodeShapeUtils = [
   ShotBusinessNodeShapeUtil,
   CharacterAssetBusinessNodeShapeUtil,
   LocationAssetBusinessNodeShapeUtil,
+  AiTextBusinessNodeShapeUtil,
   ImageBusinessNodeShapeUtil,
   VideoBusinessNodeShapeUtil,
   EditorPackageBusinessNodeShapeUtil,

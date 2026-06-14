@@ -11,6 +11,7 @@ import {
   type VideoProviderTaskResult,
 } from "@guga-flow/provider-contracts";
 import type {
+  AiTextGenerationJobOutput,
   GeneratedMediaProviderOutput,
   GenerationJobInput,
   GenerationJobRecord,
@@ -50,6 +51,10 @@ export type GenerationExecutorResult =
   | {
       status: "succeeded";
       assetAnalysisOutput: AssetAnalysisJobOutput;
+    }
+  | {
+      status: "succeeded";
+      textGenerationOutput: AiTextGenerationJobOutput;
     };
 
 export function createGenerationExecutorRegistry(
@@ -160,6 +165,32 @@ export async function executeGenerationJob(
           workflowKind: input.workflowKind,
           outputKind: input.outputKind,
         },
+      },
+    };
+  }
+
+  if (input.operation === "ai_text_generation") {
+    if (input.forceFailure) {
+      throw new ProviderError({
+        provider: input.provider,
+        code: "MOCK_AI_TEXT_FAILED",
+        message: "Mock AI text generation failure requested.",
+        retryable: false,
+      });
+    }
+    return {
+      status: "succeeded",
+      textGenerationOutput: {
+        operation: "ai_text_generation",
+        sourceNodeId: input.sourceNodeId,
+        targetNodeId: input.aiTextNodeId,
+        provider: input.provider,
+        model: input.model,
+        prompt: input.prompt,
+        text: mockAiTextOutput(input),
+        context: input.context,
+        sourceNodeIds: input.sourceNodeIds,
+        completedAt: new Date().toISOString(),
       },
     };
   }
@@ -373,6 +404,18 @@ function firstProviderOutput(
     message: `${provider} did not return any generated media outputs.`,
     retryable: false,
   });
+}
+
+function mockAiTextOutput(input: Extract<GenerationJobInput, { operation: "ai_text_generation" }>): string {
+  const contextLines = input.context.map((item, index) => {
+    const title = item.title?.trim() || item.nodeId;
+    return `${index + 1}. ${title} (${item.nodeType}): ${item.text}`;
+  });
+  const presetLine = input.skillTemplateIds?.length
+    ? `\nPrompt presets: ${input.skillTemplateIds.join(", ")}`
+    : "";
+  const contextBlock = contextLines.length ? `\n\nReferenced canvas context:\n${contextLines.join("\n")}` : "";
+  return `Mock AI text for prompt: ${input.prompt}${presetLine}${contextBlock}`;
 }
 
 function isGenerationExecutorRegistryOptions(

@@ -1,4 +1,6 @@
 import type {
+  AiTextGenerationJobOutput,
+  AnyLlmProviderId,
   CreateGenerationJobInput,
   CreateAssetAnalysisJobInput,
   CreateBatchImagesToVideosJobInput,
@@ -60,6 +62,11 @@ export class CreateGenerationJobDto implements CreateGenerationJobInput {
   refinementPrompt?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  textPrompt?: string;
+
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(8)
   @IsString({ each: true })
@@ -75,6 +82,16 @@ export class CreateGenerationJobDto implements CreateGenerationJobInput {
   @IsString()
   @MaxLength(120)
   model?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  llmProvider?: AnyLlmProviderId;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  llmModel?: string;
 
   @IsOptional()
   @IsIn(PROJECT_ASPECT_RATIOS)
@@ -294,6 +311,10 @@ export class WorkerGenerationJobSucceedDto implements WorkerGenerationJobSucceed
   @IsOptional()
   @IsObject()
   assetAnalysisOutput?: AssetAnalysisJobOutput;
+
+  @IsOptional()
+  @IsObject()
+  textGenerationOutput?: AiTextGenerationJobOutput;
 }
 
 export class WorkerProviderRuntimeConfigDto implements WorkerProviderRuntimeConfigInput {

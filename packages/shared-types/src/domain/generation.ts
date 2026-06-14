@@ -31,6 +31,7 @@ export const GENERATION_OPERATIONS = [
   "image_refinement",
   "image_to_video",
   "shot_to_video",
+  "ai_text_generation",
   "workflow_run",
   "batch_shots_to_images",
   "batch_images_to_videos",
@@ -45,6 +46,7 @@ export const PHASE_8_GENERATION_OPERATIONS = [
   "location_to_image",
   "image_refinement",
   "image_to_video",
+  "ai_text_generation",
 ] as const;
 export type Phase8GenerationOperation = (typeof PHASE_8_GENERATION_OPERATIONS)[number];
 
@@ -1127,6 +1129,9 @@ export interface CreateGenerationJobInput extends ImageGenerationSettings, Video
   operation: Phase8GenerationOperation;
   sourceNodeId: string;
   refinementPrompt?: string;
+  textPrompt?: string;
+  llmProvider?: AnyLlmProviderId;
+  llmModel?: string;
   skillTemplateIds?: string[];
   forceFailure?: boolean;
 }
@@ -1205,7 +1210,7 @@ export interface EditorExportSendResult {
 
 export interface GenerationJobListResult<
   TInput = GenerationJobInput,
-  TOutput = GeneratedMediaJobOutput | ReferenceAssetJobOutput,
+  TOutput = GeneratedMediaJobOutput | ReferenceAssetJobOutput | AiTextGenerationJobOutput,
 > {
   jobs: Array<GenerationJobRecord<TInput, TOutput>>;
   queueSummary: GenerationQueueSummary;
@@ -1226,6 +1231,7 @@ export interface WorkerGenerationJobSucceedInput {
   providerOutputs?: GeneratedMediaProviderOutput[];
   packageOutput?: EditorExportPackageOutput;
   assetAnalysisOutput?: AssetAnalysisJobOutput;
+  textGenerationOutput?: AiTextGenerationJobOutput;
 }
 
 export interface WorkerEditorExportJobSucceedInput {
@@ -1257,8 +1263,30 @@ export type GenerationJobInput =
   | LocationToImageJobInput
   | ImageRefinementJobInput
   | ImageToVideoJobInput
+  | AiTextGenerationJobInput
   | WorkflowRunJobInput
   | EditorExportJobInput;
+
+export interface AiTextGenerationContextItem {
+  nodeId: string;
+  nodeType: string;
+  title?: string;
+  text: string;
+}
+
+export interface AiTextGenerationJobInput {
+  operation: "ai_text_generation";
+  projectId: string;
+  sourceNodeId: string;
+  aiTextNodeId: string;
+  prompt: string;
+  context: AiTextGenerationContextItem[];
+  sourceNodeIds: string[];
+  provider: string;
+  model?: string;
+  skillTemplateIds?: string[];
+  forceFailure?: boolean;
+}
 
 export interface NovelToStoryboardJobInput {
   operation: "novel_to_storyboard";
@@ -1783,6 +1811,19 @@ export interface GeneratedMediaJobOutput {
   generationSettings?: ResolvedGenerationSettings;
   providerOutput: GeneratedMediaProviderOutput;
   targets?: GeneratedMediaJobTargetOutput[];
+  completedAt: string;
+}
+
+export interface AiTextGenerationJobOutput {
+  operation: "ai_text_generation";
+  sourceNodeId: string;
+  targetNodeId: string;
+  provider: string;
+  model?: string;
+  prompt: string;
+  text: string;
+  context: AiTextGenerationContextItem[];
+  sourceNodeIds: string[];
   completedAt: string;
 }
 

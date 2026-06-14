@@ -1,4 +1,5 @@
 import type {
+  AiTextNodeData,
   CanvasNodeRecord,
   GenerationJobRecord,
   ImageNodeData,
@@ -24,6 +25,7 @@ vi.mock("../../lib/api", () => ({
   createGenerationJob: vi.fn(),
   getProjectImageProviderCatalog: vi.fn(),
   getProjectVideoProviderCatalog: vi.fn(),
+  listSkillTemplates: vi.fn(async () => ({ templates: [] })),
   retryGenerationJob: vi.fn(),
 }));
 
@@ -117,6 +119,23 @@ describe("GenerationActions", () => {
     expect(html).toContain("Refinement prompt");
     expect(html).toContain("Provider");
     expect(html).toContain("Mock Video");
+  });
+
+  it("renders AI Text generation controls with the node prompt", () => {
+    const html = renderToStaticMarkup(
+      <GenerationActions
+        generationJobs={[]}
+        projectId="project_1"
+        node={node<AiTextNodeData>("ai_text_1", "ai_text", {
+          prompt: "Write a two-beat sequence.",
+        })}
+      />,
+    );
+
+    expect(html).toContain("Generate Text");
+    expect(html).toContain("Text prompt");
+    expect(html).toContain("Write a two-beat sequence.");
+    expect(html).not.toContain("Provider");
   });
 
   it("marks enabled image providers without image-to-image support as unsupported for refinement", () => {
@@ -247,6 +266,23 @@ describe("GenerationActions", () => {
       model: "mock-image-v1",
       aspectRatio: "1:1",
       providerParams: { quality: "medium" },
+    });
+
+    expect(
+      buildGenerationJobInputForOperation(
+        "ai_text_generation",
+        "ai_text_1",
+        undefined,
+        undefined,
+        "",
+        ["skill_ai_text"],
+        "Write a two-beat sequence.",
+      ),
+    ).toEqual({
+      operation: "ai_text_generation",
+      sourceNodeId: "ai_text_1",
+      textPrompt: "Write a two-beat sequence.",
+      skillTemplateIds: ["skill_ai_text"],
     });
   });
 

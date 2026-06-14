@@ -85,6 +85,13 @@ export const BUSINESS_NODE_FIELDS = {
     { key: "consistencyPrompt", label: "Consistency Prompt", multiline: true },
     { key: "locationPrompt", label: "Location Prompt", multiline: true },
   ],
+  ai_text: [
+    { key: "prompt", label: "Prompt", multiline: true },
+    { key: "outputText", label: "Output Text", multiline: true },
+    { key: "contextSummary", label: "Context Summary", multiline: true },
+    { key: "provider", label: "Provider" },
+    { key: "model", label: "Model" },
+  ],
   image: [
     { key: "description", label: "Description", multiline: true },
     { key: "prompt", label: "Prompt", multiline: true },

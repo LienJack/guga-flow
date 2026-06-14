@@ -72,6 +72,36 @@ describe("generation worker client configuration", () => {
     );
   });
 
+  it("posts AI text generation success payloads", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ id: "job_text_1" })));
+    const client = new HttpGenerationWorkerClient(
+      "http://localhost:3002/api/v1",
+      fetchImpl as unknown as typeof fetch,
+      "worker-secret",
+    );
+
+    await client.succeedTextGenerationJob("job_text_1", {
+      operation: "ai_text_generation",
+      sourceNodeId: "ai_text_1",
+      targetNodeId: "ai_text_1",
+      provider: "mock-llm",
+      model: "mock-storyboard",
+      prompt: "Write a two-beat sequence.",
+      text: "Beat 1: Ari sees the relay fail.",
+      context: [],
+      sourceNodeIds: ["ai_text_1"],
+      completedAt: "2026-06-12T00:10:00.000Z",
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:3002/api/v1/worker/generation/jobs/job_text_1/succeed",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("textGenerationOutput"),
+      }),
+    );
+  });
+
   it("posts provider runtime config requests without putting credentials in job payloads", async () => {
     const fetchImpl = vi.fn(async () =>
       new Response(

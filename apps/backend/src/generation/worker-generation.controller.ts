@@ -37,6 +37,7 @@ export class WorkerGenerationController {
       body.providerOutputs,
       body.packageOutput,
       body.assetAnalysisOutput,
+      body.textGenerationOutput,
     );
   }
 

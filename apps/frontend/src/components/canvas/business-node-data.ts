@@ -135,6 +135,14 @@ export const BUSINESS_NODE_DEFINITIONS = {
     detailFallback: "Environment and visual style",
     tone: "asset",
   }),
+  ai_text: defineBusinessNode("ai_text", {
+    label: "AI Text",
+    shortLabel: "AI Text",
+    defaultTitle: "AI Text Node",
+    summaryFallback: "Generated text",
+    detailFallback: "Prompt and source context",
+    tone: "media",
+  }),
   image: defineBusinessNode("image", {
     label: "Image",
     shortLabel: "Image",
@@ -234,6 +242,12 @@ export function createDefaultBusinessNodeData<TType extends Phase3CanvasNodeType
         consistencyPrompt: "",
         locationPrompt: "",
         referenceAssetIds: [],
+      } as Phase3CanvasNodeData<TType>;
+    case "ai_text":
+      return {
+        prompt: "",
+        outputText: "",
+        contextSummary: "",
       } as Phase3CanvasNodeData<TType>;
     case "image":
       return {
@@ -525,6 +539,8 @@ function summaryForNode(
       return firstText(lifecycleStageCountText(data), text(data, "appearance"), text(data, "role"), fallback);
     case "location_asset":
       return firstText(text(data, "environment"), text(data, "visualStyle"), fallback);
+    case "ai_text":
+      return firstText(text(data, "outputText"), text(data, "prompt"), fallback);
     case "image":
       return firstText(text(data, "description"), text(data, "prompt"), fallback);
     case "video":
@@ -600,6 +616,16 @@ function detailForNode(
           text(data, "locationPrompt"),
           text(data, "consistencyPrompt"),
           referenceAssetText(data),
+        ],
+        fallback,
+      );
+    case "ai_text":
+      return compact(
+        [
+          text(data, "contextSummary"),
+          text(data, "provider"),
+          text(data, "model"),
+          text(data, "generationOperation"),
         ],
         fallback,
       );

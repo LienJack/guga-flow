@@ -1,5 +1,8 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type {
+  AiTextGenerationJobInput,
+  AiTextGenerationJobOutput,
+  AiTextNodeData,
   AssetAnalysisJobInput,
   AssetAnalysisJobOutput,
   CanvasEdgeRecord,
@@ -14,6 +17,7 @@ import type {
   ImageNodeData,
   ImageToVideoJobInput,
   LocationAssetNodeData,
+  LlmProviderCatalogResult,
   ProviderFailure,
   ResolvedGenerationSettings,
   ShotPromptCompositionResult,
@@ -197,6 +201,7 @@ function createProvidersServiceMock() {
   return {
     getImageProviders: vi.fn(() => imageProviderCatalogFixture(false)),
     getVideoProviders: vi.fn(() => videoProviderCatalogFixture(false)),
+    getProjectLlmProviders: vi.fn(async () => llmProviderCatalogFixture(false)),
     getProjectImageProviders: vi.fn(async () => imageProviderCatalogFixture(false)),
     getProjectVideoProviders: vi.fn(async () => videoProviderCatalogFixture(false)),
     getRuntimeProviderConfig: vi.fn(async () => ({
@@ -240,6 +245,42 @@ function enableProgrammableImage(providersService: ReturnType<typeof createProvi
       },
     ],
   });
+}
+
+function llmProviderCatalogFixture(genericEnabled: boolean): LlmProviderCatalogResult {
+  return {
+    providers: [
+      {
+        id: "mock-llm",
+        displayName: "Mock LLM",
+        enabled: true,
+        requiresApiKey: false,
+        defaultModel: "mock-storyboard",
+        models: [{ id: "mock-storyboard", displayName: "Mock Storyboard", default: true }],
+        supportedModes: ["chat", "json"],
+        supportsJsonMode: true,
+        supportsToolCalls: false,
+        supportsVision: false,
+        defaultContextWindowTokens: 32000,
+        maxOutputTokens: 4096,
+        parameters: [],
+      },
+      {
+        id: "generic-llm",
+        displayName: "Generic LLM Provider",
+        enabled: genericEnabled,
+        disabledReason: genericEnabled ? undefined : "Generic LLM Provider server-side key is not configured",
+        requiresApiKey: true,
+        defaultModel: "chat-model",
+        models: [{ id: "chat-model", displayName: "Chat model", default: true }],
+        supportedModes: ["chat", "text", "json"],
+        supportsJsonMode: true,
+        supportsToolCalls: true,
+        supportsVision: false,
+        parameters: [],
+      },
+    ],
+  };
 }
 
 function imageProviderCatalogFixture(image2Enabled: boolean): ImageProviderCatalogResult {
@@ -604,6 +645,117 @@ describe("GenerationService", () => {
     expect(assetsService.getAsset).toHaveBeenCalledWith("project_1", "asset_ref_1");
   });
 
+  it("creates an AI text job from upstream canvas text context", async () => {
+    canvasService.getCanvas.mockResolvedValue(
+      canvasLoadResult({
+        nodes: [
+          canvasNode<AiTextNodeData>("ai_text_1", "ai_text", "AI Outline", {
+            prompt: "Draft a quiet thriller outline.",
+          }),
+          canvasNode("source_text_1", "source_text", "Source excerpt", {
+            textPreview: "The station clock stops at midnight.",
+            originalFilename: "chapter-01.txt",
+          }),
+          canvasNode<ShotNodeData>("shot_1", "shot", "Shot 01", {
+            shotNumber: "001",
+            visualDescription: "Ari watches signal lights blink out.",
+            dialogue: "The relay is gone.",
+          }),
+          canvasNode<CharacterAssetNodeData>("character_1", "character_asset", "Ari", {
+            name: "Ari",
+            role: "signal analyst",
+            appearance: "rain-damp hair and a dark utility coat",
+          }),
+          canvasNode<LocationAssetNodeData>("location_1", "location_asset", "Control Room", {
+            name: "Control Room",
+            environment: "near-future rooftop control room",
+            mood: "tense and rainy",
+          }),
+        ],
+        edges: [
+          canvasEdge("edge_source_text", "source_text_1", "ai_text_1", "derived_from"),
+          canvasEdge("edge_shot", "shot_1", "ai_text_1", "derived_from"),
+          canvasEdge("edge_character", "character_1", "ai_text_1", "derived_from"),
+          canvasEdge("edge_location", "location_1", "ai_text_1", "derived_from"),
+        ],
+      }),
+    );
+
+    const result = await service.createJob("project_1", {
+      operation: "ai_text_generation",
+      sourceNodeId: "ai_text_1",
+      textPrompt: "Write a two-beat sequence.",
+      llmProvider: "mock-llm",
+      skillTemplateIds: ["preset_text_1"],
+    });
+
+    expect(providersService.getProjectLlmProviders).toHaveBeenCalledWith("project_1");
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        operation: "ai_text_generation",
+        status: "queued",
+        provider: "mock-llm",
+        model: "mock-storyboard",
+        sourceNodeId: "ai_text_1",
+        inputJson: expect.objectContaining({
+          operation: "ai_text_generation",
+          prompt: "Write a two-beat sequence.",
+          aiTextNodeId: "ai_text_1",
+          skillTemplateIds: ["preset_text_1"],
+          sourceNodeIds: ["ai_text_1", "source_text_1", "shot_1", "character_1", "location_1"],
+          context: [
+            expect.objectContaining({
+              nodeId: "source_text_1",
+              text: expect.stringContaining("The station clock stops at midnight."),
+            }),
+            expect.objectContaining({
+              nodeId: "shot_1",
+              text: expect.stringContaining("Visual description: Ari watches signal lights blink out."),
+            }),
+            expect.objectContaining({
+              nodeId: "character_1",
+              text: expect.stringContaining("Role: signal analyst"),
+            }),
+            expect.objectContaining({
+              nodeId: "location_1",
+              text: expect.stringContaining("Environment: near-future rooftop control room"),
+            }),
+          ],
+        }),
+      }),
+    });
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "ai_text_1" },
+      data: { status: "queued" },
+    });
+    expect(result.job.operation).toBe("ai_text_generation");
+  });
+
+  it("rejects disabled LLM providers before queuing AI text jobs", async () => {
+    canvasService.getCanvas.mockResolvedValue(
+      canvasLoadResult({
+        nodes: [
+          canvasNode<AiTextNodeData>("ai_text_1", "ai_text", "AI Outline", {
+            prompt: "Draft a quiet thriller outline.",
+          }),
+        ],
+      }),
+    );
+
+    await expect(
+      service.createJob("project_1", {
+        operation: "ai_text_generation",
+        sourceNodeId: "ai_text_1",
+        textPrompt: "Write a beat sheet.",
+        llmProvider: "generic-llm",
+      }),
+    ).rejects.toThrow("Generic LLM Provider server-side key is not configured");
+
+    expect(prisma.generationJob.create).not.toHaveBeenCalled();
+    expect(prisma.canvasNode.update).not.toHaveBeenCalled();
+  });
+
   it("creates a queued asset analysis job after validating and deduping assets", async () => {
     const result = await service.createAssetAnalysisJob("project_1", {
       operation: "asset_caption",
@@ -891,6 +1043,7 @@ describe("GenerationService", () => {
             "location_to_image",
             "image_refinement",
             "image_to_video",
+            "ai_text_generation",
             "asset_caption",
             "asset_classification",
             "workflow_run",
@@ -1239,6 +1392,74 @@ describe("GenerationService", () => {
       },
     });
     expect(result.outputJson).toEqual(output);
+  });
+
+  it("completes AI text jobs by writing output back to the target node", async () => {
+    const input = aiTextInput();
+    const output = aiTextOutput();
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "ai_text_generation",
+        status: "running",
+        provider: "mock-llm",
+        model: "mock-storyboard",
+        sourceNodeId: "ai_text_1",
+        inputJson: input,
+      }),
+    );
+    prisma.canvasNode.findFirst.mockResolvedValue(
+      canvasNode<AiTextNodeData>("ai_text_1", "ai_text", "AI Outline", {
+        prompt: "Write a two-beat sequence.",
+      }),
+    );
+    prisma.generationJob.update.mockResolvedValue(
+      generationJob({
+        operation: "ai_text_generation",
+        status: "succeeded",
+        provider: "mock-llm",
+        model: "mock-storyboard",
+        sourceNodeId: "ai_text_1",
+        targetNodeId: "ai_text_1",
+        inputJson: input,
+        outputJson: output,
+      }),
+    );
+
+    const result = await service.succeedJob("job_1", undefined, undefined, undefined, undefined, output);
+
+    expect(assetsService.createGeneratedAsset).not.toHaveBeenCalled();
+    expect(prisma.canvasNode.create).not.toHaveBeenCalled();
+    expect(prisma.canvasEdge.create).not.toHaveBeenCalled();
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "ai_text_1" },
+      data: {
+        status: "succeeded",
+        dataJson: expect.objectContaining({
+          prompt: "Write a two-beat sequence.",
+          outputText: expect.stringContaining("Beat 1"),
+          contextSummary: "Shot 01 (shot), Ari (character_asset)",
+          provider: "mock-llm",
+          model: "mock-storyboard",
+          generationJobId: "job_1",
+          generationOperation: "ai_text_generation",
+          generatedFromNodeId: "ai_text_1",
+          sourceNodeIds: ["ai_text_1", "shot_1", "character_1"],
+          inputJson: input,
+          outputJson: output,
+        }),
+      },
+    });
+    expect(prisma.generationJob.update).toHaveBeenCalledWith({
+      where: { id: "job_1" },
+      data: {
+        status: "succeeded",
+        targetNodeId: "ai_text_1",
+        outputJson: output,
+        errorMessage: null,
+      },
+    });
+    expect(result.outputJson).toEqual(output);
+    expect(result.targetNodeId).toBe("ai_text_1");
   });
 
   it("does not complete jobs that leave active state before media side effects", async () => {
@@ -2019,6 +2240,51 @@ describe("GenerationService", () => {
     expect(prisma.generationJob.updateMany).not.toHaveBeenCalled();
   });
 });
+
+function aiTextInput(overrides: Partial<AiTextGenerationJobInput> = {}): AiTextGenerationJobInput {
+  return {
+    operation: "ai_text_generation",
+    projectId: "project_1",
+    sourceNodeId: "ai_text_1",
+    aiTextNodeId: "ai_text_1",
+    prompt: "Write a two-beat sequence.",
+    context: [
+      {
+        nodeId: "shot_1",
+        nodeType: "shot",
+        title: "Shot 01",
+        text: "Visual description: Ari watches signal lights blink out.",
+      },
+      {
+        nodeId: "character_1",
+        nodeType: "character_asset",
+        title: "Ari",
+        text: "Role: signal analyst",
+      },
+    ],
+    sourceNodeIds: ["ai_text_1", "shot_1", "character_1"],
+    provider: "mock-llm",
+    model: "mock-storyboard",
+    skillTemplateIds: ["preset_text_1"],
+    ...overrides,
+  };
+}
+
+function aiTextOutput(overrides: Partial<AiTextGenerationJobOutput> = {}): AiTextGenerationJobOutput {
+  return {
+    operation: "ai_text_generation",
+    sourceNodeId: "ai_text_1",
+    targetNodeId: "ai_text_1",
+    provider: "mock-llm",
+    model: "mock-storyboard",
+    prompt: "Write a two-beat sequence.",
+    text: "Beat 1: Ari sees the relay fail.\nBeat 2: She chooses the rooftop route.",
+    context: aiTextInput().context,
+    sourceNodeIds: ["ai_text_1", "shot_1", "character_1"],
+    completedAt: "2026-06-12T00:10:00.000Z",
+    ...overrides,
+  };
+}
 
 function shotToImageInput(overrides: Partial<ShotToImageJobInput> = {}): ShotToImageJobInput {
   return {

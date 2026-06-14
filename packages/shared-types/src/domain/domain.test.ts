@@ -203,6 +203,7 @@ describe("shared domain constants", () => {
 
   it("includes MVP canvas node and edge concepts", () => {
     expect(CANVAS_NODE_TYPES).toContain("shot");
+    expect(CANVAS_NODE_TYPES).toContain("ai_text");
     expect(CANVAS_NODE_TYPES).toContain("editor_package");
     expect(CANVAS_NODE_FAMILIES).toEqual([
       "business",
@@ -243,7 +244,7 @@ describe("shared domain constants", () => {
       "source_video",
       "source_audio",
     ]);
-    expect(canvasNodeTypesByFamily("ai_generation")).toEqual(["image", "video"]);
+    expect(canvasNodeTypesByFamily("ai_generation")).toEqual(["ai_text", "image", "video"]);
     expect(canvasNodeHasCapability("source_image", "accepts_image")).toBe(true);
     expect(canvasNodeHasCapability("source_audio", "accepts_audio")).toBe(true);
     expect(canvasNodeHasCapability("video", "accepts_audio")).toBe(true);
@@ -343,6 +344,7 @@ describe("shared domain constants", () => {
       "location_to_image",
       "image_refinement",
       "image_to_video",
+      "ai_text_generation",
     ]);
     expect(IMAGE_PROVIDER_IDS).toEqual(["mock-image", "image2", "banana", "generic-image"]);
     expect(IMAGE_PROVIDER_MODES).toEqual(["text_to_image", "image_to_image", "multi_reference"]);
@@ -971,6 +973,7 @@ describe("shared domain constants", () => {
       "shot",
       "character_asset",
       "location_asset",
+      "ai_text",
       "image",
       "video",
       "editor_package",

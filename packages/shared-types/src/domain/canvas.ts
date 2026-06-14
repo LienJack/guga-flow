@@ -14,6 +14,7 @@ export const CANVAS_NODE_TYPES = [
   "location_asset",
   "style_asset",
   "prop_asset",
+  "ai_text",
   "image",
   "video",
   "editor_package",
@@ -165,6 +166,14 @@ export const CANVAS_NODE_REGISTRY = {
     description: "Prop reference facts for object continuity and prompt context.",
     capabilities: ["accepts_text", "accepts_image", "produces_text", "has_preview"],
   },
+  ai_text: {
+    type: "ai_text",
+    family: "ai_generation",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.ai_generation,
+    label: "AI Text",
+    description: "Task-backed text generation node that consumes upstream canvas context.",
+    capabilities: ["accepts_text", "produces_text", "has_preview", "has_task"],
+  },
   image: {
     type: "image",
     family: "ai_generation",
@@ -237,6 +246,7 @@ export const PHASE_3_CANVAS_NODE_TYPES = [
   "shot",
   "character_asset",
   "location_asset",
+  "ai_text",
   "image",
   "video",
   "editor_package",
@@ -318,6 +328,7 @@ export const CANVAS_NODE_OUTPUT_KINDS = {
   shot: ["text"],
   character_asset: ["text", "image", "audio"],
   location_asset: ["text", "image", "video"],
+  ai_text: ["text"],
   image: ["image"],
   video: ["video", "audio"],
 } as const satisfies Partial<Record<CanvasNodeType, readonly CanvasInputKind[]>>;
@@ -443,6 +454,16 @@ export const CANVAS_NODE_INPUT_SLOTS = {
       inputRole: "location_reference",
       required: false,
       maxConnections: 2,
+    },
+  ],
+  ai_text: [
+    {
+      id: "prompt_text",
+      label: "Prompt context",
+      inputKind: "text",
+      inputRole: "prompt_context",
+      required: false,
+      maxConnections: 8,
     },
   ],
 } as const satisfies Partial<Record<CanvasNodeType, readonly CanvasNodeInputSlotDefinition[]>>;
@@ -653,7 +674,7 @@ export interface SourceMediaNodeData {
 
 export interface GeneratedMediaNodeData {
   generationJobId?: string;
-  generationOperation?: "shot_to_image" | "image_refinement" | "image_to_video" | "workflow_run";
+  generationOperation?: "shot_to_image" | "image_refinement" | "image_to_video" | "workflow_run" | "ai_text_generation";
   generatedFromNodeId?: string;
   sourceNodeIds?: string[];
   referenceAssetIds?: string[];
@@ -662,6 +683,12 @@ export interface GeneratedMediaNodeData {
   inputJson?: unknown;
   outputJson?: unknown;
   generationSettings?: ResolvedGenerationSettings;
+}
+
+export interface AiTextNodeData extends GeneratedMediaNodeData {
+  prompt?: string;
+  outputText?: string;
+  contextSummary?: string;
 }
 
 export interface ImageNodeData extends GeneratedMediaNodeData {
@@ -710,6 +737,7 @@ export interface Phase3CanvasNodeDataByType {
   shot: ShotNodeData;
   character_asset: CharacterAssetNodeData;
   location_asset: LocationAssetNodeData;
+  ai_text: AiTextNodeData;
   image: ImageNodeData;
   video: VideoNodeData;
   editor_package: EditorPackageNodeData;

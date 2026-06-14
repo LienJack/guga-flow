@@ -1,5 +1,6 @@
 import { ProviderError, type ImageProvider, type VideoProvider } from "@guga-flow/provider-contracts";
 import type {
+  AiTextGenerationJobInput,
   AssetAnalysisJobInput,
   CharacterToImageJobInput,
   EditorExportJobInput,
@@ -20,6 +21,7 @@ type WorkerGenerationJobInput =
   | AssetAnalysisJobInput
   | ImageRefinementJobInput
   | ImageToVideoJobInput
+  | AiTextGenerationJobInput
   | EditorExportJobInput;
 
 function createClientMock(): GenerationWorkerClient {
@@ -42,6 +44,7 @@ function createClientMock(): GenerationWorkerClient {
       provider: "mock-vision",
       model: "mock-vision-v1",
     })),
+    succeedTextGenerationJob: vi.fn(async () => jobRecord("job_text_done", aiTextInput())),
     succeedEditorExportJob: vi.fn(async () => jobRecord("job_export_done", editorExportInput())),
     waitJob: vi.fn(async () => jobRecord("job_waiting", videoInput(), { status: "provider_waiting" })),
     failJob: vi.fn(async () => jobRecord("job_failed", shotInput(), { status: "failed" })),
@@ -438,6 +441,37 @@ describe("generation worker runner", () => {
     expect(result).toEqual({ status: "succeeded", jobId: "job_caption" });
   });
 
+  it("executes claimed AI text jobs and reports text output", async () => {
+    vi.mocked(client.claimNextJob).mockResolvedValue({
+      job: jobRecord("job_text", aiTextInput(), {
+        operation: "ai_text_generation",
+        provider: "mock-llm",
+      }),
+    });
+
+    const result = await runOneGenerationJob({ client });
+
+    expect(client.getProviderRuntimeConfig).toHaveBeenCalledWith("project_1", "llm", "mock-llm");
+    expect(client.succeedTextGenerationJob).toHaveBeenCalledWith(
+      "job_text",
+      expect.objectContaining({
+        operation: "ai_text_generation",
+        provider: "mock-llm",
+        prompt: "Write a two-beat sequence.",
+        text: expect.stringContaining("Referenced canvas context"),
+        context: [
+          expect.objectContaining({
+            nodeId: "shot_1",
+            text: expect.stringContaining("Ari watches signal lights blink out"),
+          }),
+        ],
+        sourceNodeIds: ["ai_text_1", "shot_1"],
+      }),
+    );
+    expect(client.succeedJob).not.toHaveBeenCalled();
+    expect(result).toEqual({ status: "succeeded", jobId: "job_text" });
+  });
+
   it("reports provider failures back to the backend fail endpoint", async () => {
     vi.mocked(client.claimNextJob).mockResolvedValue({
       job: jobRecord("job_image", shotInput()),
@@ -593,6 +627,28 @@ function imageRefinementInput(): ImageRefinementJobInput {
     model: "mock-image-v1",
     aspectRatio: "16:9",
     providerParams: { strength: "medium" },
+  };
+}
+
+function aiTextInput(): AiTextGenerationJobInput {
+  return {
+    operation: "ai_text_generation",
+    projectId: "project_1",
+    sourceNodeId: "ai_text_1",
+    aiTextNodeId: "ai_text_1",
+    prompt: "Write a two-beat sequence.",
+    context: [
+      {
+        nodeId: "shot_1",
+        nodeType: "shot",
+        title: "Shot 01",
+        text: "Visual description: Ari watches signal lights blink out.",
+      },
+    ],
+    sourceNodeIds: ["ai_text_1", "shot_1"],
+    provider: "mock-llm",
+    model: "mock-storyboard",
+    skillTemplateIds: ["preset_text_1"],
   };
 }
 

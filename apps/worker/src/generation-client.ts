@@ -1,4 +1,5 @@
 import type {
+  AiTextGenerationJobOutput,
   ClaimGenerationJobResult,
   EditorExportPackageOutput,
   AssetAnalysisJobOutput,
@@ -32,6 +33,10 @@ export interface GenerationWorkerClient {
   succeedAssetAnalysisJob(
     jobId: string,
     assetAnalysisOutput: AssetAnalysisJobOutput,
+  ): Promise<GenerationJobRecord>;
+  succeedTextGenerationJob(
+    jobId: string,
+    textGenerationOutput: AiTextGenerationJobOutput,
   ): Promise<GenerationJobRecord>;
   waitJob(jobId: string, input: WorkerGenerationJobWaitInput): Promise<GenerationJobRecord>;
   failJob(jobId: string, error: ProviderFailure): Promise<GenerationJobRecord>;
@@ -107,6 +112,15 @@ export class HttpGenerationWorkerClient implements GenerationWorkerClient {
   ): Promise<GenerationJobRecord> {
     return this.post(`/worker/generation/jobs/${encodeURIComponent(jobId)}/succeed`, {
       assetAnalysisOutput,
+    });
+  }
+
+  succeedTextGenerationJob(
+    jobId: string,
+    textGenerationOutput: AiTextGenerationJobOutput,
+  ): Promise<GenerationJobRecord> {
+    return this.post(`/worker/generation/jobs/${encodeURIComponent(jobId)}/succeed`, {
+      textGenerationOutput,
     });
   }
 

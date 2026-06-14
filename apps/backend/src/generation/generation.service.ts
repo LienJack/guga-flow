@@ -1,6 +1,10 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ProviderError, createVideoProviderRegistry } from "@guga-flow/provider-contracts";
 import type {
+  AiTextGenerationContextItem,
+  AiTextGenerationJobInput,
+  AiTextGenerationJobOutput,
+  AiTextNodeData,
   AssetDetail,
   AssetAnalysisJobInput,
   AssetAnalysisJobOutput,
@@ -34,6 +38,7 @@ import type {
   ImageProviderCatalogItem,
   ImageNodeData,
   ImageToVideoJobInput,
+  LlmProviderCatalogItem,
   LocationAssetNodeData,
   LocationToImageJobInput,
   NodeStatus,
@@ -132,7 +137,8 @@ type DirectGenerationJobInput =
   | CharacterToImageJobInput
   | LocationToImageJobInput
   | ImageRefinementJobInput
-  | ImageToVideoJobInput;
+  | ImageToVideoJobInput
+  | AiTextGenerationJobInput;
 type WorkerGenerationJobInput =
   | DirectGenerationJobInput
   | AssetAnalysisJobInput
@@ -230,6 +236,11 @@ function compactText(values: readonly (string | undefined)[]): string {
     .join("\n");
 }
 
+function labelledField(data: Record<string, unknown>, key: string, label: string): string | undefined {
+  const value = optionalString(data[key]);
+  return value ? `${label}: ${value}` : undefined;
+}
+
 function jsonValue<T>(value: T): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
@@ -241,7 +252,8 @@ function assertJobInput(value: unknown): WorkerGenerationJobInput {
     input.operation === "character_to_image" ||
     input.operation === "location_to_image" ||
     input.operation === "image_refinement" ||
-    input.operation === "image_to_video"
+    input.operation === "image_to_video" ||
+    input.operation === "ai_text_generation"
   ) {
     return value as WorkerGenerationJobInput;
   }
@@ -764,10 +776,15 @@ export class GenerationService {
     providerOutputs?: GeneratedMediaProviderOutput[],
     packageOutput?: EditorExportPackageOutput,
     assetAnalysisOutput?: AssetAnalysisJobOutput,
+    textGenerationOutput?: AiTextGenerationJobOutput,
   ): Promise<
     GenerationJobRecord<
       GenerationJobInput,
-      GeneratedMediaJobOutput | ReferenceAssetJobOutput | EditorExportJobOutput | AssetAnalysisJobOutput
+      | GeneratedMediaJobOutput
+      | ReferenceAssetJobOutput
+      | EditorExportJobOutput
+      | AssetAnalysisJobOutput
+      | AiTextGenerationJobOutput
     >
   > {
     const existing = (await this.prisma.generationJob.findUnique({
@@ -792,6 +809,12 @@ export class GenerationService {
         throw new BadRequestException("Editor export completion requires package output");
       }
       return this.succeedEditorExportJob(existing, input, packageOutput);
+    }
+    if (input.operation === "ai_text_generation") {
+      if (!textGenerationOutput) {
+        throw new BadRequestException("AI text completion requires text output");
+      }
+      return this.succeedAiTextGenerationJob(existing, input, textGenerationOutput);
     }
     if (!providerOutput) {
       throw new BadRequestException("Generated media completion requires provider output");
@@ -942,6 +965,83 @@ export class GenerationService {
     })) as GenerationJobModel;
 
     return this.toGenerationJobRecord<AssetAnalysisJobInput, AssetAnalysisJobOutput>(completed);
+  }
+
+  private async succeedAiTextGenerationJob(
+    existing: GenerationJobModel,
+    input: AiTextGenerationJobInput,
+    output: AiTextGenerationJobOutput,
+  ): Promise<GenerationJobRecord<AiTextGenerationJobInput, AiTextGenerationJobOutput>> {
+    if (output.operation !== "ai_text_generation") {
+      throw new BadRequestException("AI text output operation does not match the claimed job");
+    }
+    if (output.sourceNodeId !== input.sourceNodeId || output.targetNodeId !== input.aiTextNodeId) {
+      throw new BadRequestException("AI text output target does not match the claimed job");
+    }
+    if (output.provider !== existing.provider) {
+      throw new BadRequestException("AI text output provider does not match the claimed job provider");
+    }
+    if (!optionalString(output.text)) {
+      throw new BadRequestException("AI text completion requires non-empty text");
+    }
+
+    const completed = await this.runTransaction(async (tx) => {
+      const claimed = await tx.generationJob.updateMany({
+        where: { id: existing.id, status: { in: WORKER_ACTIVE_JOB_STATUSES } },
+        data: { errorMessage: null },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException("Only active generation jobs can succeed");
+      }
+
+      const aiTextNode = await this.findSourceNode(tx, existing);
+      if (aiTextNode.type !== "ai_text") {
+        throw new BadRequestException("AI text completion requires an AI Text node");
+      }
+
+      const dataJson = dataObject(aiTextNode.dataJson) as AiTextNodeData;
+      await tx.canvasNode.update({
+        where: { id: aiTextNode.id },
+        data: {
+          status: "succeeded",
+          dataJson: jsonValue({
+            ...dataJson,
+            prompt: output.prompt,
+            outputText: output.text,
+            contextSummary: this.aiTextContextSummary(output.context),
+            provider: output.provider,
+            model: output.model,
+            generationJobId: existing.id,
+            generationOperation: "ai_text_generation",
+            generatedFromNodeId: aiTextNode.id,
+            sourceNodeIds: output.sourceNodeIds,
+            inputJson: input,
+            outputJson: output,
+          }),
+        },
+      });
+
+      return (await tx.generationJob.update({
+        where: { id: existing.id },
+        data: {
+          status: "succeeded",
+          targetNodeId: aiTextNode.id,
+          outputJson: jsonValue(output),
+          errorMessage: null,
+        },
+      })) as GenerationJobModel;
+    });
+
+    return this.toGenerationJobRecord<AiTextGenerationJobInput, AiTextGenerationJobOutput>(completed);
+  }
+
+  private aiTextContextSummary(context: readonly AiTextGenerationContextItem[]): string | undefined {
+    if (!context.length) {
+      return undefined;
+    }
+    return context
+      .map((item) => `${item.title?.trim() || item.nodeId} (${item.nodeType})`)
+      .join(", ");
   }
 
   private async succeedReferenceImageJob(
@@ -1198,6 +1298,8 @@ export class GenerationService {
         return this.buildImageRefinementInput(projectId, sourceNodeId, input);
       case "image_to_video":
         return this.buildImageToVideoInput(projectId, sourceNodeId, input);
+      case "ai_text_generation":
+        return this.buildAiTextGenerationInput(projectId, sourceNodeId, input);
       default:
         throw new BadRequestException("Generation operation is not supported yet");
     }
@@ -1482,6 +1584,173 @@ export class GenerationService {
     };
   }
 
+  private async buildAiTextGenerationInput(
+    projectId: string,
+    aiTextNodeId: string,
+    input: CreateGenerationJobInput,
+  ): Promise<AiTextGenerationJobInput> {
+    const canvas = await this.canvasService.getCanvas(projectId);
+    const aiTextNode = canvas.nodes.find((node) => node.id === aiTextNodeId);
+    if (!aiTextNode || aiTextNode.projectId !== projectId) {
+      throw new NotFoundException("AI Text node not found");
+    }
+    if (aiTextNode.type !== "ai_text") {
+      throw new BadRequestException("AI text generation requires an AI Text node");
+    }
+
+    const dataJson = dataObject(aiTextNode.dataJson) as AiTextNodeData;
+    const prompt = optionalString(input.textPrompt) ?? optionalString(dataJson.prompt);
+    if (!prompt) {
+      throw new BadRequestException("AI text generation prompt is required");
+    }
+
+    const providerSettings = await this.resolveLlmProviderSettings(projectId, input);
+    const context = this.aiTextContextItems(canvas, aiTextNode);
+    const sourceNodeIds = uniqueStrings([
+      aiTextNode.id,
+      ...context.map((item) => item.nodeId),
+    ]);
+
+    return {
+      operation: "ai_text_generation",
+      projectId,
+      sourceNodeId: aiTextNode.id,
+      aiTextNodeId: aiTextNode.id,
+      prompt,
+      context,
+      sourceNodeIds,
+      provider: providerSettings.provider.id,
+      model: providerSettings.model,
+      skillTemplateIds: uniqueStrings(input.skillTemplateIds ?? []),
+      forceFailure: input.forceFailure,
+    };
+  }
+
+  private aiTextContextItems(
+    canvas: CanvasLoadResult,
+    targetNode: CanvasNodeRecord,
+  ): AiTextGenerationContextItem[] {
+    const sourceById = new Map(canvas.nodes.map((node) => [node.id, node]));
+    const seen = new Set<string>();
+    const context: AiTextGenerationContextItem[] = [];
+
+    for (const edge of canvas.edges) {
+      if (edge.relation !== "derived_from" || edge.targetNodeId !== targetNode.id) {
+        continue;
+      }
+      if (seen.has(edge.sourceNodeId)) {
+        continue;
+      }
+      seen.add(edge.sourceNodeId);
+
+      const source = sourceById.get(edge.sourceNodeId);
+      if (!source) {
+        continue;
+      }
+
+      const text = this.aiTextContextText(source);
+      if (!text) {
+        continue;
+      }
+
+      context.push({
+        nodeId: source.id,
+        nodeType: source.type,
+        title: optionalString(source.title),
+        text,
+      });
+    }
+
+    return context;
+  }
+
+  private aiTextContextText(node: CanvasNodeRecord): string | undefined {
+    const data = dataObject(node.dataJson);
+
+    switch (node.type) {
+      case "novel":
+        return compactText([
+          labelledField(data, "storyboardTitle", "Storyboard title"),
+          labelledField(data, "synopsis", "Synopsis"),
+          labelledField(data, "sourceText", "Source text"),
+        ]);
+      case "source_text":
+      case "source_image":
+      case "source_video":
+      case "source_audio":
+        return compactText([
+          labelledField(data, "text", "Text"),
+          labelledField(data, "sourceText", "Source text"),
+          labelledField(data, "textPreview", "Text preview"),
+          labelledField(data, "caption", "Caption"),
+          labelledField(data, "description", "Description"),
+          labelledField(data, "originalFilename", "Filename"),
+          labelledField(data, "mimeType", "MIME type"),
+        ]);
+      case "scene":
+        return compactText([
+          labelledField(data, "sceneNumber", "Scene"),
+          labelledField(data, "synopsis", "Synopsis"),
+          labelledField(data, "location", "Location"),
+          labelledField(data, "timeOfDay", "Time of day"),
+          labelledField(data, "mood", "Mood"),
+          labelledField(data, "sourceExcerpt", "Source excerpt"),
+        ]);
+      case "shot":
+        return compactText([
+          labelledField(data, "shotNumber", "Shot"),
+          labelledField(data, "visualDescription", "Visual description"),
+          labelledField(data, "action", "Action"),
+          labelledField(data, "cameraMovement", "Camera movement"),
+          labelledField(data, "imagePrompt", "Image prompt"),
+          labelledField(data, "videoPrompt", "Video prompt"),
+          labelledField(data, "dialogue", "Dialogue"),
+          labelledField(data, "narration", "Narration"),
+          labelledField(data, "mood", "Mood"),
+          labelledField(data, "sourceExcerpt", "Source excerpt"),
+        ]);
+      case "character_asset":
+        return compactText([
+          labelledField(data, "name", "Name"),
+          labelledField(data, "role", "Role"),
+          labelledField(data, "appearance", "Appearance"),
+          labelledField(data, "personality", "Personality"),
+          labelledField(data, "wardrobe", "Wardrobe"),
+          labelledField(data, "identityPrompt", "Identity prompt"),
+          labelledField(data, "consistencyPrompt", "Consistency prompt"),
+        ]);
+      case "location_asset":
+        return compactText([
+          labelledField(data, "name", "Name"),
+          labelledField(data, "environment", "Environment"),
+          labelledField(data, "mood", "Mood"),
+          labelledField(data, "visualStyle", "Visual style"),
+          labelledField(data, "locationType", "Location type"),
+          labelledField(data, "locationPrompt", "Location prompt"),
+          labelledField(data, "consistencyPrompt", "Consistency prompt"),
+        ]);
+      case "ai_text":
+        return compactText([
+          labelledField(data, "outputText", "Generated text"),
+          labelledField(data, "prompt", "Prompt"),
+        ]);
+      case "image":
+      case "video":
+        return compactText([
+          labelledField(data, "description", "Description"),
+          labelledField(data, "caption", "Caption"),
+          labelledField(data, "prompt", "Prompt"),
+        ]);
+      default:
+        return compactText([
+          labelledField(data, "description", "Description"),
+          labelledField(data, "text", "Text"),
+          labelledField(data, "prompt", "Prompt"),
+          optionalString(node.title) ? `Title: ${optionalString(node.title)}` : undefined,
+        ]);
+    }
+  }
+
   private async resolveProjectGenerationSettings(projectId: string): Promise<ResolvedGenerationSettings> {
     const project = (await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -1698,6 +1967,34 @@ export class GenerationService {
     }
 
     return outputs;
+  }
+
+  private async resolveLlmProviderSettings(
+    projectId: string,
+    input: CreateGenerationJobInput,
+  ): Promise<{
+    provider: LlmProviderCatalogItem;
+    model: string;
+  }> {
+    const providers = (await this.providersService.getProjectLlmProviders(projectId)).providers;
+    const providerId = input.llmProvider ?? "mock-llm";
+    const provider = providers.find((candidate) => candidate.id === providerId);
+    if (!provider) {
+      throw new BadRequestException(`Unknown LLM provider: ${providerId}`);
+    }
+    if (!provider.enabled) {
+      throw new BadRequestException(provider.disabledReason ?? `${provider.displayName} is disabled`);
+    }
+
+    const model = input.llmModel ?? provider.defaultModel;
+    if (!provider.models.some((candidate) => candidate.id === model)) {
+      throw new BadRequestException(`Model ${model} is not available for ${provider.displayName}`);
+    }
+
+    return {
+      provider,
+      model,
+    };
   }
 
   private async resolveImageProviderSettings(
