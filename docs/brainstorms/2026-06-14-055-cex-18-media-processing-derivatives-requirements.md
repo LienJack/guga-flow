@@ -1,6 +1,7 @@
 # CEX-18 Media Processing And Derivatives Requirements
 
 Date: 2026-06-14
+Status: completed
 
 ## Source
 

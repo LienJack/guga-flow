@@ -1,6 +1,7 @@
 # CEX-14 Script Asset Extraction And Variants Requirements
 
 Date: 2026-06-14
+Status: completed
 
 ## Source
 

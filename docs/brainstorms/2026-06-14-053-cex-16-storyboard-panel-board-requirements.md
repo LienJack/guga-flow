@@ -1,6 +1,7 @@
 # CEX-16 Storyboard Panel And Media Board Requirements
 
 Date: 2026-06-14
+Status: completed
 
 ## Source
 

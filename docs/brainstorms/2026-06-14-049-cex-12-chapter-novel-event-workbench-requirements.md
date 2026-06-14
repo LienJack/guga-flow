@@ -1,6 +1,7 @@
 # CEX-12 Chapter Novel Event Workbench Requirements
 
 Date: 2026-06-14
+Status: completed
 
 ## Source
 

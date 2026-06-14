@@ -1,6 +1,7 @@
 # CEX-19 Asset Prompt Polish And Generation Requirements
 
 Date: 2026-06-14
+Status: completed
 
 ## Source
 

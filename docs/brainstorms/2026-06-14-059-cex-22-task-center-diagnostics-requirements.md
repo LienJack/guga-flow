@@ -1,6 +1,7 @@
 # CEX-22 Task Center And Diagnostics Requirements
 
 Date: 2026-06-14
+Status: completed
 
 ## Source
 

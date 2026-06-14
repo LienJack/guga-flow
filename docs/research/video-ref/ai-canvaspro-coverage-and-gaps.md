@@ -82,9 +82,9 @@ Status values are backlog coverage judgments, not shipped-feature claims. Each i
 | ACP-09 | 部分覆盖 | Inference; Pending Verification for exact media operations | CEX-18 | Local media processing becomes worker-first mock/controlled service jobs, not browser ffmpeg by default. |
 | ACP-10 | 部分覆盖 | Inference | CEX-17 | MediaClip merges with TFR-22 video track and EditorExport bridge; no full NLE. |
 | ACP-11 | 部分覆盖 | Inference | CEX-16 | Storyboard media board is visual projection and sync surface, not replacement for Shot/Storyboard facts. |
-| ACP-12 | 未覆盖 | Inference; Pending Verification for scene extraction approach | CEX-28 | Scene/frame extraction is P2 after core media operation foundation. |
-| ACP-13 | 未覆盖 | Inference | CEX-28 | Panorama node is P2; must stay inspectable and prompt-context safe. |
-| ACP-14 | 未覆盖 | Inference | CEX-28 | 3D director node requires Three.js plus browser/canvas-pixel verification. |
+| ACP-12 | Covered by CEX-28 | Fact for guga-flow implementation and tests; Inference for reference equivalence | CEX-28 | Scene/frame extraction is implemented as a worker-first mock path with generated frame Assets; see `docs/brainstorms/2026-06-14-065-cex-28-advanced-visual-nodes-requirements.md`, `docs/plans/2026-06-14-065-feat-cex-28-advanced-visual-nodes-plan.md`, and backend/worker tests. |
+| ACP-13 | Covered by CEX-28 | Fact for guga-flow implementation and tests; Inference for reference equivalence | CEX-28 | Panorama nodes are implemented as inspectable advanced visual references with image Asset, view state, annotations, and prompt context. |
+| ACP-14 | Covered by CEX-28 | Fact for guga-flow implementation and Playwright verification; Inference for reference equivalence | CEX-28 | Director 3D nodes use Three.js and are backed by `pnpm verify:cex28` canvas-pixel and PNG capture verification; see `docs/solutions/architecture-patterns/advanced-visual-node-browser-pixel-boundary-2026-06-14.md`. |
 | ACP-15 | 部分覆盖 | Inference | CEX-18 | Thumbnail/display/original derivatives merge with asset media operation foundation. |
 | ACP-16 | 部分覆盖 | Inference | CEX-24 | Project package is guga-flow schema only; no AI-CanvasPro JSON compatibility promise. |
 | ACP-17 | 未覆盖 | Inference | CEX-24 | Multi-canvas pages need compatibility strategy for existing single canvas projects. |

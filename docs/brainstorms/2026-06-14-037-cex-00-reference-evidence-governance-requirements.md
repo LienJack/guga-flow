@@ -1,6 +1,7 @@
 ---
 date: 2026-06-14
 topic: cex-00-reference-evidence-governance
+status: completed
 ---
 
 # CEX-00 Reference Evidence Governance

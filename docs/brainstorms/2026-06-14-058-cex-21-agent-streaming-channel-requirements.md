@@ -1,6 +1,7 @@
 # CEX-21 Agent Streaming Channel Requirements
 
 Date: 2026-06-14
+Status: completed
 
 ## Source
 

@@ -1,6 +1,7 @@
 # CEX-26 Storage Maintenance and Controlled Import Requirements
 
 Date: 2026-06-14
+Status: completed
 
 ## Goal
 

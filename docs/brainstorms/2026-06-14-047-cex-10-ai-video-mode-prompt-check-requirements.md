@@ -4,7 +4,7 @@ date: 2026-06-14
 source_modules:
   - ACP-06
   - TFR-21
-status: captured
+status: completed
 ---
 
 # CEX-10 AI Video Mode Matrix and Prompt Check Requirements

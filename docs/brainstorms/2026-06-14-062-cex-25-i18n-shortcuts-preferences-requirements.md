@@ -1,6 +1,7 @@
 # CEX-25 i18n, Shortcuts, and Canvas Preferences Requirements
 
 Date: 2026-06-14
+Status: completed
 
 ## Goal
 

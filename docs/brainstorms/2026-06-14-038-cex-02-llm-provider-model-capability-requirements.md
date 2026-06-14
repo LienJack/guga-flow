@@ -1,6 +1,7 @@
 ---
 date: 2026-06-14
 topic: cex-02-llm-provider-model-capability
+status: completed
 ---
 
 # CEX-02 LLM Provider, Model Capability, And Error Taxonomy

@@ -1,6 +1,7 @@
 ---
 date: 2026-06-14
 topic: cex-03-agent-deployment-center
+status: completed
 ---
 
 # CEX-03 Agent Deployment Center Requirements

@@ -3,7 +3,7 @@ title: "CEX-11 Project Manual and Style Library Requirements"
 date: 2026-06-14
 source_modules:
   - TFR-10
-status: captured
+status: completed
 ---
 
 # CEX-11 Project Manual and Style Library Requirements
