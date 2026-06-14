@@ -15,9 +15,12 @@ import type {
   CanvasLoadResult,
   CanvasNodeRecord,
   CanvasNodeType,
+  CanvasPageListResult,
   CanvasSnapshotJson,
   CreateCanvasEdgeInput,
   CreateCanvasEdgeResult,
+  CreateCanvasPageInput,
+  CreateCanvasPageResult,
   CreateCanvasNodeInput,
   CreateCanvasNodeResult,
   CreateProductionMediaClipInput,
@@ -87,6 +90,7 @@ import {
 import type {
   CanvasEdgeRelation as PrismaCanvasEdgeRelation,
   CanvasNodeType as PrismaCanvasNodeType,
+  Prisma,
 } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { LocalStorageService } from "../storage/local-storage.service";
@@ -143,6 +147,14 @@ type StoryboardDraftModel = {
 type CanvasPrismaClient = Pick<PrismaService, "canvasEdge" | "canvasNode">;
 type CanvasEdgeDataJson = { [key: string]: CanvasSnapshotJson };
 type CanvasEdgeWriteInput = Omit<CreateCanvasEdgeInput<CanvasEdgeDataJson>, "affectedShotNodeIds">;
+type CanvasPageMetadata = {
+  title: string;
+  sortOrder: number;
+  isDefault: boolean;
+};
+
+const CANVAS_PAGE_METADATA_KEY = "gugaFlowCanvasPage";
+const DEFAULT_CANVAS_PAGE_TITLE = "Main Canvas";
 
 function prismaCanvasNodeType(type: CanvasNodeType): PrismaCanvasNodeType {
   return type as PrismaCanvasNodeType;
@@ -453,6 +465,65 @@ function isStoryboardImportDuplicatePolicy(
   );
 }
 
+function objectRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function booleanValue(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function canvasPageMetadata(
+  canvasDocument: CanvasDocumentModel,
+  fallbackSortOrder: number,
+): CanvasPageMetadata {
+  const snapshot = objectRecord(canvasDocument.snapshotJson);
+  const metadata = objectRecord(snapshot[CANVAS_PAGE_METADATA_KEY]);
+  const title = stringValue(metadata.title)?.trim() || DEFAULT_CANVAS_PAGE_TITLE;
+  return {
+    title,
+    sortOrder: numberValue(metadata.sortOrder) ?? fallbackSortOrder,
+    isDefault: booleanValue(metadata.isDefault) ?? fallbackSortOrder === 0,
+  };
+}
+
+function withCanvasPageMetadata(
+  snapshotJson: CanvasSnapshotJson,
+  metadata: CanvasPageMetadata,
+): CanvasSnapshotJson {
+  const snapshot = objectRecord(snapshotJson) as { [key: string]: CanvasSnapshotJson | undefined };
+  return {
+    ...snapshot,
+    [CANVAS_PAGE_METADATA_KEY]: {
+      title: metadata.title,
+      sortOrder: metadata.sortOrder,
+      isDefault: metadata.isDefault,
+    },
+  };
+}
+
+function withoutCanvasPageMetadata(snapshotJson: CanvasSnapshotJson): CanvasSnapshotJson {
+  if (typeof snapshotJson !== "object" || snapshotJson === null || Array.isArray(snapshotJson)) {
+    return snapshotJson;
+  }
+  const { [CANVAS_PAGE_METADATA_KEY]: _metadata, ...rest } = snapshotJson;
+  return rest;
+}
+
+function toInputJsonValue(value: CanvasSnapshotJson): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
 @Injectable()
 export class CanvasService {
   constructor(
@@ -460,14 +531,10 @@ export class CanvasService {
     @Optional() @Inject(LocalStorageService) private readonly storage?: LocalStorageService,
   ) {}
 
-  async getCanvas(projectId: string): Promise<CanvasLoadResult> {
+  async getCanvas(projectId: string, canvasDocumentId?: string): Promise<CanvasLoadResult> {
     await this.ensureProjectExists(projectId);
 
-    const canvasDocument = await this.prisma.canvasDocument.upsert({
-      where: { projectId },
-      update: {},
-      create: { projectId },
-    });
+    const canvasDocument = await this.getCanvasDocumentForRead(projectId, canvasDocumentId);
     const [nodes, edges, assets] = await Promise.all([
       this.prisma.canvasNode.findMany({
         where: { projectId, canvasDocumentId: canvasDocument.id },
@@ -491,6 +558,37 @@ export class CanvasService {
     };
   }
 
+  async listCanvasPages(projectId: string): Promise<CanvasPageListResult> {
+    await this.ensureProjectExists(projectId);
+    const activePage = await this.getOrCreateCanvasDocument(projectId);
+    const pages = await this.listProjectCanvasDocuments(projectId);
+
+    return {
+      pages: pages.map((page, index) => this.toCanvasDocumentRecord(page, index)),
+      activePageId: activePage.id,
+    };
+  }
+
+  async createCanvasPage(
+    projectId: string,
+    input: CreateCanvasPageInput,
+  ): Promise<CreateCanvasPageResult> {
+    await this.ensureProjectExists(projectId);
+    const existingPages = await this.listProjectCanvasDocuments(projectId);
+    const title = this.normalizeCanvasPageTitle(input.title, existingPages.length + 1);
+    const sortOrder = existingPages.length;
+    const page = await this.prisma.canvasDocument.create({
+      data: {
+        projectId,
+        snapshotJson: toInputJsonValue(withCanvasPageMetadata({}, { title, sortOrder, isDefault: false })),
+      },
+    });
+
+    return {
+      page: this.toCanvasDocumentRecord(page, sortOrder),
+    };
+  }
+
   async saveSnapshot(
     projectId: string,
     input: SaveCanvasSnapshotInput,
@@ -500,11 +598,12 @@ export class CanvasService {
       throw new BadRequestException("Canvas snapshot must be valid JSON");
     }
 
-    const snapshotJson = input.snapshotJson;
-    const canvasDocument = await this.prisma.canvasDocument.upsert({
-      where: { projectId },
-      update: { snapshotJson },
-      create: { projectId, snapshotJson },
+    const existing = await this.getCanvasDocumentForRead(projectId, input.canvasDocumentId);
+    const existingMetadata = canvasPageMetadata(existing, 0);
+    const snapshotJson = withCanvasPageMetadata(input.snapshotJson, existingMetadata);
+    const canvasDocument = await this.prisma.canvasDocument.update({
+      where: { id: existing.id },
+      data: { snapshotJson: toInputJsonValue(snapshotJson) },
     });
 
     return {
@@ -516,7 +615,7 @@ export class CanvasService {
     projectId: string,
     input: CreateCanvasNodeInput,
   ): Promise<CreateCanvasNodeResult> {
-    const canvasDocument = await this.getOrCreateCanvasDocument(projectId);
+    const canvasDocument = await this.getCanvasDocumentForRead(projectId, input.canvasDocumentId);
     if (!input.tldrawShapeId || !isPhase3CanvasNodeType(input.type)) {
       throw new BadRequestException("Canvas node type and shape id are required");
     }
@@ -1020,6 +1119,9 @@ export class CanvasService {
 
     if (sourceNode.canvasDocumentId !== targetNode.canvasDocumentId) {
       throw new BadRequestException("Canvas edge nodes must belong to the same canvas");
+    }
+    if (input.canvasDocumentId && input.canvasDocumentId !== sourceNode.canvasDocumentId) {
+      throw new BadRequestException("Canvas edge page does not match the connected nodes");
     }
 
     this.validateSemanticEdge(sourceNode, targetNode, input.relation);
@@ -1566,11 +1668,59 @@ export class CanvasService {
   private async getOrCreateCanvasDocument(projectId: string): Promise<CanvasDocumentModel> {
     await this.ensureProjectExists(projectId);
 
-    return this.prisma.canvasDocument.upsert({
-      where: { projectId },
-      update: {},
-      create: { projectId },
+    const pages = await this.listProjectCanvasDocuments(projectId);
+    const defaultPage =
+      pages.find((page, index) => canvasPageMetadata(page, index).isDefault) ?? pages[0];
+    if (defaultPage) {
+      return defaultPage;
+    }
+
+    return this.prisma.canvasDocument.create({
+      data: {
+        projectId,
+        snapshotJson: toInputJsonValue(
+          withCanvasPageMetadata(
+            {},
+            { title: DEFAULT_CANVAS_PAGE_TITLE, sortOrder: 0, isDefault: true },
+          ),
+        ),
+      },
     });
+  }
+
+  private async getCanvasDocumentForRead(
+    projectId: string,
+    canvasDocumentId?: string,
+  ): Promise<CanvasDocumentModel> {
+    if (!canvasDocumentId) {
+      return this.getOrCreateCanvasDocument(projectId);
+    }
+
+    const page = await this.prisma.canvasDocument.findFirst({
+      where: { id: canvasDocumentId, projectId },
+    });
+    if (!page) {
+      throw new NotFoundException("Canvas page not found");
+    }
+    return page;
+  }
+
+  private async listProjectCanvasDocuments(projectId: string): Promise<CanvasDocumentModel[]> {
+    return this.prisma.canvasDocument.findMany({
+      where: { projectId },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+  }
+
+  private normalizeCanvasPageTitle(value: string | undefined, fallbackIndex: number): string {
+    const title = value?.trim();
+    if (!title) {
+      return `Canvas ${fallbackIndex}`;
+    }
+    if (title.length > 80) {
+      throw new BadRequestException("Canvas page title is too long");
+    }
+    return title;
   }
 
   private async findProjectNode(projectId: string, nodeId: string): Promise<CanvasNodeModel> {
@@ -2622,14 +2772,21 @@ export class CanvasService {
     return String(order).padStart(3, "0");
   }
 
-  private toCanvasDocumentRecord(canvasDocument: CanvasDocumentModel): CanvasDocumentRecord {
+  private toCanvasDocumentRecord(
+    canvasDocument: CanvasDocumentModel,
+    fallbackSortOrder = 0,
+  ): CanvasDocumentRecord {
     const snapshotJson = isCanvasSnapshotJson(canvasDocument.snapshotJson)
-      ? canvasDocument.snapshotJson
+      ? withoutCanvasPageMetadata(canvasDocument.snapshotJson)
       : {};
+    const metadata = canvasPageMetadata(canvasDocument, fallbackSortOrder);
 
     return {
       id: canvasDocument.id,
       projectId: canvasDocument.projectId,
+      title: metadata.title,
+      sortOrder: metadata.sortOrder,
+      isDefault: metadata.isDefault,
       snapshotJson,
       createdAt: toIsoString(canvasDocument.createdAt),
       updatedAt: toIsoString(canvasDocument.updatedAt),

@@ -189,7 +189,7 @@ function installCanvasGraphMocks(
   let nodeSequence = 1;
   let edgeSequence = 1;
 
-  prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
+  prisma.canvasDocument.findMany.mockResolvedValue([canvasDocument()]);
   prisma.canvasNode.findMany.mockImplementation(async (args?: MockFindArgs) =>
     nodes.filter((node) => recordMatchesWhere(node, args?.where)),
   );
@@ -257,6 +257,10 @@ function createPrismaMock() {
     },
     canvasDocument: {
       upsert: vi.fn(),
+      findMany: vi.fn(async (): Promise<ReturnType<typeof canvasDocument>[]> => [canvasDocument()]),
+      findFirst: vi.fn(async (): Promise<ReturnType<typeof canvasDocument> | null> => null),
+      create: vi.fn(async ({ data }: MockCreateArgs) => canvasDocument(data)),
+      update: vi.fn(async ({ data }: MockUpdateArgs) => canvasDocument(data)),
     },
     canvasNode: {
       findMany: vi.fn(async (_args?: MockFindArgs): Promise<MockCanvasNode[]> => []),
@@ -306,7 +310,8 @@ describe("CanvasService", () => {
   });
 
   it("creates a project-scoped canvas document on first load", async () => {
-    prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
+    prisma.canvasDocument.findMany.mockResolvedValue([]);
+    prisma.canvasDocument.create.mockResolvedValue(canvasDocument());
 
     const result = await service.getCanvas("project_1");
 
@@ -314,10 +319,17 @@ describe("CanvasService", () => {
       where: { id: "project_1" },
       select: { id: true },
     });
-    expect(prisma.canvasDocument.upsert).toHaveBeenCalledWith({
-      where: { projectId: "project_1" },
-      update: {},
-      create: { projectId: "project_1" },
+    expect(prisma.canvasDocument.create).toHaveBeenCalledWith({
+      data: {
+        projectId: "project_1",
+        snapshotJson: {
+          gugaFlowCanvasPage: {
+            title: "Main Canvas",
+            sortOrder: 0,
+            isDefault: true,
+          },
+        },
+      },
     });
     expect(result.canvasDocument).toMatchObject({
       id: "canvas_1",
@@ -329,6 +341,105 @@ describe("CanvasService", () => {
     expect(result.nodes).toEqual([]);
     expect(result.edges).toEqual([]);
     expect(result.assets).toEqual([]);
+  });
+
+  it("lists canvas pages and creates additional project pages", async () => {
+    prisma.canvasDocument.findMany.mockResolvedValueOnce([
+      canvasDocument({
+        snapshotJson: {
+          gugaFlowCanvasPage: {
+            title: "Main Canvas",
+            sortOrder: 0,
+            isDefault: true,
+          },
+        },
+      }),
+      canvasDocument({
+        id: "canvas_2",
+        snapshotJson: {
+          gugaFlowCanvasPage: {
+            title: "Reference Board",
+            sortOrder: 1,
+            isDefault: false,
+          },
+        },
+      }),
+    ]);
+    prisma.canvasDocument.findMany.mockResolvedValueOnce([
+      canvasDocument({
+        snapshotJson: {
+          gugaFlowCanvasPage: {
+            title: "Main Canvas",
+            sortOrder: 0,
+            isDefault: true,
+          },
+        },
+      }),
+      canvasDocument({
+        id: "canvas_2",
+        snapshotJson: {
+          gugaFlowCanvasPage: {
+            title: "Reference Board",
+            sortOrder: 1,
+            isDefault: false,
+          },
+        },
+      }),
+    ]);
+
+    const pages = await service.listCanvasPages("project_1");
+
+    expect(pages.activePageId).toBe("canvas_1");
+    expect(pages.pages.map((page) => page.title)).toEqual(["Main Canvas", "Reference Board"]);
+    expect(pages.pages[0]?.snapshotJson).toEqual({});
+
+    prisma.canvasDocument.findMany.mockResolvedValue([canvasDocument()]);
+    prisma.canvasDocument.create.mockResolvedValue(
+      canvasDocument({
+        id: "canvas_3",
+        snapshotJson: {
+          gugaFlowCanvasPage: {
+            title: "Shots",
+            sortOrder: 1,
+            isDefault: false,
+          },
+        },
+      }),
+    );
+
+    const created = await service.createCanvasPage("project_1", { title: " Shots " });
+
+    expect(prisma.canvasDocument.create).toHaveBeenCalledWith({
+      data: {
+        projectId: "project_1",
+        snapshotJson: {
+          gugaFlowCanvasPage: {
+            title: "Shots",
+            sortOrder: 1,
+            isDefault: false,
+          },
+        },
+      },
+    });
+    expect(created.page).toMatchObject({ id: "canvas_3", title: "Shots", sortOrder: 1 });
+  });
+
+  it("loads a requested canvas page without falling back to the default page", async () => {
+    prisma.canvasDocument.findFirst.mockResolvedValue(canvasDocument({ id: "canvas_2" }));
+    prisma.canvasNode.findMany.mockResolvedValue([
+      canvasNode({ id: "node_2", canvasDocumentId: "canvas_2" }),
+    ]);
+
+    const result = await service.getCanvas("project_1", "canvas_2");
+
+    expect(prisma.canvasDocument.findFirst).toHaveBeenCalledWith({
+      where: { id: "canvas_2", projectId: "project_1" },
+    });
+    expect(prisma.canvasNode.findMany).toHaveBeenCalledWith({
+      where: { projectId: "project_1", canvasDocumentId: "canvas_2" },
+      orderBy: [{ zIndex: "asc" }, { createdAt: "asc" }],
+    });
+    expect(result.nodes[0]?.canvasDocumentId).toBe("canvas_2");
   });
 
   it("projects a production workspace from script, canvas, assets, and jobs", async () => {
@@ -770,18 +881,33 @@ describe("CanvasService", () => {
 
   it("saves snapshots and returns the updated canvas document", async () => {
     const snapshotJson = { document: { records: [] }, session: { camera: { x: 0, y: 0, z: 1 } } };
-    prisma.canvasDocument.upsert.mockResolvedValue(
+    prisma.canvasDocument.update.mockResolvedValue(
       canvasDocument({
-        snapshotJson,
+        snapshotJson: {
+          ...snapshotJson,
+          gugaFlowCanvasPage: {
+            title: "Main Canvas",
+            sortOrder: 0,
+            isDefault: true,
+          },
+        },
       }),
     );
 
     const result = await service.saveSnapshot("project_1", { snapshotJson });
 
-    expect(prisma.canvasDocument.upsert).toHaveBeenCalledWith({
-      where: { projectId: "project_1" },
-      update: { snapshotJson },
-      create: { projectId: "project_1", snapshotJson },
+    expect(prisma.canvasDocument.update).toHaveBeenCalledWith({
+      where: { id: "canvas_1" },
+      data: {
+        snapshotJson: {
+          ...snapshotJson,
+          gugaFlowCanvasPage: {
+            title: "Main Canvas",
+            sortOrder: 0,
+            isDefault: true,
+          },
+        },
+      },
     });
     expect(result.canvasDocument.snapshotJson).toEqual(snapshotJson);
   });
@@ -809,10 +935,9 @@ describe("CanvasService", () => {
       dataJson,
     });
 
-    expect(prisma.canvasDocument.upsert).toHaveBeenCalledWith({
+    expect(prisma.canvasDocument.findMany).toHaveBeenCalledWith({
       where: { projectId: "project_1" },
-      update: {},
-      create: { projectId: "project_1" },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     expect(prisma.canvasNode.create).toHaveBeenCalledWith({
       data: expect.objectContaining({

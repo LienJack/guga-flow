@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { StoryboardResult } from "@guga-flow/shared-types";
+import type { ProjectPackageManifest, StoryboardResult } from "@guga-flow/shared-types";
 
 import {
   composeShotPrompt,
@@ -18,7 +18,9 @@ import {
   createMediaMetadataJob,
   createProgrammableProvider,
   createProject,
+  createCanvasPage,
   createCanvasEdge,
+  createCanvasNode,
   createProductionMediaClip,
   createProductionAgentAction,
   createProductionStoryboardItems,
@@ -30,6 +32,7 @@ import {
   editorExportDownloadUrl,
   exportCanvasFragment,
   exportProjectSettings,
+  exportProjectPackage,
   extractNovelEvents,
   extractNovelChapterEvents,
   extractScriptAssets,
@@ -58,8 +61,11 @@ import {
   listAssetCollections,
   listProgrammableProviders,
   getProject,
+  getProjectCanvas,
+  getProjectRecoverySnapshot,
   getProductionWorkspace,
   importStoryboardToCanvas,
+  importProjectPackage,
   importCanvasFragment,
   importNovelSource,
   importScriptAssets,
@@ -76,6 +82,7 @@ import {
   markStoryboardDraftReady,
   retryGenerationJob,
   runWorkflow,
+  saveCanvasSnapshot,
   resolveAgentRole,
   recallAgentMemories,
   testProviderConfig,
@@ -88,6 +95,7 @@ import {
   updateProject,
   updateProductionWorkspaceItem,
   validateProjectSettingsImport,
+  validateProjectPackageImport,
   updateProviderConfig,
   updateProgrammableProviderSource,
   updateAgentDeployment,
@@ -219,6 +227,102 @@ describe("frontend api client", () => {
         }),
         headers: { "Content-Type": "application/json" },
       }),
+    );
+  });
+
+  it("calls page-scoped canvas endpoints", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getProjectCanvas("project_1", "canvas_2");
+    await createCanvasPage("project_1", { title: "Shots" });
+    await saveCanvasSnapshot("project_1", {
+      canvasDocumentId: "canvas_2",
+      snapshotJson: { document: { records: [] } },
+    });
+    await createCanvasNode("project_1", {
+      canvasDocumentId: "canvas_2",
+      tldrawShapeId: "shape:shot-1",
+      type: "shot",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/pages/canvas_2",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/pages",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ title: "Shots" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/pages/canvas_2/snapshot",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          canvasDocumentId: "canvas_2",
+          snapshotJson: { document: { records: [] } },
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/nodes",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          canvasDocumentId: "canvas_2",
+          tldrawShapeId: "shape:shot-1",
+          type: "shot",
+        }),
+      }),
+    );
+  });
+
+  it("calls project package import, export, validation, and recovery endpoints", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const projectPackage: ProjectPackageManifest = {
+      format: "guga-flow-project-package",
+      schemaVersion: 1,
+      source: "guga-flow",
+      sourceProjectId: "project_1",
+      exportedAt: "2026-06-14T00:00:00.000Z",
+      project: { title: "Demo", defaultAspectRatio: "9:16" },
+      settings: { skillTemplateReferences: [], workflowReferences: [] },
+      canvasPages: [],
+      assets: [],
+    };
+
+    await exportProjectPackage("project_1");
+    await validateProjectPackageImport({ package: projectPackage });
+    await importProjectPackage({ package: projectPackage });
+    await getProjectRecoverySnapshot("project_1");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:3002/api/v1/projects/project_1/package",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:3002/api/v1/projects/import-package/validate",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ package: projectPackage }) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:3002/api/v1/projects/import-package",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ package: projectPackage }) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:3002/api/v1/projects/project_1/recovery-snapshot",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
   });
 

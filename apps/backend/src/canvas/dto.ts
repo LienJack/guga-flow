@@ -2,6 +2,7 @@ import type {
   CanvasEdgeRelation,
   CanvasSnapshotJson,
   CreateCanvasEdgeInput,
+  CreateCanvasPageInput,
   CreateCanvasNodeInput,
   CreateProductionMediaClipInput,
   CreateProductionStoryboardItemsInput,
@@ -43,11 +44,28 @@ import {
 } from "class-validator";
 
 export class SaveCanvasSnapshotDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  canvasDocumentId?: string;
+
   @IsDefined()
   snapshotJson!: CanvasSnapshotJson;
 }
 
+export class CreateCanvasPageDto implements CreateCanvasPageInput {
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  title?: string;
+}
+
 export class CreateCanvasNodeDto implements CreateCanvasNodeInput {
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  canvasDocumentId?: string;
+
   @IsString()
   @MinLength(1)
   @MaxLength(160)
@@ -97,6 +115,11 @@ export class CreateCanvasNodeDto implements CreateCanvasNodeInput {
 }
 
 export class CreateCanvasEdgeDto implements CreateCanvasEdgeInput {
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  canvasDocumentId?: string;
+
   @IsString()
   @MinLength(1)
   @MaxLength(160)

@@ -1427,10 +1427,25 @@ export class NovelsService {
   }
 
   private async getOrCreateCanvasDocument(projectId: string): Promise<CanvasDocumentModel> {
-    return (await this.prisma.canvasDocument.upsert({
+    const existing = (await this.prisma.canvasDocument.findFirst({
       where: { projectId },
-      update: {},
-      create: { projectId, snapshotJson: {} },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    })) as CanvasDocumentModel | null;
+    if (existing) {
+      return existing;
+    }
+
+    return (await this.prisma.canvasDocument.create({
+      data: {
+        projectId,
+        snapshotJson: {
+          gugaFlowCanvasPage: {
+            title: "Main Canvas",
+            sortOrder: 0,
+            isDefault: true,
+          },
+        },
+      },
     })) as CanvasDocumentModel;
   }
 

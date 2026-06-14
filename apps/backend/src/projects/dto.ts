@@ -1,9 +1,10 @@
 import {
   PROJECT_ASPECT_RATIOS,
   type GenerationCreativeSettings,
+  type ImportProjectPackageInput,
   type ProjectAspectRatio,
 } from "@guga-flow/shared-types";
-import { IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsDefined, IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 export class CreateProjectDto {
   @IsString()
@@ -44,4 +45,9 @@ export class UpdateProjectDto {
   @IsOptional()
   @IsObject()
   generationSettings?: GenerationCreativeSettings;
+}
+
+export class ImportProjectPackageDto implements ImportProjectPackageInput {
+  @IsDefined()
+  package!: ImportProjectPackageInput["package"];
 }

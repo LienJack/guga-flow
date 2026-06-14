@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Inject, Param, Patch, Post } from "@nestjs/common";
 
-import { CreateProjectDto, UpdateProjectDto } from "./dto";
+import { CreateProjectDto, ImportProjectPackageDto, UpdateProjectDto } from "./dto";
 import { ProjectsService } from "./projects.service";
 
 @Controller("projects")
@@ -15,6 +15,26 @@ export class ProjectsController {
   @Post()
   createProject(@Body() body: CreateProjectDto) {
     return this.projectsService.createProject(body);
+  }
+
+  @Post("import-package/validate")
+  validateImportPackage(@Body() body: ImportProjectPackageDto) {
+    return this.projectsService.validateImportPackage(body);
+  }
+
+  @Post("import-package")
+  importPackage(@Body() body: ImportProjectPackageDto) {
+    return this.projectsService.importPackage(body);
+  }
+
+  @Get(":projectId/package")
+  exportPackage(@Param("projectId") projectId: string) {
+    return this.projectsService.exportPackage(projectId);
+  }
+
+  @Get(":projectId/recovery-snapshot")
+  getRecoverySnapshot(@Param("projectId") projectId: string) {
+    return this.projectsService.getRecoverySnapshot(projectId);
   }
 
   @Get(":projectId")

@@ -9,10 +9,13 @@ import type {
   AssetTagRecord,
   CurrentSessionResult,
   CanvasLoadResult,
+  CanvasPageListResult,
   CreateCanvasEdgeInput,
   CreateCanvasEdgeResult,
   CreateCanvasNodeInput,
   CreateCanvasNodeResult,
+  CreateCanvasPageInput,
+  CreateCanvasPageResult,
   CreateBatchImagesToVideosJobInput,
   CreateBatchImagesToVideosJobResult,
   CreateBatchShotsToImagesJobInput,
@@ -53,6 +56,7 @@ import type {
   CreateNovelDocumentInput,
   CreateNovelDocumentResult,
   CreateProjectInput,
+  ExportProjectPackageResult,
   CreateProductionMediaClipInput,
   CreateProductionMediaClipResult,
   CreateProductionStoryboardItemsInput,
@@ -117,6 +121,10 @@ import type {
   NovelDocumentRecord,
   NovelEventGraphRecord,
   ProjectDetail,
+  ImportProjectPackageInput,
+  ImportProjectPackageResult,
+  ProjectPackageValidationResult,
+  ProjectRecoverySnapshotResult,
   ProjectSettingsExportResult,
   ProjectSettingsImportValidationResult,
   ProjectSettingsSummaryResult,
@@ -282,6 +290,34 @@ export function createProject(input: CreateProjectInput): Promise<ProjectDetail>
 
 export function getProject(projectId: string): Promise<ProjectDetail> {
   return requestJson<ProjectDetail>(`/projects/${projectId}`);
+}
+
+export function exportProjectPackage(projectId: string): Promise<ExportProjectPackageResult> {
+  return requestJson<ExportProjectPackageResult>(`/projects/${projectId}/package`);
+}
+
+export function validateProjectPackageImport(
+  input: ImportProjectPackageInput,
+): Promise<ProjectPackageValidationResult> {
+  return requestJson<ProjectPackageValidationResult>("/projects/import-package/validate", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function importProjectPackage(
+  input: ImportProjectPackageInput,
+): Promise<ImportProjectPackageResult> {
+  return requestJson<ImportProjectPackageResult>("/projects/import-package", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getProjectRecoverySnapshot(
+  projectId: string,
+): Promise<ProjectRecoverySnapshotResult> {
+  return requestJson<ProjectRecoverySnapshotResult>(`/projects/${projectId}/recovery-snapshot`);
 }
 
 export function updateProject(projectId: string, input: UpdateProjectInput): Promise<ProjectDetail> {
@@ -879,8 +915,28 @@ export function recallAgentMemories(
   });
 }
 
-export function getProjectCanvas(projectId: string): Promise<CanvasLoadResult> {
-  return requestJson<CanvasLoadResult>(`/projects/${projectId}/canvas`);
+export function getProjectCanvas(
+  projectId: string,
+  canvasDocumentId?: string,
+): Promise<CanvasLoadResult> {
+  const path = canvasDocumentId
+    ? `/projects/${projectId}/canvas/pages/${canvasDocumentId}`
+    : `/projects/${projectId}/canvas`;
+  return requestJson<CanvasLoadResult>(path);
+}
+
+export function listCanvasPages(projectId: string): Promise<CanvasPageListResult> {
+  return requestJson<CanvasPageListResult>(`/projects/${projectId}/canvas/pages`);
+}
+
+export function createCanvasPage(
+  projectId: string,
+  input: CreateCanvasPageInput,
+): Promise<CreateCanvasPageResult> {
+  return requestJson<CreateCanvasPageResult>(`/projects/${projectId}/canvas/pages`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function getProductionWorkspace(projectId: string): Promise<ProductionWorkspaceProjection> {
@@ -1007,7 +1063,10 @@ export function saveCanvasSnapshot(
   projectId: string,
   input: SaveCanvasSnapshotInput,
 ): Promise<SaveCanvasSnapshotResult> {
-  return requestJson<SaveCanvasSnapshotResult>(`/projects/${projectId}/canvas/snapshot`, {
+  const path = input.canvasDocumentId
+    ? `/projects/${projectId}/canvas/pages/${input.canvasDocumentId}/snapshot`
+    : `/projects/${projectId}/canvas/snapshot`;
+  return requestJson<SaveCanvasSnapshotResult>(path, {
     method: "PATCH",
     body: JSON.stringify(input),
   });

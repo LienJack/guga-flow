@@ -231,6 +231,8 @@ function createPrismaMock() {
     },
     canvasDocument: {
       upsert: vi.fn(async () => canvasDocument()),
+      findFirst: vi.fn(async () => canvasDocument()),
+      create: vi.fn(async ({ data }) => canvasDocument(data)),
     },
     canvasNode: {
       findMany: vi.fn(),
@@ -688,10 +690,9 @@ describe("NovelsService", () => {
       candidates: extracted.candidates.slice(0, 3),
     });
 
-    expect(prisma.canvasDocument.upsert).toHaveBeenCalledWith({
+    expect(prisma.canvasDocument.findFirst).toHaveBeenCalledWith({
       where: { projectId: "project_1" },
-      update: {},
-      create: { projectId: "project_1", snapshotJson: {} },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     expect(result.importedCount).toBe(3);
     expect(result.nodeTypes).toEqual(

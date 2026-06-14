@@ -4,6 +4,7 @@ import { CanvasService } from "./canvas.service";
 import {
   CreateCanvasEdgeDto,
   CreateCanvasNodeDto,
+  CreateCanvasPageDto,
   CreateProductionMediaClipDto,
   CreateProductionStoryboardItemsDto,
   CreateStoryboardMediaBoardDto,
@@ -28,9 +29,36 @@ export class CanvasController {
     return this.canvasService.getCanvas(projectId);
   }
 
+  @Get("pages")
+  listPages(@Param("projectId") projectId: string) {
+    return this.canvasService.listCanvasPages(projectId);
+  }
+
+  @Post("pages")
+  createPage(@Param("projectId") projectId: string, @Body() body: CreateCanvasPageDto) {
+    return this.canvasService.createCanvasPage(projectId, body);
+  }
+
+  @Get("pages/:canvasDocumentId")
+  getCanvasPage(
+    @Param("projectId") projectId: string,
+    @Param("canvasDocumentId") canvasDocumentId: string,
+  ) {
+    return this.canvasService.getCanvas(projectId, canvasDocumentId);
+  }
+
   @Patch("snapshot")
   saveSnapshot(@Param("projectId") projectId: string, @Body() body: SaveCanvasSnapshotDto) {
     return this.canvasService.saveSnapshot(projectId, body);
+  }
+
+  @Patch("pages/:canvasDocumentId/snapshot")
+  savePageSnapshot(
+    @Param("projectId") projectId: string,
+    @Param("canvasDocumentId") canvasDocumentId: string,
+    @Body() body: SaveCanvasSnapshotDto,
+  ) {
+    return this.canvasService.saveSnapshot(projectId, { ...body, canvasDocumentId });
   }
 
   @Get("production-workspace")

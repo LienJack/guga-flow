@@ -253,7 +253,7 @@ model CanvasDocument {
   nodes        CanvasNode[]
   edges        CanvasEdge[]
 
-  @@unique([projectId])
+  @@index([projectId])
 }
 
 model CanvasNode {

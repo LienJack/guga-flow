@@ -902,6 +902,9 @@ export type Phase3CanvasNodeData<TType extends Phase3CanvasNodeType = Phase3Canv
 export interface CanvasDocumentRecord {
   id: string;
   projectId: string;
+  title?: string;
+  sortOrder?: number;
+  isDefault?: boolean;
   snapshotJson: CanvasSnapshotJson;
   createdAt: string;
   updatedAt: string;
@@ -1066,7 +1069,21 @@ export interface CanvasLoadResult {
   assets: AssetListItem[];
 }
 
+export interface CanvasPageListResult {
+  pages: CanvasDocumentRecord[];
+  activePageId: string;
+}
+
+export interface CreateCanvasPageInput {
+  title?: string;
+}
+
+export interface CreateCanvasPageResult {
+  page: CanvasDocumentRecord;
+}
+
 export interface SaveCanvasSnapshotInput {
+  canvasDocumentId?: string;
   snapshotJson: CanvasSnapshotJson;
 }
 
@@ -1075,6 +1092,7 @@ export interface SaveCanvasSnapshotResult {
 }
 
 export interface CreateCanvasNodeInput<TData = CanvasSnapshotJson> {
+  canvasDocumentId?: string;
   tldrawShapeId: string;
   type: Phase3CanvasNodeType;
   title?: string;
@@ -1119,6 +1137,7 @@ export interface DeleteCanvasNodeResult {
 }
 
 export interface CreateCanvasEdgeInput<TData = CanvasSnapshotJson> {
+  canvasDocumentId?: string;
   sourceNodeId: string;
   targetNodeId: string;
   relation: CanvasEdgeRelation;

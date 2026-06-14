@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  CanvasDocumentRecord,
   CanvasEdgeRecord,
   CanvasNodeRecord,
   CanvasSaveStatus,
@@ -13,13 +14,16 @@ import type {
   TaskCenterResult,
   UndoAgentCanvasActionResult,
 } from "@guga-flow/shared-types";
+import { Plus } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   cancelGenerationJob,
+  createCanvasPage,
   getProject,
   getProjectCanvas,
   getTaskCenter,
+  listCanvasPages,
   listGenerationJobs,
   retryGenerationJob,
 } from "../../lib/api";
@@ -36,6 +40,7 @@ import {
 } from "./canvas-productivity-panel";
 import { CanvasSaveStatusBadge } from "./canvas-save-status";
 import { ProductionWorkspacePanel } from "./production-workspace-panel";
+import { ProjectPackagePanel } from "./project-package-panel";
 import { TaskCenterPanel } from "./task-center-panel";
 
 interface ProjectCanvasWorkspaceProps {
@@ -47,6 +52,8 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
   const [saveError, setSaveError] = useState<string | null>(null);
   const [canvasNodes, setCanvasNodes] = useState<CanvasNodeRecord[]>([]);
   const [canvasEdges, setCanvasEdges] = useState<CanvasEdgeRecord[]>([]);
+  const [canvasPages, setCanvasPages] = useState<CanvasDocumentRecord[]>([]);
+  const [activeCanvasDocumentId, setActiveCanvasDocumentId] = useState<string | undefined>();
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [generationJobs, setGenerationJobs] = useState<GenerationJobRecord[]>([]);
   const [taskCenter, setTaskCenter] = useState<TaskCenterResult | null>(null);
@@ -86,9 +93,31 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
   );
 
   const refreshCanvasFacts = useCallback(async () => {
-    const canvas = await getProjectCanvas(projectId);
+    const canvas = await getProjectCanvas(projectId, activeCanvasDocumentId);
     setCanvasNodes(canvas.nodes);
     setCanvasEdges(canvas.edges);
+  }, [activeCanvasDocumentId, projectId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listCanvasPages(projectId)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setCanvasPages(result.pages);
+        setActiveCanvasDocumentId((current) => current ?? result.activePageId);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCanvasPages([]);
+          setActiveCanvasDocumentId(undefined);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [projectId]);
 
   useEffect(() => {
@@ -177,6 +206,26 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
   const handleFitToContent = useCallback(() => {
     setFitRequestKey((current) => current + 1);
   }, []);
+
+  const handleSelectCanvasPage = useCallback((canvasDocumentId: string) => {
+    setActiveCanvasDocumentId(canvasDocumentId);
+    setSelection(EMPTY_CANVAS_SELECTION);
+    setFocusRequest(undefined);
+    setSaveStatus("idle");
+    setSaveError(null);
+  }, []);
+
+  const handleCreateCanvasPage = useCallback(async () => {
+    const result = await createCanvasPage(projectId, {
+      title: `Canvas ${canvasPages.length + 1}`,
+    });
+    setCanvasPages((current) =>
+      [...current, result.page].sort(
+        (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id.localeCompare(b.id),
+      ),
+    );
+    handleSelectCanvasPage(result.page.id);
+  }, [canvasPages.length, handleSelectCanvasPage, projectId]);
 
   const handleSelectCanvasNode = useCallback((nodeId: string) => {
     focusRequestSequenceRef.current += 1;
@@ -327,6 +376,7 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
             onRetryTask={handleRetryTask}
             onSelectNode={handleSelectCanvasNode}
           />
+          <ProjectPackagePanel projectId={projectId} />
           <CanvasProductivityPanel
             nodes={canvasNodes}
             selectedNodeId={selection.kind === "business-node" ? selection.nodeId : undefined}
@@ -352,17 +402,27 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
         </>
       }
       canvasSlot={
-        <CanvasEditor
-          projectId={projectId}
-          canvasEdges={canvasEdges}
-          canvasNodes={canvasNodes}
-          focusRequest={focusRequest}
-          fitRequestKey={fitRequestKey}
-          onCanvasEdgesChange={setCanvasEdges}
-          onCanvasNodesChange={setCanvasNodes}
-          onSelectionChange={setSelection}
-          onSaveStatusChange={handleSaveStatusChange}
-        />
+        <>
+          <CanvasPageTabs
+            activeCanvasDocumentId={activeCanvasDocumentId}
+            pages={canvasPages}
+            onCreatePage={() => void handleCreateCanvasPage()}
+            onSelectPage={handleSelectCanvasPage}
+          />
+          <CanvasEditor
+            key={activeCanvasDocumentId ?? "default-canvas"}
+            projectId={projectId}
+            canvasDocumentId={activeCanvasDocumentId}
+            canvasEdges={canvasEdges}
+            canvasNodes={canvasNodes}
+            focusRequest={focusRequest}
+            fitRequestKey={fitRequestKey}
+            onCanvasEdgesChange={setCanvasEdges}
+            onCanvasNodesChange={setCanvasNodes}
+            onSelectionChange={setSelection}
+            onSaveStatusChange={handleSaveStatusChange}
+          />
+        </>
       }
       inspectorSlot={
         <CanvasInspector
@@ -380,6 +440,49 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
         />
       }
     />
+  );
+}
+
+function CanvasPageTabs({
+  activeCanvasDocumentId,
+  pages,
+  onCreatePage,
+  onSelectPage,
+}: {
+  activeCanvasDocumentId?: string;
+  pages: CanvasDocumentRecord[];
+  onCreatePage(): void;
+  onSelectPage(canvasDocumentId: string): void;
+}) {
+  return (
+    <nav
+      aria-label="Canvas pages"
+      style={{
+        position: "absolute",
+        top: 12,
+        left: 12,
+        zIndex: 25,
+        display: "flex",
+        maxWidth: "min(72vw, 760px)",
+        gap: 8,
+        overflowX: "auto",
+      }}
+    >
+      {pages.map((page, index) => (
+        <button
+          className={`tool-button ${page.id === activeCanvasDocumentId ? "active" : ""}`}
+          type="button"
+          key={page.id}
+          title={page.title ?? `Canvas ${index + 1}`}
+          onClick={() => onSelectPage(page.id)}
+        >
+          {page.title ?? `Canvas ${index + 1}`}
+        </button>
+      ))}
+      <button className="tool-button" type="button" title="New canvas page" onClick={onCreatePage}>
+        <Plus size={14} aria-hidden="true" />
+      </button>
+    </nav>
   );
 }
 

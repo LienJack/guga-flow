@@ -205,7 +205,11 @@ function createPrismaE2eMock() {
           throw new Error("Project not found");
         }
         projects.delete(where.id);
-        canvasDocuments.delete(where.id);
+        for (const [canvasDocumentId, canvasDocument] of canvasDocuments.entries()) {
+          if (canvasDocument.projectId === where.id) {
+            canvasDocuments.delete(canvasDocumentId);
+          }
+        }
         for (const [nodeId, node] of canvasNodes.entries()) {
           if (node.projectId === where.id) {
             canvasNodes.delete(nodeId);
@@ -551,15 +555,58 @@ function createPrismaE2eMock() {
       }),
     },
     canvasDocument: {
+      findMany: vi.fn(async ({ where }) =>
+        Array.from(canvasDocuments.values())
+          .filter((canvasDocument) => canvasDocument.projectId === where.projectId)
+          .sort(
+            (left, right) =>
+              (left.createdAt as Date).getTime() - (right.createdAt as Date).getTime() ||
+              String(left.id).localeCompare(String(right.id)),
+          ),
+      ),
+      findFirst: vi.fn(async ({ where }) => {
+        const canvasDocument = canvasDocuments.get(where.id);
+        if (!canvasDocument || canvasDocument.projectId !== where.projectId) {
+          return null;
+        }
+        return canvasDocument;
+      }),
+      create: vi.fn(async ({ data }) => {
+        const canvasDocument = {
+          id: `canvas_${canvasSequence}`,
+          projectId: data.projectId,
+          snapshotJson: data.snapshotJson ?? {},
+          createdAt: new Date("2026-06-12T00:40:00.000Z"),
+          updatedAt: new Date("2026-06-12T00:40:00.000Z"),
+        };
+        canvasSequence += 1;
+        canvasDocuments.set(canvasDocument.id, canvasDocument);
+        return canvasDocument;
+      }),
+      update: vi.fn(async ({ where, data }) => {
+        const existing = canvasDocuments.get(where.id);
+        if (!existing) {
+          throw new Error("Canvas document not found");
+        }
+        const updated = {
+          ...existing,
+          ...data,
+          updatedAt: new Date("2026-06-12T00:45:00.000Z"),
+        };
+        canvasDocuments.set(where.id, updated);
+        return updated;
+      }),
       upsert: vi.fn(async ({ where, update, create }) => {
-        const existing = canvasDocuments.get(where.projectId);
+        const existing = Array.from(canvasDocuments.values()).find(
+          (canvasDocument) => canvasDocument.projectId === where.projectId,
+        );
         if (existing) {
           const updated = {
             ...existing,
             ...update,
             updatedAt: new Date("2026-06-12T00:45:00.000Z"),
           };
-          canvasDocuments.set(where.projectId, updated);
+          canvasDocuments.set(existing.id as string, updated);
           return updated;
         }
 
@@ -571,7 +618,7 @@ function createPrismaE2eMock() {
           updatedAt: new Date("2026-06-12T00:40:00.000Z"),
         };
         canvasSequence += 1;
-        canvasDocuments.set(create.projectId, canvasDocument);
+        canvasDocuments.set(canvasDocument.id, canvasDocument);
         return canvasDocument;
       }),
     },

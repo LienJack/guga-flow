@@ -81,6 +81,7 @@ type CanvasFocusRestoreScheduler = (callback: () => void) => void;
 
 interface CanvasEditorProps {
   projectId: string;
+  canvasDocumentId?: string;
   canvasEdges?: CanvasEdgeRecord[];
   canvasNodes?: CanvasNodeRecord[];
   focusRequest?: { nodeId: string; key: number };
@@ -239,6 +240,7 @@ function createSemanticArrowShapeId(sourceNodeId: string, targetNodeId: string):
 }
 
 export function CanvasEditor({
+  canvasDocumentId,
   canvasEdges = [],
   focusRequest,
   fitRequestKey,
@@ -311,7 +313,7 @@ export function CanvasEditor({
   const autosave = useCanvasAutosave({
     projectId,
     saveSnapshot: async (currentProjectId, nextSnapshotJson) => {
-      await saveCanvasSnapshot(currentProjectId, { snapshotJson: nextSnapshotJson });
+      await saveCanvasSnapshot(currentProjectId, { canvasDocumentId, snapshotJson: nextSnapshotJson });
     },
   });
   const {
@@ -465,7 +467,7 @@ export function CanvasEditor({
     publishCanvasEdges([]);
     publishSelection(EMPTY_CANVAS_SELECTION);
 
-    getProjectCanvas(projectId)
+    getProjectCanvas(projectId, canvasDocumentId)
       .then((result) => {
         if (loadRequestIdRef.current !== requestId) {
           return;
@@ -482,7 +484,7 @@ export function CanvasEditor({
         setLoadError(errorMessage(error));
         setLoading(false);
       });
-  }, [projectId, publishCanvasEdges, publishCanvasNodes, publishSelection]);
+  }, [canvasDocumentId, projectId, publishCanvasEdges, publishCanvasNodes, publishSelection]);
 
   useEffect(() => {
     loadCanvas();
@@ -520,6 +522,7 @@ export function CanvasEditor({
       try {
         const title = buildBusinessNodeCardModel(sourceNode).title;
         const result = await createCanvasNode(projectId, {
+          canvasDocumentId,
           tldrawShapeId: shape.id,
           type: sourceNode.type,
           title: `${title} Copy`,
@@ -544,7 +547,7 @@ export function CanvasEditor({
         setNodeActionError(errorMessage(error));
       }
     },
-    [projectId, publishCanvasNodes],
+    [canvasDocumentId, projectId, publishCanvasNodes],
   );
 
   const handleBusinessShapeAdded = useCallback(
@@ -589,7 +592,7 @@ export function CanvasEditor({
       setBindingBusy(true);
       setNodeActionError(null);
       try {
-        const result = await createCanvasEdge(projectId, input);
+        const result = await createCanvasEdge(projectId, { ...input, canvasDocumentId });
         const merged = mergeCanvasEdgeCreateResult(
           { nodes: nodesRef.current, edges: edgesRef.current },
           result,
@@ -604,7 +607,7 @@ export function CanvasEditor({
         setBindingBusy(semanticBindingKeysInFlightRef.current.size > 0);
       }
     },
-    [projectId, publishCanvasEdges, publishCanvasNodes],
+    [canvasDocumentId, projectId, publishCanvasEdges, publishCanvasNodes],
   );
 
   const handleBusinessShapeUpdated = useCallback(
@@ -853,7 +856,7 @@ export function CanvasEditor({
       setCreatingNodeType(type);
       setNodeActionError(null);
       try {
-        const result = await createCanvasNode(projectId, input);
+        const result = await createCanvasNode(projectId, { ...input, canvasDocumentId });
         publishCanvasNodes([...nodesRef.current, result.node]);
         editor.createShape({
           id: shapeId,
@@ -871,7 +874,7 @@ export function CanvasEditor({
         setCreatingNodeType(null);
       }
     },
-    [emitSelection, projectId, publishCanvasNodes],
+    [canvasDocumentId, emitSelection, projectId, publishCanvasNodes],
   );
 
   const handleSourceMediaDragOver = useCallback(
@@ -937,7 +940,7 @@ export function CanvasEditor({
               height: BUSINESS_NODE_DEFAULT_HEIGHT,
               zIndex: nodesRef.current.length,
             });
-            const result = await createCanvasNode(projectId, input);
+            const result = await createCanvasNode(projectId, { ...input, canvasDocumentId });
             publishCanvasNodes([...nodesRef.current, result.node]);
             editor.createShape({
               id: shapeId,
@@ -968,7 +971,7 @@ export function CanvasEditor({
         setNodeActionError(`${prefix}${failures.join(" ")}`);
       }
     },
-    [emitSelection, projectId, publishCanvasNodes, scheduleSave],
+    [canvasDocumentId, emitSelection, projectId, publishCanvasNodes, scheduleSave],
   );
 
   const selectedBusinessNode =
