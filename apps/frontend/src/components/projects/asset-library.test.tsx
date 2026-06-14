@@ -8,13 +8,18 @@ vi.mock("../../lib/api", () => ({
   assetPreviewUrl: (projectId: string, assetId: string) =>
     `http://localhost:3002/api/v1/projects/${projectId}/assets/${assetId}/preview`,
   batchAssets: vi.fn(),
+  cancelGenerationJob: vi.fn(),
   createAssetCollection: vi.fn(),
+  createAssetImageGenerationJob: vi.fn(),
+  createAssetPromptPolishJob: vi.fn(),
   createAssetTag: vi.fn(),
   deleteAsset: vi.fn(),
   getAsset: vi.fn(),
+  listGenerationJobs: vi.fn(async () => ({ jobs: [], queueSummary: { counts: {}, queued: 0, running: 0, failed: 0 } })),
   listAssetCollections: vi.fn(async () => []),
   listAssets: vi.fn(async () => []),
   listAssetTags: vi.fn(async () => []),
+  retryGenerationJob: vi.fn(),
   uploadAsset: vi.fn(),
 }));
 
@@ -100,6 +105,8 @@ describe("AssetLibrary", () => {
     expect(html).toContain("New tag");
     expect(html).toContain("0 selected");
     expect(html).toContain("Apply");
+    expect(html).toContain("Polish");
+    expect(html).toContain("Generate");
     expect(html).toContain("hero.png");
     expect(html).toContain("clip.mp4");
     expect(html).toContain("voice.mp3");

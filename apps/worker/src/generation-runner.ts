@@ -78,6 +78,16 @@ export async function runOneGenerationJob(
       options.logger?.info(`Media metadata job ${job.id} succeeded.`);
       return { status: "succeeded", jobId: job.id };
     }
+    if ("assetPromptPolishOutput" in result) {
+      await options.client.succeedAssetPromptPolishJob(job.id, result.assetPromptPolishOutput);
+      options.logger?.info(`Asset prompt polish job ${job.id} succeeded.`);
+      return { status: "succeeded", jobId: job.id };
+    }
+    if ("assetImageGenerationOutput" in result) {
+      await options.client.succeedAssetImageGenerationJob(job.id, result.assetImageGenerationOutput);
+      options.logger?.info(`Asset image generation job ${job.id} succeeded.`);
+      return { status: "succeeded", jobId: job.id };
+    }
     if ("textGenerationOutput" in result) {
       await options.client.succeedTextGenerationJob(job.id, result.textGenerationOutput);
       options.logger?.info(`AI text generation job ${job.id} succeeded.`);
@@ -156,7 +166,8 @@ function runtimeProviderForInput(input: GenerationJobInput): {
     input.operation === "shot_to_image" ||
     input.operation === "character_to_image" ||
     input.operation === "location_to_image" ||
-    input.operation === "image_refinement"
+    input.operation === "image_refinement" ||
+    input.operation === "asset_image_generation"
   ) {
     const provider = managedProviderId("image", input.provider);
     if (!provider) {

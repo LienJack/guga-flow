@@ -169,6 +169,12 @@ export type AssetAnalysisOperation = (typeof ASSET_ANALYSIS_OPERATIONS)[number];
 export const MEDIA_METADATA_OPERATIONS = ["media_metadata"] as const;
 export type MediaMetadataOperation = (typeof MEDIA_METADATA_OPERATIONS)[number];
 
+export const ASSET_PROMPT_OPERATIONS = [
+  "asset_prompt_polish",
+  "asset_image_generation",
+] as const;
+export type AssetPromptOperation = (typeof ASSET_PROMPT_OPERATIONS)[number];
+
 export const PROVIDER_KINDS = ["llm", "image", "video", "editor"] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
@@ -1290,7 +1296,9 @@ export interface GenerationJobListResult<
     | AiAudioGenerationJobOutput
     | EditorExportJobOutput
     | AssetAnalysisJobOutput
-    | MediaMetadataJobOutput,
+    | MediaMetadataJobOutput
+    | AssetPromptPolishJobOutput
+    | AssetImageGenerationJobOutput,
 > {
   jobs: Array<GenerationJobRecord<TInput, TOutput>>;
   queueSummary: GenerationQueueSummary;
@@ -1312,6 +1320,8 @@ export interface WorkerGenerationJobSucceedInput {
   packageOutput?: EditorExportPackageOutput;
   assetAnalysisOutput?: AssetAnalysisJobOutput;
   mediaMetadataOutput?: MediaMetadataJobOutput;
+  assetPromptPolishOutput?: AssetPromptPolishJobOutput;
+  assetImageGenerationOutput?: AssetImageGenerationJobOutput;
   textGenerationOutput?: AiTextGenerationJobOutput;
 }
 
@@ -1340,6 +1350,8 @@ export type GenerationJobInput =
   | AgentCanvasActionJobInput
   | AssetAnalysisJobInput
   | MediaMetadataJobInput
+  | AssetPromptPolishJobInput
+  | AssetImageGenerationJobInput
   | ShotToImageJobInput
   | CharacterToImageJobInput
   | LocationToImageJobInput
@@ -1583,6 +1595,101 @@ export interface MediaMetadataJobOutput {
   createThumbnail: boolean;
   generationJobId?: string;
   results: MediaMetadataItemOutput[];
+  completedAt: string;
+}
+
+export interface AssetPromptSource {
+  assetId: string;
+  prompt: string;
+}
+
+export interface AssetPromptPolishJobInput {
+  operation: "asset_prompt_polish";
+  projectId: string;
+  assetIds: string[];
+  items: AssetPromptSource[];
+  provider: "mock-llm" | string;
+  model?: string;
+  prompt?: string;
+  overwrite?: boolean;
+  forceFailure?: boolean;
+}
+
+export interface CreateAssetPromptPolishJobInput {
+  operation: "asset_prompt_polish";
+  assetIds: string[];
+  prompt?: string;
+  overwrite?: boolean;
+  forceFailure?: boolean;
+}
+
+export interface CreateAssetPromptPolishJobResult {
+  job: GenerationJobRecord<AssetPromptPolishJobInput>;
+  queueSummary: GenerationQueueSummary;
+}
+
+export interface AssetPromptPolishItemOutput {
+  assetId: string;
+  sourcePrompt: string;
+  polishedPrompt?: string;
+  skipped?: boolean;
+  errorMessage?: string;
+}
+
+export interface AssetPromptPolishJobOutput {
+  operation: "asset_prompt_polish";
+  provider: string;
+  model?: string;
+  overwrite: boolean;
+  prompt?: string;
+  generationJobId?: string;
+  results: AssetPromptPolishItemOutput[];
+  completedAt: string;
+}
+
+export type AssetImageGenerationSource = AssetPromptSource;
+
+export interface AssetImageGenerationJobInput extends ImageGenerationSettings {
+  operation: "asset_image_generation";
+  projectId: string;
+  assetIds: string[];
+  items: AssetImageGenerationSource[];
+  provider: AnyImageProviderId;
+  model?: string;
+  count: number;
+  overwrite?: boolean;
+  forceFailure?: boolean;
+}
+
+export interface CreateAssetImageGenerationJobInput extends ImageGenerationSettings {
+  operation: "asset_image_generation";
+  assetIds: string[];
+  prompt?: string;
+  overwrite?: boolean;
+  forceFailure?: boolean;
+}
+
+export interface CreateAssetImageGenerationJobResult {
+  job: GenerationJobRecord<AssetImageGenerationJobInput>;
+  queueSummary: GenerationQueueSummary;
+}
+
+export interface AssetImageGenerationItemOutput {
+  sourceAssetId: string;
+  prompt: string;
+  assetId?: string;
+  providerOutput?: GeneratedMediaProviderOutput;
+  skipped?: boolean;
+  errorMessage?: string;
+}
+
+export interface AssetImageGenerationJobOutput {
+  operation: "asset_image_generation";
+  provider: string;
+  model?: string;
+  overwrite: boolean;
+  generationJobId?: string;
+  results: AssetImageGenerationItemOutput[];
   completedAt: string;
 }
 

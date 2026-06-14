@@ -1,6 +1,9 @@
 import type {
   AiAudioGenerationJobInput,
   AiTextGenerationJobInput,
+  AssetImageGenerationJobInput,
+  AssetPromptPolishJobInput,
+  GenerationJobInput,
   GenerationJobRecord,
   ImageToVideoJobInput,
   MediaMetadataJobInput,
@@ -156,6 +159,41 @@ describe("generation executors", () => {
     });
   });
 
+  it("executes asset prompt polish and asset image generation jobs with deterministic outputs", async () => {
+    const polishResult = await executeGenerationJob(jobRecord(assetPromptPolishInput()));
+    const imageResult = await executeGenerationJob(jobRecord(assetImageGenerationInput()));
+
+    expect(polishResult).toMatchObject({
+      status: "succeeded",
+      assetPromptPolishOutput: {
+        operation: "asset_prompt_polish",
+        results: [
+          {
+            assetId: "asset_1",
+            sourcePrompt: "rough asset prompt",
+            polishedPrompt: expect.stringContaining("Production-ready asset prompt"),
+          },
+        ],
+      },
+    });
+    expect(imageResult).toMatchObject({
+      status: "succeeded",
+      assetImageGenerationOutput: {
+        operation: "asset_image_generation",
+        results: [
+          {
+            sourceAssetId: "asset_1",
+            providerOutput: {
+              storageKey: "project_1/asset-generations/job_1-1.png",
+              mimeType: "image/png",
+              referenceAssetIds: ["asset_1"],
+            },
+          },
+        ],
+      },
+    });
+  });
+
   it("passes the resolved video provider mode into video provider execution", async () => {
     const createTask = vi.fn(async (input: VideoGenerationInput) => ({
       status: "provider_waiting" as const,
@@ -293,20 +331,48 @@ function mediaMetadataInput(): MediaMetadataJobInput {
   };
 }
 
+function assetPromptPolishInput(): AssetPromptPolishJobInput {
+  return {
+    operation: "asset_prompt_polish",
+    projectId: "project_1",
+    assetIds: ["asset_1"],
+    items: [{ assetId: "asset_1", prompt: "rough asset prompt" }],
+    provider: "mock-llm",
+    model: "mock-polish-v1",
+    overwrite: false,
+  };
+}
+
+function assetImageGenerationInput(): AssetImageGenerationJobInput {
+  return {
+    operation: "asset_image_generation",
+    projectId: "project_1",
+    assetIds: ["asset_1"],
+    items: [{ assetId: "asset_1", prompt: "Production-ready prompt" }],
+    provider: "mock-image",
+    model: "mock-image-v1",
+    aspectRatio: "16:9",
+    count: 1,
+    overwrite: false,
+  };
+}
+
 function jobRecord<
   TInput extends
     | ShotToImageJobInput
     | ImageToVideoJobInput
     | AiTextGenerationJobInput
     | AiAudioGenerationJobInput
-    | MediaMetadataJobInput,
+    | MediaMetadataJobInput
+    | AssetPromptPolishJobInput
+    | AssetImageGenerationJobInput,
 >(
   input: TInput,
 ): GenerationJobRecord<TInput> {
   return {
     id: "job_1",
     projectId: input.projectId,
-    operation: input.operation === "media_metadata" ? "asset_classification" : input.operation,
+    operation: jobOperationForInput(input),
     status: "running",
     provider: input.provider,
     model: input.model,
@@ -319,4 +385,17 @@ function jobRecord<
     createdAt: "2026-06-13T00:00:00.000Z",
     updatedAt: "2026-06-13T00:00:00.000Z",
   };
+}
+
+function jobOperationForInput(input: GenerationJobInput): GenerationJobRecord["operation"] {
+  if (input.operation === "media_metadata") {
+    return "asset_classification";
+  }
+  if (input.operation === "asset_prompt_polish") {
+    return "asset_caption";
+  }
+  if (input.operation === "asset_image_generation") {
+    return "shot_to_image";
+  }
+  return input.operation;
 }

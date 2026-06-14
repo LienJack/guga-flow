@@ -38,6 +38,8 @@ export class WorkerGenerationController {
       body.packageOutput,
       body.assetAnalysisOutput,
       body.mediaMetadataOutput,
+      body.assetPromptPolishOutput,
+      body.assetImageGenerationOutput,
       body.textGenerationOutput,
     );
   }

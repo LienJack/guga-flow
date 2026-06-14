@@ -4,12 +4,16 @@ import type {
   AnyLlmProviderId,
   CreateGenerationJobInput,
   CreateAssetAnalysisJobInput,
+  CreateAssetImageGenerationJobInput,
+  CreateAssetPromptPolishJobInput,
   CreateMediaMetadataJobInput,
   CreateBatchImagesToVideosJobInput,
   CreateBatchShotsToImagesJobInput,
   AnyImageProviderId,
   AnyVideoProviderId,
   AssetAnalysisJobOutput,
+  AssetImageGenerationJobOutput,
+  AssetPromptPolishJobOutput,
   CanvasSnapshotJson,
   EditorExportPackageOutput,
   GeneratedMediaProviderOutput,
@@ -230,6 +234,82 @@ export class CreateMediaMetadataJobDto implements CreateMediaMetadataJobInput {
   forceFailure?: boolean;
 }
 
+export class CreateAssetPromptPolishJobDto implements CreateAssetPromptPolishJobInput {
+  @IsIn(["asset_prompt_polish"])
+  operation!: "asset_prompt_polish";
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  @MaxLength(160, { each: true })
+  assetIds!: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  prompt?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  overwrite?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  forceFailure?: boolean;
+}
+
+export class CreateAssetImageGenerationJobDto implements CreateAssetImageGenerationJobInput {
+  @IsIn(["asset_image_generation"])
+  operation!: "asset_image_generation";
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  @MaxLength(160, { each: true })
+  assetIds!: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  prompt?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  provider?: AnyImageProviderId;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  model?: string;
+
+  @IsOptional()
+  @IsIn(PROJECT_ASPECT_RATIOS)
+  aspectRatio?: ProjectAspectRatio;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(4)
+  count?: number;
+
+  @IsOptional()
+  @IsObject()
+  providerParams?: CanvasSnapshotJson;
+
+  @IsOptional()
+  @IsBoolean()
+  overwrite?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  forceFailure?: boolean;
+}
+
 export class CreateBatchImagesToVideosJobDto implements CreateBatchImagesToVideosJobInput {
   @IsIn(["batch_images_to_videos"])
   operation!: "batch_images_to_videos";
@@ -368,6 +448,14 @@ export class WorkerGenerationJobSucceedDto implements WorkerGenerationJobSucceed
   @IsOptional()
   @IsObject()
   mediaMetadataOutput?: MediaMetadataJobOutput;
+
+  @IsOptional()
+  @IsObject()
+  assetPromptPolishOutput?: AssetPromptPolishJobOutput;
+
+  @IsOptional()
+  @IsObject()
+  assetImageGenerationOutput?: AssetImageGenerationJobOutput;
 
   @IsOptional()
   @IsObject()

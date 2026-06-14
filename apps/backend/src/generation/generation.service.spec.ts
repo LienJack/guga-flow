@@ -102,6 +102,11 @@ function createPrismaMock() {
     },
     asset: {
       create: vi.fn(),
+      findFirst: vi.fn(async (_args?: MockFindArgs) => ({
+        id: "asset_1",
+        metadataJson: { generatedAssetIds: ["asset_existing_generated"] },
+      })),
+      update: vi.fn(async (_args: MockUpdateArgs) => ({})),
     },
     canvasNode: {
       update: vi.fn(async (_args: MockUpdateArgs) => ({})),
@@ -217,6 +222,7 @@ function createAssetsServiceMock() {
     })),
     applyAssetAnalysis: vi.fn(async () => []),
     applyMediaMetadata: vi.fn(async () => []),
+    applyAssetPromptPolish: vi.fn(async () => []),
   };
 }
 
@@ -975,6 +981,79 @@ describe("GenerationService", () => {
     expect(prisma.generationJob.create).not.toHaveBeenCalled();
   });
 
+  it("creates a queued asset prompt polish job under the asset caption operation", async () => {
+    const result = await service.createAssetPromptPolishJob("project_1", {
+      operation: "asset_prompt_polish",
+      assetIds: ["asset_1", "asset_1"],
+    });
+
+    expect(assetsService.getAsset).toHaveBeenCalledWith("project_1", "asset_1");
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        operation: "asset_caption",
+        status: "queued",
+        provider: "mock-llm",
+        model: "mock-polish-v1",
+        inputJson: expect.objectContaining({
+          operation: "asset_prompt_polish",
+          assetIds: ["asset_1"],
+          items: [
+            expect.objectContaining({
+              assetId: "asset_1",
+              prompt: expect.stringContaining("asset_1.png"),
+            }),
+          ],
+        }),
+      }),
+    });
+    expect(result.job.operation).toBe("asset_caption");
+    expect(result.job.inputJson.operation).toBe("asset_prompt_polish");
+  });
+
+  it("creates a queued asset image generation job from polished asset prompts", async () => {
+    assetsService.getAsset.mockResolvedValueOnce({
+      id: "asset_1",
+      projectId: "project_1",
+      type: "image",
+      purpose: "uploaded",
+      storageKey: "project_1/asset_1.png",
+      mimeType: "image/png",
+      originalFilename: "asset_1.png",
+      sizeBytes: 68,
+      metadataJson: { polishedPrompt: "Polished hero prompt" },
+      previewKind: "image",
+      previewUrl: "/api/v1/projects/project_1/assets/asset_1/preview",
+      createdAt: createdAt.toISOString(),
+    });
+
+    const result = await service.createAssetImageGenerationJob("project_1", {
+      operation: "asset_image_generation",
+      assetIds: ["asset_1"],
+      provider: "mock-image",
+      count: 1,
+    });
+
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        operation: "shot_to_image",
+        status: "queued",
+        provider: "mock-image",
+        model: "mock-image-v1",
+        inputJson: expect.objectContaining({
+          operation: "asset_image_generation",
+          assetIds: ["asset_1"],
+          items: [{ assetId: "asset_1", prompt: "Polished hero prompt" }],
+          aspectRatio: "16:9",
+          count: 1,
+        }),
+      }),
+    });
+    expect(result.job.operation).toBe("shot_to_image");
+    expect(result.job.inputJson.operation).toBe("asset_image_generation");
+  });
+
   it("creates an image refinement job from an ImageNode asset and prompt", async () => {
     const result = await service.createJob("project_1", {
       operation: "image_refinement",
@@ -1682,6 +1761,147 @@ describe("GenerationService", () => {
     expect(result.outputJson).toEqual({ ...output, generationJobId: "job_1" });
   });
 
+  it("completes asset prompt polish jobs by applying prompt metadata", async () => {
+    const input = {
+      operation: "asset_prompt_polish" as const,
+      projectId: "project_1",
+      assetIds: ["asset_1"],
+      items: [{ assetId: "asset_1", prompt: "rough asset prompt" }],
+      provider: "mock-llm",
+      model: "mock-polish-v1",
+      overwrite: false,
+    };
+    const output = {
+      operation: "asset_prompt_polish" as const,
+      provider: "mock-llm",
+      model: "mock-polish-v1",
+      overwrite: false,
+      results: [
+        {
+          assetId: "asset_1",
+          sourcePrompt: "rough asset prompt",
+          polishedPrompt: "Production-ready polished prompt",
+        },
+      ],
+      completedAt: "2026-06-14T00:00:00.000Z",
+    };
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "asset_caption",
+        status: "running",
+        provider: "mock-llm",
+        model: "mock-polish-v1",
+        sourceNodeId: null,
+        inputJson: input,
+      }),
+    );
+    prisma.generationJob.update.mockResolvedValue(
+      generationJob({
+        operation: "asset_caption",
+        status: "succeeded",
+        provider: "mock-llm",
+        model: "mock-polish-v1",
+        sourceNodeId: null,
+        inputJson: input,
+        outputJson: { ...output, generationJobId: "job_1" },
+      }),
+    );
+
+    const result = await service.succeedJob("job_1", undefined, undefined, undefined, undefined, undefined, output);
+
+    expect(assetsService.applyAssetPromptPolish).toHaveBeenCalledWith("project_1", {
+      ...output,
+      generationJobId: "job_1",
+    });
+    expect(result.outputJson).toEqual({ ...output, generationJobId: "job_1" });
+  });
+
+  it("completes asset image generation jobs by creating generated assets and source lineage", async () => {
+    const input = {
+      operation: "asset_image_generation" as const,
+      projectId: "project_1",
+      assetIds: ["asset_1"],
+      items: [{ assetId: "asset_1", prompt: "Polished hero prompt" }],
+      provider: "mock-image" as const,
+      model: "mock-image-v1",
+      aspectRatio: "16:9" as const,
+      count: 1,
+      overwrite: false,
+    };
+    const output = {
+      operation: "asset_image_generation" as const,
+      provider: "mock-image",
+      model: "mock-image-v1",
+      overwrite: false,
+      results: [
+        {
+          sourceAssetId: "asset_1",
+          prompt: "Polished hero prompt",
+          providerOutput: {
+            assetId: "provider_asset_1",
+            storageKey: "project_1/asset-generations/job_1-1.png",
+            mimeType: "image/png",
+            provider: "mock-image",
+            model: "mock-image-v1",
+            prompt: "Polished hero prompt",
+            referenceAssetIds: ["asset_1"],
+          },
+        },
+      ],
+      completedAt: "2026-06-14T00:00:00.000Z",
+    };
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "shot_to_image",
+        status: "running",
+        provider: "mock-image",
+        model: "mock-image-v1",
+        sourceNodeId: null,
+        inputJson: input,
+      }),
+    );
+    const result = await service.succeedJob(
+      "job_1",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      output,
+    );
+
+    expect(assetsService.createGeneratedAsset).toHaveBeenCalledWith(
+      "project_1",
+      expect.objectContaining({
+        purpose: "shot_keyframe",
+        providerOutput: output.results[0]?.providerOutput,
+        metadataJson: expect.objectContaining({
+          operation: "asset_image_generation",
+          sourceAssetId: "asset_1",
+          prompt: "Polished hero prompt",
+        }),
+      }),
+      expect.any(Object),
+    );
+    expect(prisma.asset.update).toHaveBeenCalledWith({
+      where: { id: "asset_1" },
+      data: {
+        metadataJson: expect.objectContaining({
+          assetPrompt: "Polished hero prompt",
+          generatedAssetIds: ["asset_existing_generated", "asset_generated_1"],
+          lastGeneratedAssetId: "asset_generated_1",
+          lastAssetImageGenerationJobId: "job_1",
+        }),
+      },
+    });
+    expect(result.outputJson).toMatchObject({
+      operation: "asset_image_generation",
+      generationJobId: "job_1",
+      results: [expect.objectContaining({ assetId: "asset_generated_1" })],
+    });
+  });
+
   it("completes AI text jobs by writing output back to the target node", async () => {
     const input = aiTextInput();
     const output = aiTextOutput();
@@ -1713,7 +1933,17 @@ describe("GenerationService", () => {
       }),
     );
 
-    const result = await service.succeedJob("job_1", undefined, undefined, undefined, undefined, undefined, output);
+    const result = await service.succeedJob(
+      "job_1",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      output,
+    );
 
     expect(assetsService.createGeneratedAsset).not.toHaveBeenCalled();
     expect(prisma.canvasNode.create).not.toHaveBeenCalled();

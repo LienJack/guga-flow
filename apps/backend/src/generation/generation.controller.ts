@@ -4,6 +4,8 @@ import {
   CreateBatchImagesToVideosJobDto,
   CreateBatchShotsToImagesJobDto,
   CreateAssetAnalysisJobDto,
+  CreateAssetImageGenerationJobDto,
+  CreateAssetPromptPolishJobDto,
   CreateGenerationJobDto,
   CreateMediaMetadataJobDto,
 } from "./dto";
@@ -32,6 +34,22 @@ export class GenerationController {
     @Body() body: CreateMediaMetadataJobDto,
   ) {
     return this.generationService.createMediaMetadataJob(projectId, body);
+  }
+
+  @Post("asset-prompt-polish")
+  createAssetPromptPolishJob(
+    @Param("projectId") projectId: string,
+    @Body() body: CreateAssetPromptPolishJobDto,
+  ) {
+    return this.generationService.createAssetPromptPolishJob(projectId, body);
+  }
+
+  @Post("asset-image-generation")
+  createAssetImageGenerationJob(
+    @Param("projectId") projectId: string,
+    @Body() body: CreateAssetImageGenerationJobDto,
+  ) {
+    return this.generationService.createAssetImageGenerationJob(projectId, body);
   }
 
   @Post("batch-images-to-videos")

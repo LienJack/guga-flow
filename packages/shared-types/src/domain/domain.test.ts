@@ -7,6 +7,7 @@ import {
   ASSET_DERIVATIVE_KINDS,
   ASSET_DERIVATIVE_REBUILD_STRATEGIES,
   ASSET_DERIVATIVE_STATUSES,
+  ASSET_PROMPT_OPERATIONS,
   ASSET_PURPOSES,
   ASSET_TYPES,
   AGENT_CANVAS_ACTION_KINDS,
@@ -95,6 +96,9 @@ import {
   validateCanvasInputConnection,
   type AssetListItem,
   type AssetMediaMetadata,
+  type AssetPromptMetadata,
+  type AssetImageGenerationJobInput,
+  type AssetPromptPolishJobInput,
   type AgentCanvasActionJobInput,
   type AgentCanvasActionJobOutput,
   type AgentMemoryListResult,
@@ -249,6 +253,37 @@ describe("shared domain constants", () => {
     expect(ASSET_DERIVATIVE_REBUILD_STRATEGIES).toContain(metadata.original?.rebuildStrategy);
     expect(MEDIA_METADATA_OPERATIONS).toEqual(["media_metadata"]);
     expect(jobInput.operation).toBe("media_metadata");
+  });
+
+  it("exports asset prompt polish and generation contracts", () => {
+    const metadata: AssetPromptMetadata = {
+      assetPrompt: "A clean production reference of Ari.",
+      polishedPrompt: "Production reference image of Ari with consistent wardrobe and neutral lighting.",
+      generatedAssetIds: ["asset_generated_1"],
+    };
+    const polishInput: AssetPromptPolishJobInput = {
+      operation: "asset_prompt_polish",
+      projectId: "project_1",
+      assetIds: ["asset_1"],
+      items: [{ assetId: "asset_1", prompt: metadata.assetPrompt ?? "" }],
+      provider: "mock-llm",
+      model: "mock-polish-v1",
+      overwrite: false,
+    };
+    const imageInput: AssetImageGenerationJobInput = {
+      operation: "asset_image_generation",
+      projectId: "project_1",
+      assetIds: ["asset_1"],
+      items: [{ assetId: "asset_1", prompt: metadata.polishedPrompt ?? metadata.assetPrompt ?? "" }],
+      provider: "mock-image",
+      model: "mock-image-v1",
+      aspectRatio: "16:9",
+      count: 1,
+    };
+
+    expect(ASSET_PROMPT_OPERATIONS).toEqual(["asset_prompt_polish", "asset_image_generation"]);
+    expect(polishInput.operation).toBe("asset_prompt_polish");
+    expect(imageInput.items[0]?.prompt).toContain("Production reference");
   });
 
   it("includes MVP canvas node and edge concepts", () => {

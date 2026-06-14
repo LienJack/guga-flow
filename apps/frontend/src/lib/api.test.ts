@@ -10,6 +10,8 @@ import {
   createAgentCanvasAction,
   createAgentMemory,
   createAssetAnalysisJob,
+  createAssetImageGenerationJob,
+  createAssetPromptPolishJob,
   createEditorExport,
   createGenerationJob,
   createMediaMetadataJob,
@@ -445,6 +447,16 @@ describe("frontend api client", () => {
       assetIds: ["asset_video_1"],
       createThumbnail: true,
     });
+    await createAssetPromptPolishJob("project_1", {
+      operation: "asset_prompt_polish",
+      assetIds: ["asset_1"],
+    });
+    await createAssetImageGenerationJob("project_1", {
+      operation: "asset_image_generation",
+      assetIds: ["asset_1"],
+      provider: "mock-image",
+      count: 1,
+    });
     await exportCanvasFragment("project_1", { nodeIds: ["node_1"] });
     await importCanvasFragment("project_1", { manifest });
     await listWorkflows("project_1");
@@ -488,6 +500,30 @@ describe("frontend api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
+      "http://localhost:3002/api/v1/projects/project_1/generation/jobs/asset-prompt-polish",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          operation: "asset_prompt_polish",
+          assetIds: ["asset_1"],
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:3002/api/v1/projects/project_1/generation/jobs/asset-image-generation",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          operation: "asset_image_generation",
+          assetIds: ["asset_1"],
+          provider: "mock-image",
+          count: 1,
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
       "http://localhost:3002/api/v1/projects/project_1/canvas/fragments/export",
       expect.objectContaining({
         method: "POST",
@@ -495,7 +531,7 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      6,
       "http://localhost:3002/api/v1/projects/project_1/canvas/fragments/import",
       expect.objectContaining({
         method: "POST",
@@ -503,12 +539,12 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      5,
+      7,
       "http://localhost:3002/api/v1/projects/project_1/workflows",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      6,
+      8,
       "http://localhost:3002/api/v1/projects/project_1/workflows",
       expect.objectContaining({
         method: "POST",
@@ -522,7 +558,7 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      7,
+      9,
       "http://localhost:3002/api/v1/projects/project_1/workflows/workflow_1/versions",
       expect.objectContaining({
         method: "POST",
@@ -530,12 +566,12 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      8,
+      10,
       "http://localhost:3002/api/v1/projects/project_1/workflows/workflow_1/versions/version_2/activate",
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      9,
+      11,
       "http://localhost:3002/api/v1/projects/project_1/workflows/workflow_1/run",
       expect.objectContaining({
         method: "POST",

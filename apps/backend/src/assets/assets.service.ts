@@ -21,6 +21,8 @@ import {
   type AssetListItem,
   type AssetMediaInfo,
   type AssetMediaMetadata,
+  type AssetPromptMetadata,
+  type AssetPromptPolishJobOutput,
   type AssetPreviewKind,
   type AssetPurpose,
   type AssetReferenceSummary,
@@ -628,6 +630,44 @@ export class AssetsService {
       nextMetadata.analysisProvider = output.provider;
       nextMetadata.analysisModel = output.model;
       nextMetadata.analyzedAt = output.completedAt;
+
+      await this.prisma.asset.update({
+        where: { id: asset.id },
+        data: { metadataJson: jsonValue(nextMetadata) },
+      });
+    }
+
+    return this.listAssets(projectId);
+  }
+
+  async applyAssetPromptPolish(
+    projectId: string,
+    output: AssetPromptPolishJobOutput,
+  ): Promise<AssetListItem[]> {
+    await this.ensureProjectExists(projectId);
+    const assetIds = output.results.map((result) => result.assetId);
+    await this.ensureAssetsBelongToProject(projectId, assetIds);
+
+    for (const result of output.results) {
+      if (result.skipped || result.errorMessage) {
+        continue;
+      }
+      const polishedPrompt = result.polishedPrompt?.trim();
+      if (!polishedPrompt) {
+        continue;
+      }
+      const asset = await this.findAsset(projectId, result.assetId);
+      const metadata = dataObject(asset.metadataJson) as AssetPromptMetadata & Record<string, unknown>;
+      const nextMetadata: AssetPromptMetadata & Record<string, unknown> = {
+        ...metadata,
+        assetPrompt: output.overwrite || !metadata.assetPrompt ? polishedPrompt : metadata.assetPrompt,
+        polishedPrompt,
+        promptPolishProvider: output.provider,
+        promptPolishModel: output.model,
+        promptPolishedAt: output.completedAt,
+        promptPolishJobId: output.generationJobId,
+        promptPolishSourcePrompt: result.sourcePrompt,
+      };
 
       await this.prisma.asset.update({
         where: { id: asset.id },

@@ -2,6 +2,8 @@ import { ProviderError, type ImageProvider, type VideoProvider } from "@guga-flo
 import type {
   AiTextGenerationJobInput,
   AssetAnalysisJobInput,
+  AssetImageGenerationJobInput,
+  AssetPromptPolishJobInput,
   CharacterToImageJobInput,
   EditorExportJobInput,
   GenerationJobRecord,
@@ -20,6 +22,8 @@ type WorkerGenerationJobInput =
   | ShotToImageJobInput
   | CharacterToImageJobInput
   | AssetAnalysisJobInput
+  | AssetPromptPolishJobInput
+  | AssetImageGenerationJobInput
   | MediaMetadataJobInput
   | ImageRefinementJobInput
   | ImageToVideoJobInput
@@ -47,6 +51,8 @@ function createClientMock(): GenerationWorkerClient {
       model: "mock-vision-v1",
     })),
     succeedMediaMetadataJob: vi.fn(async () => jobRecord("job_media_done", mediaMetadataInput())),
+    succeedAssetPromptPolishJob: vi.fn(async () => jobRecord("job_polish_done", assetPromptPolishInput())),
+    succeedAssetImageGenerationJob: vi.fn(async () => jobRecord("job_asset_image_done", assetImageGenerationInput())),
     succeedTextGenerationJob: vi.fn(async () => jobRecord("job_text_done", aiTextInput())),
     succeedEditorExportJob: vi.fn(async () => jobRecord("job_export_done", editorExportInput())),
     waitJob: vi.fn(async () => jobRecord("job_waiting", videoInput(), { status: "provider_waiting" })),
@@ -481,6 +487,59 @@ describe("generation worker runner", () => {
     expect(result).toEqual({ status: "succeeded", jobId: "job_media" });
   });
 
+  it("executes claimed asset prompt polish jobs and reports polished prompts", async () => {
+    vi.mocked(client.claimNextJob).mockResolvedValue({
+      job: jobRecord("job_polish", assetPromptPolishInput(), {
+        operation: "asset_caption",
+        provider: "mock-llm",
+      }),
+    });
+
+    const result = await runOneGenerationJob({ client, registry });
+
+    expect(client.succeedAssetPromptPolishJob).toHaveBeenCalledWith(
+      "job_polish",
+      expect.objectContaining({
+        operation: "asset_prompt_polish",
+        results: [
+          expect.objectContaining({
+            assetId: "asset_1",
+            polishedPrompt: expect.stringContaining("Production-ready asset prompt"),
+          }),
+        ],
+      }),
+    );
+    expect(result).toEqual({ status: "succeeded", jobId: "job_polish" });
+  });
+
+  it("executes claimed asset image generation jobs and reports generated outputs", async () => {
+    vi.mocked(client.claimNextJob).mockResolvedValue({
+      job: jobRecord("job_asset_image", assetImageGenerationInput(), {
+        operation: "shot_to_image",
+        provider: "mock-image",
+      }),
+    });
+
+    const result = await runOneGenerationJob({ client, registry });
+
+    expect(client.succeedAssetImageGenerationJob).toHaveBeenCalledWith(
+      "job_asset_image",
+      expect.objectContaining({
+        operation: "asset_image_generation",
+        results: [
+          expect.objectContaining({
+            sourceAssetId: "asset_1",
+            providerOutput: expect.objectContaining({
+              mimeType: "image/png",
+              referenceAssetIds: ["asset_1"],
+            }),
+          }),
+        ],
+      }),
+    );
+    expect(result).toEqual({ status: "succeeded", jobId: "job_asset_image" });
+  });
+
   it("executes claimed AI text jobs and reports text output", async () => {
     vi.mocked(client.claimNextJob).mockResolvedValue({
       job: jobRecord("job_text", aiTextInput(), {
@@ -733,6 +792,32 @@ function assetCaptionInput(): AssetAnalysisJobInput {
   };
 }
 
+function assetPromptPolishInput(): AssetPromptPolishJobInput {
+  return {
+    operation: "asset_prompt_polish",
+    projectId: "project_1",
+    assetIds: ["asset_1"],
+    items: [{ assetId: "asset_1", prompt: "rough asset prompt" }],
+    provider: "mock-llm",
+    model: "mock-polish-v1",
+    overwrite: false,
+  };
+}
+
+function assetImageGenerationInput(): AssetImageGenerationJobInput {
+  return {
+    operation: "asset_image_generation",
+    projectId: "project_1",
+    assetIds: ["asset_1"],
+    items: [{ assetId: "asset_1", prompt: "Production-ready prompt" }],
+    provider: "mock-image",
+    model: "mock-image-v1",
+    aspectRatio: "16:9",
+    count: 1,
+    overwrite: false,
+  };
+}
+
 function mediaMetadataInput(): MediaMetadataJobInput {
   return {
     operation: "media_metadata",
@@ -753,7 +838,7 @@ function jobRecord(
   return {
     id,
     projectId: "project_1",
-    operation: inputJson.operation === "media_metadata" ? "asset_classification" : inputJson.operation,
+    operation: jobOperationForInput(inputJson),
     status: "running",
     provider: inputJson.operation === "editor_export" ? "mock-editor" : inputJson.provider,
     model: inputJson.operation === "editor_export" ? "zip-v1" : inputJson.model,
@@ -763,4 +848,17 @@ function jobRecord(
     updatedAt: "2026-06-12T00:00:00.000Z",
     ...overrides,
   };
+}
+
+function jobOperationForInput(input: WorkerGenerationJobInput): GenerationJobRecord["operation"] {
+  if (input.operation === "media_metadata") {
+    return "asset_classification";
+  }
+  if (input.operation === "asset_prompt_polish") {
+    return "asset_caption";
+  }
+  if (input.operation === "asset_image_generation") {
+    return "shot_to_image";
+  }
+  return input.operation;
 }

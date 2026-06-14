@@ -10,6 +10,7 @@ import type {
   AssetPurpose,
   AssetTagRecord,
   AssetType,
+  GenerationJobRecord,
 } from "@guga-flow/shared-types";
 import {
   CheckSquare,
@@ -30,14 +31,19 @@ import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   assetPreviewUrl,
   batchAssets,
+  cancelGenerationJob,
   createAssetCollection,
+  createAssetImageGenerationJob,
   createAssetAnalysisJob,
+  createAssetPromptPolishJob,
   createAssetTag,
   deleteAsset,
   getAsset,
+  listGenerationJobs,
   listAssetCollections,
   listAssets,
   listAssetTags,
+  retryGenerationJob,
   uploadAsset,
 } from "../../lib/api";
 
@@ -106,12 +112,27 @@ function mergeById<T extends { id: string }>(items: T[], item: T): T[] {
   return [item, ...next];
 }
 
+function assetJobOperation(job: GenerationJobRecord): string | undefined {
+  const input = job.inputJson as { operation?: unknown };
+  return typeof input.operation === "string" ? input.operation : undefined;
+}
+
+function isAssetPromptJob(job: GenerationJobRecord): boolean {
+  const operation = assetJobOperation(job);
+  return operation === "asset_prompt_polish" || operation === "asset_image_generation";
+}
+
+function assetJobLabel(job: GenerationJobRecord): string {
+  return assetJobOperation(job) === "asset_image_generation" ? "Generate" : "Polish";
+}
+
 export function AssetLibrary({ projectId, initialAssets = [] }: AssetLibraryProps) {
   const [assets, setAssets] = useState<AssetListItem[]>(initialAssets);
   const [collections, setCollections] = useState<AssetCollectionRecord[]>([]);
   const [tags, setTags] = useState<AssetTagRecord[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<AssetDetail | null>(null);
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
+  const [assetJobs, setAssetJobs] = useState<GenerationJobRecord[]>([]);
   const [purpose, setPurpose] = useState<AssetPurpose>("uploaded");
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<AssetType | typeof ALL_VALUE>(ALL_VALUE);
@@ -181,6 +202,31 @@ export function AssetLibrary({ projectId, initialAssets = [] }: AssetLibraryProp
 
   useEffect(() => {
     let ignore = false;
+
+    async function refreshJobs() {
+      try {
+        const result = await listGenerationJobs(projectId);
+        if (!ignore) {
+          setAssetJobs(result.jobs.filter(isAssetPromptJob).slice(0, 5));
+        }
+      } catch {
+        if (!ignore) {
+          setAssetJobs([]);
+        }
+      }
+    }
+
+    void refreshJobs();
+    const intervalId = window.setInterval(() => void refreshJobs(), 2500);
+
+    return () => {
+      ignore = true;
+      window.clearInterval(intervalId);
+    };
+  }, [projectId]);
+
+  useEffect(() => {
+    let ignore = false;
     setLoading(true);
 
     listAssets(projectId, filters)
@@ -208,6 +254,12 @@ export function AssetLibrary({ projectId, initialAssets = [] }: AssetLibraryProp
   async function refreshAssets() {
     const result = await listAssets(projectId, filters);
     applyAssetList(result);
+    return result;
+  }
+
+  async function refreshAssetJobs() {
+    const result = await listGenerationJobs(projectId);
+    setAssetJobs(result.jobs.filter(isAssetPromptJob).slice(0, 5));
     return result;
   }
 
@@ -388,6 +440,77 @@ export function AssetLibrary({ projectId, initialAssets = [] }: AssetLibraryProp
       setSelectedAssetIds(new Set());
     } catch (analysisError) {
       setError(analysisError instanceof Error ? analysisError.message : "Unable to queue asset analysis");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handlePromptPolish() {
+    if (selectedAssetIds.size === 0) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await createAssetPromptPolishJob(projectId, {
+        operation: "asset_prompt_polish",
+        assetIds: [...selectedAssetIds],
+        overwrite: false,
+      });
+      setSelectedAssetIds(new Set());
+      await refreshAssetJobs();
+    } catch (polishError) {
+      setError(polishError instanceof Error ? polishError.message : "Unable to queue prompt polish");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAssetImageGeneration() {
+    if (selectedAssetIds.size === 0) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await createAssetImageGenerationJob(projectId, {
+        operation: "asset_image_generation",
+        assetIds: [...selectedAssetIds],
+        provider: "mock-image",
+        model: "mock-image-v1",
+        count: 1,
+        overwrite: false,
+      });
+      setSelectedAssetIds(new Set());
+      await refreshAssetJobs();
+    } catch (generationError) {
+      setError(generationError instanceof Error ? generationError.message : "Unable to queue asset generation");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCancelJob(jobId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await cancelGenerationJob(projectId, jobId);
+      await refreshAssetJobs();
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : "Unable to cancel job");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRetryJob(jobId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await retryGenerationJob(projectId, jobId);
+      await refreshAssetJobs();
+    } catch (retryError) {
+      setError(retryError instanceof Error ? retryError.message : "Unable to retry job");
     } finally {
       setBusy(false);
     }
@@ -581,7 +704,59 @@ export function AssetLibrary({ projectId, initialAssets = [] }: AssetLibraryProp
           <Tags size={14} aria-hidden="true" />
           Classify
         </button>
+        <button
+          className="ghost-action compact"
+          type="button"
+          onClick={() => void handlePromptPolish()}
+          disabled={busy || selectedCount === 0}
+        >
+          <Sparkles size={14} aria-hidden="true" />
+          Polish
+        </button>
+        <button
+          className="ghost-action compact"
+          type="button"
+          onClick={() => void handleAssetImageGeneration()}
+          disabled={busy || selectedCount === 0}
+        >
+          <ImageIcon size={14} aria-hidden="true" />
+          Generate
+        </button>
       </div>
+
+      {assetJobs.length ? (
+        <div className="asset-batch-bar">
+          <span>Jobs</span>
+          {assetJobs.map((job) => (
+            <React.Fragment key={job.id}>
+              <small>{assetJobLabel(job)} · {job.status}</small>
+              {job.errorMessage ? <small>{job.errorMessage}</small> : null}
+              {job.status === "queued" || job.status === "running" || job.status === "provider_waiting" ? (
+                <button
+                  className="ghost-action compact"
+                  type="button"
+                  onClick={() => void handleCancelJob(job.id)}
+                  disabled={busy}
+                >
+                  <X size={14} aria-hidden="true" />
+                  Cancel
+                </button>
+              ) : null}
+              {job.status === "failed" ? (
+                <button
+                  className="ghost-action compact"
+                  type="button"
+                  onClick={() => void handleRetryJob(job.id)}
+                  disabled={busy}
+                >
+                  <Sparkles size={14} aria-hidden="true" />
+                  Retry
+                </button>
+              ) : null}
+            </React.Fragment>
+          ))}
+        </div>
+      ) : null}
 
       {error ? <p className="form-error">{error}</p> : null}
 

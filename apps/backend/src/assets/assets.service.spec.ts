@@ -669,6 +669,46 @@ describe("AssetsService", () => {
     expect(result[0]).toMatchObject({ id: "asset_1", previewKind: "image" });
   });
 
+  it("applies asset prompt polish output to metadata", async () => {
+    prisma.asset.findMany
+      .mockResolvedValueOnce([{ id: "asset_1" }])
+      .mockResolvedValueOnce([asset({ metadataJson: { assetPrompt: "Existing prompt" } })]);
+    prisma.asset.findFirst.mockResolvedValue(
+      asset({ metadataJson: { previewKind: "image", assetPrompt: "Existing prompt" } }),
+    );
+
+    const result = await service.applyAssetPromptPolish("project_1", {
+      operation: "asset_prompt_polish",
+      provider: "mock-llm",
+      model: "mock-polish-v1",
+      overwrite: false,
+      generationJobId: "job_polish_1",
+      results: [
+        {
+          assetId: "asset_1",
+          sourcePrompt: "rough prompt",
+          polishedPrompt: "Production-ready polished prompt",
+        },
+      ],
+      completedAt: "2026-06-14T00:00:00.000Z",
+    });
+
+    expect(prisma.asset.update).toHaveBeenCalledWith({
+      where: { id: "asset_1" },
+      data: {
+        metadataJson: expect.objectContaining({
+          assetPrompt: "Existing prompt",
+          polishedPrompt: "Production-ready polished prompt",
+          promptPolishProvider: "mock-llm",
+          promptPolishModel: "mock-polish-v1",
+          promptPolishJobId: "job_polish_1",
+          promptPolishSourcePrompt: "rough prompt",
+        }),
+      },
+    });
+    expect(result[0]).toMatchObject({ id: "asset_1", previewKind: "image" });
+  });
+
   it("applies media metadata with stable original, display, and thumbnail derivatives", async () => {
     const videoAsset = asset({
       id: "asset_video_1",

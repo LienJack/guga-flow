@@ -13,10 +13,12 @@ import {
 import type {
   AiAudioGenerationJobInput,
   AiTextGenerationJobOutput,
+  AssetImageGenerationJobOutput,
   GeneratedMediaProviderOutput,
   GenerationJobInput,
   GenerationJobRecord,
   AssetAnalysisJobOutput,
+  AssetPromptPolishJobOutput,
   MediaMetadataJobOutput,
   ProgrammableProviderRuntimeConfig,
   ProviderConfigParams,
@@ -57,6 +59,14 @@ export type GenerationExecutorResult =
   | {
       status: "succeeded";
       mediaMetadataOutput: MediaMetadataJobOutput;
+    }
+  | {
+      status: "succeeded";
+      assetPromptPolishOutput: AssetPromptPolishJobOutput;
+    }
+  | {
+      status: "succeeded";
+      assetImageGenerationOutput: AssetImageGenerationJobOutput;
     }
   | {
       status: "succeeded";
@@ -126,6 +136,36 @@ export async function executeGenerationJob(
     return {
       status: "succeeded",
       mediaMetadataOutput: mockMediaMetadataOutput(job.id, input),
+    };
+  }
+
+  if (input.operation === "asset_prompt_polish") {
+    if (input.forceFailure) {
+      throw new ProviderError({
+        provider: input.provider,
+        code: "MOCK_ASSET_PROMPT_POLISH_FAILED",
+        message: "Mock asset prompt polish failure requested.",
+        retryable: true,
+      });
+    }
+    return {
+      status: "succeeded",
+      assetPromptPolishOutput: mockAssetPromptPolishOutput(job.id, input),
+    };
+  }
+
+  if (input.operation === "asset_image_generation") {
+    if (input.forceFailure) {
+      throw new ProviderError({
+        provider: input.provider,
+        code: "MOCK_ASSET_IMAGE_GENERATION_FAILED",
+        message: "Mock asset image generation failure requested.",
+        retryable: true,
+      });
+    }
+    return {
+      status: "succeeded",
+      assetImageGenerationOutput: mockAssetImageGenerationOutput(job.id, input),
     };
   }
 
@@ -558,6 +598,67 @@ function mockMediaMetadataOutput(
         strategy,
       };
     }),
+    completedAt: new Date().toISOString(),
+  };
+}
+
+function mockAssetPromptPolishOutput(
+  jobId: string,
+  input: Extract<GenerationJobInput, { operation: "asset_prompt_polish" }>,
+): AssetPromptPolishJobOutput {
+  return {
+    operation: "asset_prompt_polish",
+    provider: input.provider,
+    model: input.model,
+    overwrite: input.overwrite === true,
+    prompt: input.prompt,
+    generationJobId: jobId,
+    results: input.items.map((item) => ({
+      assetId: item.assetId,
+      sourcePrompt: item.prompt,
+      polishedPrompt: [
+        "Production-ready asset prompt:",
+        item.prompt.replace(/\s+/g, " ").trim(),
+        "Use clear subject identity, consistent style, and generation-safe visual detail.",
+      ].join(" "),
+    })),
+    completedAt: new Date().toISOString(),
+  };
+}
+
+function mockAssetImageGenerationOutput(
+  jobId: string,
+  input: Extract<GenerationJobInput, { operation: "asset_image_generation" }>,
+): AssetImageGenerationJobOutput {
+  const safeJobId = jobId.replace(/[^a-zA-Z0-9_-]/g, "-");
+  return {
+    operation: "asset_image_generation",
+    provider: input.provider,
+    model: input.model,
+    overwrite: input.overwrite === true,
+    generationJobId: jobId,
+    results: input.items.map((item, index) => ({
+      sourceAssetId: item.assetId,
+      prompt: item.prompt,
+      providerOutput: {
+        assetId: `mock-asset-image-${safeJobId}-${index + 1}`,
+        storageKey: `${input.projectId}/asset-generations/${safeJobId}-${index + 1}.png`,
+        mimeType: "image/png",
+        provider: input.provider,
+        model: input.model ?? "mock-image-v1",
+        prompt: item.prompt,
+        referenceAssetIds: [item.assetId],
+        width: 1280,
+        height: 720,
+        rawJson: {
+          mock: true,
+          operation: input.operation,
+          sourceAssetId: item.assetId,
+          aspectRatio: input.aspectRatio,
+          providerParams: input.providerParams ?? {},
+        },
+      },
+    })),
     completedAt: new Date().toISOString(),
   };
 }

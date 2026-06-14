@@ -9,6 +9,11 @@ import type {
   AiTextGenerationJobInput,
   AiTextGenerationJobOutput,
   AiTextNodeData,
+  AssetImageGenerationJobInput,
+  AssetImageGenerationJobOutput,
+  AssetImageGenerationSource,
+  AssetPromptPolishJobInput,
+  AssetPromptPolishJobOutput,
   AssetDetail,
   AssetAnalysisJobInput,
   AssetAnalysisJobOutput,
@@ -24,6 +29,10 @@ import type {
   CreateBatchShotsToImagesJobResult,
   CreateAssetAnalysisJobInput,
   CreateAssetAnalysisJobResult,
+  CreateAssetImageGenerationJobInput,
+  CreateAssetImageGenerationJobResult,
+  CreateAssetPromptPolishJobInput,
+  CreateAssetPromptPolishJobResult,
   CreateMediaMetadataJobInput,
   CreateMediaMetadataJobResult,
   CreateGenerationJobInput,
@@ -157,6 +166,8 @@ type WorkerGenerationJobInput =
   | DirectGenerationJobInput
   | AssetAnalysisJobInput
   | MediaMetadataJobInput
+  | AssetPromptPolishJobInput
+  | AssetImageGenerationJobInput
   | WorkflowRunJobInput
   | EditorExportJobInput;
 type GeneratedMediaJobInput = ShotToImageJobInput | ImageRefinementJobInput | ImageToVideoJobInput | WorkflowRunJobInput;
@@ -302,6 +313,9 @@ function assertJobInput(value: unknown): WorkerGenerationJobInput {
     return value as WorkerGenerationJobInput;
   }
   if (input.operation === "media_metadata") {
+    return value as WorkerGenerationJobInput;
+  }
+  if (input.operation === "asset_prompt_polish" || input.operation === "asset_image_generation") {
     return value as WorkerGenerationJobInput;
   }
   if (input.operation === "workflow_run") {
@@ -463,6 +477,84 @@ export class GenerationService {
 
     return {
       job: this.toGenerationJobRecord<MediaMetadataJobInput>(job),
+      queueSummary: await this.getQueueSummary(projectId),
+    };
+  }
+
+  async createAssetPromptPolishJob(
+    projectId: string,
+    input: CreateAssetPromptPolishJobInput,
+  ): Promise<CreateAssetPromptPolishJobResult> {
+    if (input.operation !== "asset_prompt_polish") {
+      throw new BadRequestException("Asset prompt polish operation is not supported");
+    }
+    const assets = await this.assetPromptSources(projectId, input.assetIds, input.prompt);
+    const jobInput: AssetPromptPolishJobInput = {
+      operation: "asset_prompt_polish",
+      projectId,
+      assetIds: assets.map((asset) => asset.assetId),
+      items: assets,
+      provider: "mock-llm",
+      model: "mock-polish-v1",
+      prompt: input.prompt,
+      overwrite: input.overwrite === true,
+      forceFailure: input.forceFailure,
+    };
+    const job = await this.prisma.generationJob.create({
+      data: {
+        projectId,
+        operation: "asset_caption",
+        status: "queued",
+        provider: jobInput.provider,
+        model: jobInput.model,
+        inputJson: jsonValue(jobInput),
+      },
+    }) as GenerationJobModel;
+
+    return {
+      job: this.toGenerationJobRecord<AssetPromptPolishJobInput>(job),
+      queueSummary: await this.getQueueSummary(projectId),
+    };
+  }
+
+  async createAssetImageGenerationJob(
+    projectId: string,
+    input: CreateAssetImageGenerationJobInput,
+  ): Promise<CreateAssetImageGenerationJobResult> {
+    if (input.operation !== "asset_image_generation") {
+      throw new BadRequestException("Asset image generation operation is not supported");
+    }
+    const providerSettings = await this.resolveImageProviderSettings(
+      projectId,
+      input as unknown as CreateGenerationJobInput,
+    );
+    const assets = await this.assetPromptSources(projectId, input.assetIds, input.prompt);
+    const jobInput: AssetImageGenerationJobInput = {
+      operation: "asset_image_generation",
+      projectId,
+      assetIds: assets.map((asset) => asset.assetId),
+      items: assets,
+      provider: providerSettings.provider.id,
+      model: providerSettings.model,
+      aspectRatio: providerSettings.aspectRatio,
+      count: providerSettings.count,
+      providerParams: providerSettings.providerParams,
+      overwrite: input.overwrite === true,
+      forceFailure: input.forceFailure,
+    };
+    const job = await this.prisma.generationJob.create({
+      data: {
+        projectId,
+        operation: "shot_to_image",
+        status: "queued",
+        provider: jobInput.provider,
+        model: jobInput.model,
+        inputJson: jsonValue(jobInput),
+      },
+    }) as GenerationJobModel;
+
+    return {
+      job: this.toGenerationJobRecord<AssetImageGenerationJobInput>(job),
       queueSummary: await this.getQueueSummary(projectId),
     };
   }
@@ -870,6 +962,8 @@ export class GenerationService {
     packageOutput?: EditorExportPackageOutput,
     assetAnalysisOutput?: AssetAnalysisJobOutput,
     mediaMetadataOutput?: MediaMetadataJobOutput,
+    assetPromptPolishOutput?: AssetPromptPolishJobOutput,
+    assetImageGenerationOutput?: AssetImageGenerationJobOutput,
     textGenerationOutput?: AiTextGenerationJobOutput,
   ): Promise<
     GenerationJobRecord<
@@ -879,6 +973,8 @@ export class GenerationService {
       | EditorExportJobOutput
       | AssetAnalysisJobOutput
       | MediaMetadataJobOutput
+      | AssetPromptPolishJobOutput
+      | AssetImageGenerationJobOutput
       | AiTextGenerationJobOutput
       | AiAudioGenerationJobOutput
     >
@@ -899,6 +995,18 @@ export class GenerationService {
         throw new BadRequestException("Media metadata completion requires metadata output");
       }
       return this.succeedMediaMetadataJob(existing, input, mediaMetadataOutput);
+    }
+    if (input.operation === "asset_prompt_polish") {
+      if (!assetPromptPolishOutput) {
+        throw new BadRequestException("Asset prompt polish completion requires prompt output");
+      }
+      return this.succeedAssetPromptPolishJob(existing, input, assetPromptPolishOutput);
+    }
+    if (input.operation === "asset_image_generation") {
+      if (!assetImageGenerationOutput) {
+        throw new BadRequestException("Asset image generation completion requires image output");
+      }
+      return this.succeedAssetImageGenerationJob(existing, input, assetImageGenerationOutput);
     }
     if (input.operation === "asset_caption" || input.operation === "asset_classification") {
       if (!assetAnalysisOutput) {
@@ -1110,6 +1218,139 @@ export class GenerationService {
     })) as GenerationJobModel;
 
     return this.toGenerationJobRecord<MediaMetadataJobInput, MediaMetadataJobOutput>(completed);
+  }
+
+  private async succeedAssetPromptPolishJob(
+    existing: GenerationJobModel,
+    input: AssetPromptPolishJobInput,
+    output: AssetPromptPolishJobOutput,
+  ): Promise<GenerationJobRecord<AssetPromptPolishJobInput, AssetPromptPolishJobOutput>> {
+    if (output.operation !== "asset_prompt_polish") {
+      throw new BadRequestException("Asset prompt polish output operation does not match the claimed job");
+    }
+    const expectedAssetIds = new Set(input.assetIds);
+    if (!output.results.every((result) => expectedAssetIds.has(result.assetId))) {
+      throw new BadRequestException("Asset prompt polish output contains unexpected assets");
+    }
+
+    const claimed = await this.prisma.generationJob.updateMany({
+      where: { id: existing.id, status: { in: WORKER_ACTIVE_JOB_STATUSES } },
+      data: { errorMessage: null },
+    });
+    if (claimed.count !== 1) {
+      throw new BadRequestException("Only active generation jobs can succeed");
+    }
+    const completedOutput: AssetPromptPolishJobOutput = {
+      ...output,
+      generationJobId: output.generationJobId ?? existing.id,
+    };
+    await this.assetsService.applyAssetPromptPolish(existing.projectId, completedOutput);
+    const completed = (await this.prisma.generationJob.update({
+      where: { id: existing.id },
+      data: {
+        status: "succeeded",
+        outputJson: jsonValue(completedOutput),
+        errorMessage: null,
+      },
+    })) as GenerationJobModel;
+
+    return this.toGenerationJobRecord<AssetPromptPolishJobInput, AssetPromptPolishJobOutput>(completed);
+  }
+
+  private async succeedAssetImageGenerationJob(
+    existing: GenerationJobModel,
+    input: AssetImageGenerationJobInput,
+    output: AssetImageGenerationJobOutput,
+  ): Promise<GenerationJobRecord<AssetImageGenerationJobInput, AssetImageGenerationJobOutput>> {
+    if (output.operation !== "asset_image_generation") {
+      throw new BadRequestException("Asset image generation output operation does not match the claimed job");
+    }
+    const expectedAssetIds = new Set(input.assetIds);
+    if (!output.results.every((result) => expectedAssetIds.has(result.sourceAssetId))) {
+      throw new BadRequestException("Asset image generation output contains unexpected assets");
+    }
+
+    const completed = await this.runTransaction(async (tx) => {
+      const claimed = await tx.generationJob.updateMany({
+        where: { id: existing.id, status: { in: WORKER_ACTIVE_JOB_STATUSES } },
+        data: { errorMessage: null },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException("Only active generation jobs can succeed");
+      }
+
+      const completedResults: AssetImageGenerationJobOutput["results"] = [];
+      for (const result of output.results) {
+        if (result.skipped || result.errorMessage) {
+          completedResults.push(result);
+          continue;
+        }
+        if (!result.providerOutput) {
+          throw new BadRequestException("Asset image generation result requires provider output");
+        }
+        if (result.providerOutput.provider !== existing.provider) {
+          throw new BadRequestException("Asset image generation output provider does not match the claimed job");
+        }
+
+        const generatedAsset = await this.assetsService.createGeneratedAsset(
+          existing.projectId,
+          {
+            purpose: "shot_keyframe",
+            providerOutput: result.providerOutput,
+            metadataJson: {
+              generationJobId: existing.id,
+              operation: input.operation,
+              sourceAssetId: result.sourceAssetId,
+              prompt: result.prompt,
+            },
+          },
+          tx,
+        );
+        const sourceAsset = (await tx.asset.findFirst({
+          where: { id: result.sourceAssetId, projectId: existing.projectId },
+        })) as { id: string; metadataJson: unknown } | null;
+        if (!sourceAsset) {
+          throw new NotFoundException("Source asset not found");
+        }
+        const metadata = dataObject(sourceAsset.metadataJson);
+        await tx.asset.update({
+          where: { id: sourceAsset.id },
+          data: {
+            metadataJson: jsonValue({
+              ...metadata,
+              assetPrompt: input.overwrite || !metadata.assetPrompt ? result.prompt : metadata.assetPrompt,
+              generatedAssetIds: uniqueStrings([
+                ...stringArray(metadata.generatedAssetIds),
+                generatedAsset.id,
+              ]),
+              lastGeneratedAssetId: generatedAsset.id,
+              lastAssetImageGenerationJobId: existing.id,
+            }),
+          },
+        });
+        completedResults.push({
+          ...result,
+          assetId: generatedAsset.id,
+        });
+      }
+
+      const completedOutput: AssetImageGenerationJobOutput = {
+        ...output,
+        generationJobId: output.generationJobId ?? existing.id,
+        results: completedResults,
+      };
+
+      return (await tx.generationJob.update({
+        where: { id: existing.id },
+        data: {
+          status: "succeeded",
+          outputJson: jsonValue(completedOutput),
+          errorMessage: null,
+        },
+      })) as GenerationJobModel;
+    });
+
+    return this.toGenerationJobRecord<AssetImageGenerationJobInput, AssetImageGenerationJobOutput>(completed);
   }
 
   private async succeedAiTextGenerationJob(
@@ -1559,6 +1800,37 @@ export class GenerationService {
       default:
         throw new BadRequestException("Generation operation is not supported yet");
     }
+  }
+
+  private async assetPromptSources(
+    projectId: string,
+    assetIdsInput: readonly string[],
+    promptOverride?: string,
+  ): Promise<AssetImageGenerationSource[]> {
+    const assetIds = Array.from(new Set((assetIdsInput ?? []).filter(Boolean)));
+    if (!assetIds.length) {
+      throw new BadRequestException("Asset prompt jobs require assetIds");
+    }
+
+    const assets: AssetDetail[] = [];
+    for (const assetId of assetIds) {
+      assets.push(await this.assetsService.getAsset(projectId, assetId));
+    }
+
+    return assets.map((asset) => ({
+      assetId: asset.id,
+      prompt: this.assetPromptFor(asset, promptOverride),
+    }));
+  }
+
+  private assetPromptFor(asset: AssetDetail, promptOverride?: string): string {
+    const metadata = dataObject(asset.metadataJson);
+    return optionalString(promptOverride) ??
+      optionalString(metadata.polishedPrompt) ??
+      optionalString(metadata.assetPrompt) ??
+      optionalString(metadata.prompt) ??
+      optionalString(metadata.caption) ??
+      `Create a production-ready image from asset ${asset.originalFilename ?? asset.id}.`;
   }
 
   private composeShotPromptForGeneration(

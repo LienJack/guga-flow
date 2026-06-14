@@ -117,6 +117,19 @@ export interface AssetMediaMetadata {
   mediaMetadataError?: string;
 }
 
+export interface AssetPromptMetadata {
+  assetPrompt?: string;
+  polishedPrompt?: string;
+  promptPolishProvider?: string;
+  promptPolishModel?: string;
+  promptPolishedAt?: string;
+  promptPolishJobId?: string;
+  promptPolishSourcePrompt?: string;
+  generatedAssetIds?: string[];
+  lastGeneratedAssetId?: string;
+  lastAssetImageGenerationJobId?: string;
+}
+
 export const EDITOR_PACKAGE_MIME_TYPE = "application/zip" as const;
 export type EditorPackageMimeType = typeof EDITOR_PACKAGE_MIME_TYPE;
 

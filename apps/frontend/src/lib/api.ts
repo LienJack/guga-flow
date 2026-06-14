@@ -30,6 +30,10 @@ import type {
   CreateGenerationJobResult,
   CreateAssetAnalysisJobInput,
   CreateAssetAnalysisJobResult,
+  CreateAssetImageGenerationJobInput,
+  CreateAssetImageGenerationJobResult,
+  CreateAssetPromptPolishJobInput,
+  CreateAssetPromptPolishJobResult,
   CreateMediaMetadataJobInput,
   CreateMediaMetadataJobResult,
   CreateWorkflowDefinitionInput,
@@ -429,6 +433,29 @@ export function createMediaMetadataJob(
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function createAssetPromptPolishJob(
+  projectId: string,
+  input: CreateAssetPromptPolishJobInput,
+): Promise<CreateAssetPromptPolishJobResult> {
+  return requestJson<CreateAssetPromptPolishJobResult>(`/projects/${projectId}/generation/jobs/asset-prompt-polish`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function createAssetImageGenerationJob(
+  projectId: string,
+  input: CreateAssetImageGenerationJobInput,
+): Promise<CreateAssetImageGenerationJobResult> {
+  return requestJson<CreateAssetImageGenerationJobResult>(
+    `/projects/${projectId}/generation/jobs/asset-image-generation`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 export function assetPreviewUrl(projectId: string, assetId: string): string {

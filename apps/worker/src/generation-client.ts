@@ -1,5 +1,7 @@
 import type {
   AiTextGenerationJobOutput,
+  AssetImageGenerationJobOutput,
+  AssetPromptPolishJobOutput,
   ClaimGenerationJobResult,
   EditorExportPackageOutput,
   AssetAnalysisJobOutput,
@@ -38,6 +40,14 @@ export interface GenerationWorkerClient {
   succeedMediaMetadataJob(
     jobId: string,
     mediaMetadataOutput: MediaMetadataJobOutput,
+  ): Promise<GenerationJobRecord>;
+  succeedAssetPromptPolishJob(
+    jobId: string,
+    assetPromptPolishOutput: AssetPromptPolishJobOutput,
+  ): Promise<GenerationJobRecord>;
+  succeedAssetImageGenerationJob(
+    jobId: string,
+    assetImageGenerationOutput: AssetImageGenerationJobOutput,
   ): Promise<GenerationJobRecord>;
   succeedTextGenerationJob(
     jobId: string,
@@ -126,6 +136,24 @@ export class HttpGenerationWorkerClient implements GenerationWorkerClient {
   ): Promise<GenerationJobRecord> {
     return this.post(`/worker/generation/jobs/${encodeURIComponent(jobId)}/succeed`, {
       mediaMetadataOutput,
+    });
+  }
+
+  succeedAssetPromptPolishJob(
+    jobId: string,
+    assetPromptPolishOutput: AssetPromptPolishJobOutput,
+  ): Promise<GenerationJobRecord> {
+    return this.post(`/worker/generation/jobs/${encodeURIComponent(jobId)}/succeed`, {
+      assetPromptPolishOutput,
+    });
+  }
+
+  succeedAssetImageGenerationJob(
+    jobId: string,
+    assetImageGenerationOutput: AssetImageGenerationJobOutput,
+  ): Promise<GenerationJobRecord> {
+    return this.post(`/worker/generation/jobs/${encodeURIComponent(jobId)}/succeed`, {
+      assetImageGenerationOutput,
     });
   }
 

@@ -141,6 +141,71 @@ describe("generation worker client configuration", () => {
     );
   });
 
+  it("posts asset prompt polish and image generation success payloads", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ id: "job_asset_1" })));
+    const client = new HttpGenerationWorkerClient(
+      "http://localhost:3002/api/v1",
+      fetchImpl as unknown as typeof fetch,
+      "worker-secret",
+    );
+
+    await client.succeedAssetPromptPolishJob("job_polish_1", {
+      operation: "asset_prompt_polish",
+      provider: "mock-llm",
+      model: "mock-polish-v1",
+      overwrite: false,
+      generationJobId: "job_polish_1",
+      results: [
+        {
+          assetId: "asset_1",
+          sourcePrompt: "rough prompt",
+          polishedPrompt: "polished prompt",
+        },
+      ],
+      completedAt: "2026-06-14T00:00:00.000Z",
+    });
+    await client.succeedAssetImageGenerationJob("job_generate_1", {
+      operation: "asset_image_generation",
+      provider: "mock-image",
+      model: "mock-image-v1",
+      overwrite: false,
+      generationJobId: "job_generate_1",
+      results: [
+        {
+          sourceAssetId: "asset_1",
+          prompt: "polished prompt",
+          providerOutput: {
+            assetId: "provider_asset_1",
+            storageKey: "project_1/asset-generations/job_generate_1.png",
+            mimeType: "image/png",
+            provider: "mock-image",
+            model: "mock-image-v1",
+            prompt: "polished prompt",
+            referenceAssetIds: [],
+          },
+        },
+      ],
+      completedAt: "2026-06-14T00:00:00.000Z",
+    });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:3002/api/v1/worker/generation/jobs/job_polish_1/succeed",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("assetPromptPolishOutput"),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:3002/api/v1/worker/generation/jobs/job_generate_1/succeed",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("assetImageGenerationOutput"),
+      }),
+    );
+  });
+
   it("posts provider runtime config requests without putting credentials in job payloads", async () => {
     const fetchImpl = vi.fn(async () =>
       new Response(
