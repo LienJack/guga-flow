@@ -21,6 +21,7 @@ import {
   updateCanvasNodeGeometry,
   uploadAsset,
 } from "../../lib/api";
+import { loadCanvasPreferences } from "../../lib/shortcuts";
 import { mergeCanvasEdgeCreateResult, mergeCanvasEdgeDeleteResult } from "./canvas-edge-data";
 import {
   buildCanvasEdgeArrowProjection,
@@ -50,11 +51,7 @@ import {
   isBusinessNodeShape,
   type BusinessNodeShape,
 } from "./business-node-shape";
-import {
-  BUSINESS_NODE_DEFAULT_HEIGHT,
-  BUSINESS_NODE_DEFAULT_WIDTH,
-  businessNodeShapeUtils,
-} from "./business-node-shape-utils";
+import { businessNodeShapeUtils } from "./business-node-shape-utils";
 import {
   sourceMediaCreateInput,
   sourceMediaImportSuccessLabel,
@@ -257,6 +254,7 @@ export function CanvasEditor({
   const [nodeActionError, setNodeActionError] = useState<string | null>(null);
   const [creatingNodeType, setCreatingNodeType] = useState<Phase3CanvasNodeType | null>(null);
   const [sourceDropBusy, setSourceDropBusy] = useState(false);
+  const [canvasPreferences] = useState(() => loadCanvasPreferences());
   const [selectionState, setSelectionState] =
     useState<CanvasSelectionState>(EMPTY_CANVAS_SELECTION);
   const [semanticBindSourceId, setSemanticBindSourceId] = useState<string | null>(null);
@@ -848,8 +846,8 @@ export function CanvasEditor({
         tldrawShapeId: shapeId,
         x: 96 + offset,
         y: 96 + offset,
-        width: BUSINESS_NODE_DEFAULT_WIDTH,
-        height: BUSINESS_NODE_DEFAULT_HEIGHT,
+        width: canvasPreferences.defaultNodeWidth,
+        height: canvasPreferences.defaultNodeHeight,
         zIndex: nodesRef.current.length,
       });
 
@@ -874,7 +872,7 @@ export function CanvasEditor({
         setCreatingNodeType(null);
       }
     },
-    [canvasDocumentId, emitSelection, projectId, publishCanvasNodes],
+    [canvasDocumentId, canvasPreferences, emitSelection, projectId, publishCanvasNodes],
   );
 
   const handleSourceMediaDragOver = useCallback(
@@ -936,8 +934,8 @@ export function CanvasEditor({
               tldrawShapeId: shapeId,
               x: pagePoint.x + index * 28,
               y: pagePoint.y + index * 28,
-              width: BUSINESS_NODE_DEFAULT_WIDTH,
-              height: BUSINESS_NODE_DEFAULT_HEIGHT,
+              width: canvasPreferences.defaultNodeWidth,
+              height: canvasPreferences.defaultNodeHeight,
               zIndex: nodesRef.current.length,
             });
             const result = await createCanvasNode(projectId, { ...input, canvasDocumentId });
@@ -971,7 +969,7 @@ export function CanvasEditor({
         setNodeActionError(`${prefix}${failures.join(" ")}`);
       }
     },
-    [canvasDocumentId, emitSelection, projectId, publishCanvasNodes, scheduleSave],
+    [canvasDocumentId, canvasPreferences, emitSelection, projectId, publishCanvasNodes, scheduleSave],
   );
 
   const selectedBusinessNode =

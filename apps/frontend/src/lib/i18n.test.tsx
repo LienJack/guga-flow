@@ -6,6 +6,8 @@ describe("i18n", () => {
   it("translates English and Chinese UI copy with params", () => {
     expect(translate("en", "queue.queued", { count: 3 })).toBe("3 queued");
     expect(translate("zh", "queue.queued", { count: 3 })).toBe("排队 3");
+    expect(translate("en", "shortcuts.canvasFit")).toBe("Fit canvas");
+    expect(translate("zh", "shortcuts.canvasFit")).toBe("适应画布");
   });
 
   it("falls back to English and then the key", () => {

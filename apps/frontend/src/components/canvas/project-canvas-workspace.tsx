@@ -27,6 +27,12 @@ import {
   listGenerationJobs,
   retryGenerationJob,
 } from "../../lib/api";
+import {
+  eventMatchesShortcut,
+  isEditableShortcutTarget,
+  loadShortcutPreferences,
+  type ShortcutPreferences,
+} from "../../lib/shortcuts";
 import { WorkbenchShell } from "../workbench-shell";
 import { NovelStoryboardPanel } from "../novels/novel-storyboard-panel";
 import { mergeStoryboardImportGraph } from "../novels/storyboard-data";
@@ -34,10 +40,7 @@ import { type CanvasSelectionState, EMPTY_CANVAS_SELECTION } from "./canvas-sele
 import { AgentCanvasActionsPanel } from "./agent-canvas-actions-panel";
 import { CanvasEditor } from "./canvas-editor";
 import { CanvasInspector } from "./canvas-inspector";
-import {
-  CanvasProductivityPanel,
-  isEditableShortcutTarget,
-} from "./canvas-productivity-panel";
+import { CanvasProductivityPanel } from "./canvas-productivity-panel";
 import { CanvasSaveStatusBadge } from "./canvas-save-status";
 import { ProductionWorkspacePanel } from "./production-workspace-panel";
 import { ProjectPackagePanel } from "./project-package-panel";
@@ -54,6 +57,9 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
   const [canvasEdges, setCanvasEdges] = useState<CanvasEdgeRecord[]>([]);
   const [canvasPages, setCanvasPages] = useState<CanvasDocumentRecord[]>([]);
   const [activeCanvasDocumentId, setActiveCanvasDocumentId] = useState<string | undefined>();
+  const [shortcutPreferences, setShortcutPreferences] = useState<ShortcutPreferences>(() =>
+    loadShortcutPreferences(),
+  );
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [generationJobs, setGenerationJobs] = useState<GenerationJobRecord[]>([]);
   const [taskCenter, setTaskCenter] = useState<TaskCenterResult | null>(null);
@@ -118,6 +124,10 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
     return () => {
       cancelled = true;
     };
+  }, [projectId]);
+
+  useEffect(() => {
+    setShortcutPreferences(loadShortcutPreferences());
   }, [projectId]);
 
   useEffect(() => {
@@ -337,14 +347,12 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
       if (isEditableShortcutTarget(event.target)) {
         return;
       }
-      const key = event.key.toLowerCase();
-      const primaryModifier = event.metaKey || event.ctrlKey;
-      if ((primaryModifier && key === "k") || (!primaryModifier && !event.altKey && key === "/")) {
+      if (eventMatchesShortcut(event, shortcutPreferences["canvas.search"])) {
         event.preventDefault();
         setSearchFocusRequestKey((current) => (current ?? 0) + 1);
         return;
       }
-      if (!primaryModifier && !event.altKey && !event.shiftKey && key === "f") {
+      if (eventMatchesShortcut(event, shortcutPreferences["canvas.fit"])) {
         event.preventDefault();
         handleFitToContent();
       }
@@ -352,7 +360,7 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleFitToContent]);
+  }, [handleFitToContent, shortcutPreferences]);
 
   return (
     <WorkbenchShell

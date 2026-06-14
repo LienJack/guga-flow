@@ -8,7 +8,7 @@ import type {
   SkillTemplateSummary,
   ProgrammableProviderDefinitionSummary,
 } from "@guga-flow/shared-types";
-import { Bot, Database, Download, FileArchive, Info, Settings2, SlidersHorizontal, Upload } from "lucide-react";
+import { Bot, Database, Download, FileArchive, Info, Keyboard, Settings2, SlidersHorizontal, Upload } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 
 import {
@@ -21,6 +21,7 @@ import { useI18n } from "../../lib/i18n";
 import { ProjectGenerationSettingsPanel } from "../canvas/generation-creative-settings-panel";
 import { AgentDeploymentSettingsPanel } from "./agent-deployment-settings-panel";
 import { ProviderSettingsPanel } from "./provider-settings-panel";
+import { ShortcutPreferencesPanel } from "./shortcut-preferences-panel";
 import { SkillTemplateSettingsPanel } from "./skill-template-settings-panel";
 
 interface SettingsCenterProps {
@@ -212,6 +213,11 @@ export function SettingsCenter({
               </div>
             </dl>
             <ProjectGenerationSettingsPanel project={project} onProjectUpdated={handleProjectUpdated} />
+          </section>
+
+          <section id="settings-shortcuts" className="settings-center-section">
+            <SectionHeading icon={<Keyboard size={16} aria-hidden="true" />} title={t("shortcuts.title")} />
+            <ShortcutPreferencesPanel />
           </section>
 
           <section id="settings-data" className="settings-center-section">

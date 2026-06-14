@@ -2,6 +2,8 @@ import type { CanvasNodeRecord, CanvasNodeType } from "@guga-flow/shared-types";
 import { Search, Target } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+export { isEditableShortcutTarget } from "../../lib/shortcuts";
+
 import { buildBusinessNodeCardModel, isPhase3CanvasNodeType } from "./business-node-data";
 
 const OUTLINE_NODE_TYPES: CanvasNodeType[] = [
@@ -148,20 +150,6 @@ export function groupCanvasOutline(nodes: CanvasNodeRecord[]): CanvasOutlineGrou
         ]
       : [];
   });
-}
-
-export function isEditableShortcutTarget(target: EventTarget | null): boolean {
-  if (!target || typeof target !== "object") {
-    return false;
-  }
-  const candidate = target as { tagName?: string; isContentEditable?: boolean };
-  const tagName = candidate.tagName?.toLowerCase();
-  return (
-    tagName === "input" ||
-    tagName === "textarea" ||
-    tagName === "select" ||
-    candidate.isContentEditable === true
-  );
 }
 
 export function nodeSearchText(node: CanvasNodeRecord): string {
