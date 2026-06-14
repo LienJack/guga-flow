@@ -988,12 +988,10 @@ describe("CanvasService", () => {
       }
       return null;
     });
-    prisma.canvasEdge.create.mockResolvedValue(
+    prisma.canvasEdge.create.mockImplementation(async ({ data }: MockCreateArgs) =>
       canvasEdge({
         id: "edge_source_image",
-        sourceNodeId: "source_image_1",
-        targetNodeId: "image_1",
-        relation: "derived_from",
+        ...data,
       }),
     );
 
@@ -1004,8 +1002,122 @@ describe("CanvasService", () => {
     });
 
     expect(result.edge.relation).toBe("derived_from");
+    expect(result.edge.dataJson).toMatchObject({
+      slotId: "reference_image",
+      inputKind: "image",
+      inputRole: "reference_image",
+      order: 0,
+    });
+    expect(prisma.canvasEdge.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        dataJson: {
+          slotId: "reference_image",
+          inputKind: "image",
+          inputRole: "reference_image",
+          order: 0,
+        },
+      }),
+    });
     expect(result.updatedNodes).toEqual([]);
     expect(prisma.canvasNode.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects source media upstream edges that fail input slot policy", async () => {
+    const sourceImage = canvasNode({
+      id: "source_image_5",
+      tldrawShapeId: "shape:source-image-5",
+      type: "source_image",
+    });
+    const sourceAudio = canvasNode({
+      id: "source_audio_1",
+      tldrawShapeId: "shape:source-audio-1",
+      type: "source_audio",
+    });
+    const imageNode = canvasNode({
+      id: "image_1",
+      tldrawShapeId: "shape:image-1",
+      type: "image",
+    });
+    prisma.canvasNode.findFirst.mockImplementation(async ({ where }) => {
+      if (where.id === "source_image_5") {
+        return sourceImage;
+      }
+      if (where.id === "source_audio_1") {
+        return sourceAudio;
+      }
+      if (where.id === "image_1") {
+        return imageNode;
+      }
+      return null;
+    });
+
+    await expect(
+      service.createEdge("project_1", {
+        sourceNodeId: "source_audio_1",
+        targetNodeId: "image_1",
+        relation: "derived_from",
+      }),
+    ).rejects.toThrow("image does not accept source audio input.");
+
+    prisma.canvasEdge.findMany.mockResolvedValue(
+      Array.from({ length: 4 }, (_, index) =>
+        canvasEdge({
+          id: `edge_reference_${index}`,
+          sourceNodeId: `source_image_${index + 1}`,
+          targetNodeId: "image_1",
+          relation: "derived_from",
+          dataJson: {
+            slotId: "reference_image",
+            inputKind: "image",
+            inputRole: "reference_image",
+            order: index,
+          },
+        }),
+      ),
+    );
+
+    await expect(
+      service.createEdge("project_1", {
+        sourceNodeId: "source_image_5",
+        targetNodeId: "image_1",
+        relation: "derived_from",
+      }),
+    ).rejects.toThrow("Reference image accepts at most 4 connections.");
+    expect(prisma.canvasEdge.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects source media upstream edges across canvas documents", async () => {
+    const sourceImage = canvasNode({
+      id: "source_image_1",
+      tldrawShapeId: "shape:source-image-1",
+      type: "source_image",
+      canvasDocumentId: "canvas_1",
+    });
+    const imageNode = canvasNode({
+      id: "image_1",
+      tldrawShapeId: "shape:image-1",
+      type: "image",
+      canvasDocumentId: "canvas_2",
+    });
+    prisma.canvasNode.findFirst.mockImplementation(async ({ where }) => {
+      if (where.id === "source_image_1") {
+        return sourceImage;
+      }
+      if (where.id === "image_1") {
+        return imageNode;
+      }
+      return null;
+    });
+
+    await expect(
+      service.createEdge("project_1", {
+        sourceNodeId: "source_image_1",
+        targetNodeId: "image_1",
+        relation: "derived_from",
+      }),
+    ).rejects.toThrow("Canvas edge nodes must belong to the same canvas");
+    expect(prisma.canvasEdge.findMany).not.toHaveBeenCalled();
+    expect(prisma.canvasEdge.create).not.toHaveBeenCalled();
   });
 
   it("rejects invalid derived-from variant edges", async () => {

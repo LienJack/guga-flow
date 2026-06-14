@@ -95,7 +95,38 @@ describe("semantic bind interactions", () => {
       sourceNodeId: "source_image_1",
       targetNodeId: "image_1",
       relation: "derived_from",
+      dataJson: {
+        slotId: "reference_image",
+        inputKind: "image",
+        inputRole: "reference_image",
+        order: 0,
+      },
     });
+  });
+
+  it("filters source media targets that fail input slot policy", () => {
+    const image = node({ id: "image_1", type: "image", title: "Image Node" });
+    const sourceAudio = node({ id: "source_audio_1", type: "source_audio" });
+    const sourceImage = node({ id: "source_image_5", type: "source_image" });
+    const occupiedReferenceEdges = Array.from({ length: 4 }, (_, index) =>
+      edge({
+        id: `edge_reference_${index}`,
+        sourceNodeId: `source_image_${index + 1}`,
+        targetNodeId: image.id,
+        relation: "derived_from",
+        dataJson: {
+          slotId: "reference_image",
+          inputKind: "image",
+          inputRole: "reference_image",
+          order: index,
+        },
+      }),
+    );
+
+    expect(getAvailableSemanticBindTargets(sourceAudio, [sourceAudio, image], [])).toEqual([]);
+    expect(getAvailableSemanticBindTargets(sourceImage, [sourceImage, image], occupiedReferenceEdges)).toEqual(
+      [],
+    );
   });
 
   it("prefers Shot targets over containing SceneFrame targets for direct drop", () => {

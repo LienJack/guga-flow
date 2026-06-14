@@ -72,12 +72,39 @@ describe("canvas edge data helpers", () => {
     const location = node({ id: "location_1", type: "location_asset" });
     const shot = node({ id: "shot_1", type: "shot" });
     const sceneFrame = node({ id: "frame_1", type: "scene_frame" });
+    const sourceImage = node({ id: "source_image_1", type: "source_image" });
+    const sourceAudio = node({ id: "source_audio_1", type: "source_audio" });
+    const image = node({ id: "image_1", type: "image" });
 
     expect(getSemanticBindingRelation(character, shot)).toBe("references_character");
     expect(getSemanticBindingRelation(location, shot)).toBe("references_location");
     expect(getSemanticBindingRelation(location, sceneFrame)).toBe("references_location");
+    expect(getSemanticBindingRelation(sourceImage, image)).toBe("derived_from");
+    expect(getSemanticBindingRelation(sourceAudio, image)).toBeNull();
     expect(getSemanticBindingRelation(character, sceneFrame)).toBeNull();
     expect(getSemanticBindingRelation(shot, character)).toBeNull();
+  });
+
+  it("builds source media create inputs with input slot metadata", () => {
+    const sourceImage = node({ id: "source_image_1", type: "source_image" });
+    const image = node({ id: "image_1", type: "image" });
+
+    expect(
+      buildSemanticCanvasEdgeInput({
+        sourceNode: sourceImage,
+        targetNode: image,
+      }),
+    ).toMatchObject({
+      sourceNodeId: "source_image_1",
+      targetNodeId: "image_1",
+      relation: "derived_from",
+      dataJson: {
+        slotId: "reference_image",
+        inputKind: "image",
+        inputRole: "reference_image",
+        order: 0,
+      },
+    });
   });
 
   it("builds create inputs and detects idempotent duplicate edges", () => {

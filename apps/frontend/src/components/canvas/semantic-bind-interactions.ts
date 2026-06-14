@@ -1,9 +1,11 @@
 import type {
   CanvasEdgeData,
   CanvasEdgeRecord,
+  CanvasInputSlotEdgeData,
   CanvasNodeRecord,
   CreateCanvasEdgeInput,
 } from "@guga-flow/shared-types";
+import { validateCanvasInputConnection } from "@guga-flow/shared-types";
 
 import {
   buildSemanticCanvasEdgeInput,
@@ -16,6 +18,7 @@ export interface SemanticBindTarget {
   node: CanvasNodeRecord;
   label: string;
   affectedShotNodeIds: string[];
+  slotEdgeData?: CanvasInputSlotEdgeData;
 }
 
 export function canStartSemanticBind(
@@ -55,6 +58,19 @@ export function getAvailableSemanticBindTargets(
       return [];
     }
 
+    const slotValidation =
+      relation === "derived_from"
+        ? validateCanvasInputConnection({
+            sourceNode,
+            targetNode: node,
+            existingEdges: edges,
+          })
+        : null;
+
+    if (slotValidation && !slotValidation.ok) {
+      return [];
+    }
+
     return [
       {
         node,
@@ -63,6 +79,7 @@ export function getAvailableSemanticBindTargets(
           relation === "references_location" && node.type === "scene_frame"
             ? findSceneFrameEligibleShotNodes(node, nodes).map((shotNode) => shotNode.id)
             : [],
+        slotEdgeData: slotValidation?.ok ? slotValidation.edgeData : undefined,
       },
     ];
   });
@@ -105,6 +122,7 @@ export function buildSemanticBindCreateInput(input: {
     targetShapeId: input.targetShapeId ?? input.target.node.tldrawShapeId,
     visualArrowShapeId: input.visualArrowShapeId,
     affectedShotNodeIds: input.target.affectedShotNodeIds,
+    slotEdgeData: input.target.slotEdgeData,
   });
 }
 

@@ -49,6 +49,7 @@ import {
   buildStoryboardImportPlan,
   storyboardImportAssetKey,
   storyboardImportProvenance,
+  validateCanvasInputConnection,
   validateStoryboardResult,
 } from "@guga-flow/shared-types";
 
@@ -183,28 +184,6 @@ function isPhase3CanvasNodeType(value: unknown): value is CanvasNodeType {
 
 function isSourceMediaNodeType(value: string): boolean {
   return value === "source_text" || value === "source_image" || value === "source_video" || value === "source_audio";
-}
-
-function canSourceMediaFeedTarget(sourceType: string, targetType: string): boolean {
-  if (!isSourceMediaNodeType(sourceType)) {
-    return false;
-  }
-  if (targetType === "shot") {
-    return true;
-  }
-  if (targetType === "character_asset") {
-    return sourceType === "source_image" || sourceType === "source_audio";
-  }
-  if (targetType === "location_asset") {
-    return sourceType === "source_image" || sourceType === "source_video";
-  }
-  if (targetType === "image") {
-    return sourceType === "source_text" || sourceType === "source_image";
-  }
-  if (targetType === "video") {
-    return sourceType === "source_image" || sourceType === "source_video" || sourceType === "source_audio";
-  }
-  return false;
 }
 
 function isNodeStatus(value: unknown): value is NodeStatus {
@@ -530,7 +509,24 @@ export class CanvasService {
     }
 
     this.validateSemanticEdge(sourceNode, targetNode, input.relation);
-    const dataJson = this.normalizeEdgeDataJson(input.dataJson);
+    const requestedDataJson = this.normalizeEdgeDataJson(input.dataJson);
+    const existingTargetEdges = this.shouldValidateInputSlotEdge(sourceNode, targetNode, input.relation)
+      ? await this.prisma.canvasEdge.findMany({
+          where: {
+            projectId,
+            canvasDocumentId: targetNode.canvasDocumentId,
+            targetNodeId: targetNode.id,
+            relation: "derived_from",
+          },
+        })
+      : [];
+    const dataJson = this.resolveInputSlotEdgeData({
+      sourceNode,
+      targetNode,
+      relation: input.relation,
+      dataJson: requestedDataJson,
+      existingEdges: existingTargetEdges,
+    });
 
     if (input.relation === "references_location" && targetNode.type === "scene_frame") {
       const shotNodes = await this.findProjectShotNodesByIds(
@@ -688,6 +684,13 @@ export class CanvasService {
         }
 
         this.validateSemanticEdge(sourceNode, targetNode, plannedEdge.relation);
+        const dataJson = this.resolveInputSlotEdgeData({
+          sourceNode,
+          targetNode,
+          relation: plannedEdge.relation,
+          dataJson: this.normalizeEdgeDataJson(plannedEdge.dataJson),
+          existingEdges: resultEdges,
+        });
         const edge = await this.findOrCreateCanvasEdge(tx, projectId, canvasDocument.id, {
           sourceNodeId: sourceNode.id,
           targetNodeId: targetNode.id,
@@ -695,7 +698,7 @@ export class CanvasService {
           sourceShapeId: sourceNode.tldrawShapeId,
           targetShapeId: targetNode.tldrawShapeId,
           visualArrowShapeId: this.importShapeId(importBatchId, `edge-${edgeIndex}`),
-          dataJson: plannedEdge.dataJson,
+          dataJson,
         });
         resultEdges.push(edge);
 
@@ -898,6 +901,15 @@ export class CanvasService {
           throw new BadRequestException("Canvas fragment edge references a missing node");
         }
         this.validateSemanticEdge(sourceNode, targetNode, edge.relation);
+        const dataJson = this.resolveInputSlotEdgeData({
+          sourceNode,
+          targetNode,
+          relation: edge.relation,
+          dataJson: this.normalizeEdgeDataJson(
+            rewriteFragmentJson(edge.dataJson ?? {}, nodeIdMap, edgeIdMap, assetIdMap),
+          ),
+          existingEdges: edges,
+        });
         edges.push(await tx.canvasEdge.create({
           data: {
             id: nextId,
@@ -909,9 +921,7 @@ export class CanvasService {
             targetShapeId: targetNode.tldrawShapeId,
             visualArrowShapeId: `shape:fragment-arrow-${nextId}`,
             relation: edge.relation,
-            dataJson: this.normalizeEdgeDataJson(
-              rewriteFragmentJson(edge.dataJson ?? {}, nodeIdMap, edgeIdMap, assetIdMap),
-            ),
+            dataJson,
           },
         }));
       }
@@ -1117,7 +1127,7 @@ export class CanvasService {
       if (sourceNode.id === targetNode.id) {
         throw new BadRequestException("Variant edges cannot reference the same node");
       }
-      if (sourceNode.type !== targetNode.type && !canSourceMediaFeedTarget(sourceNode.type, targetNode.type)) {
+      if (sourceNode.type !== targetNode.type && !isSourceMediaNodeType(sourceNode.type)) {
         throw new BadRequestException("Variant edges must connect nodes of the same type");
       }
       return;
@@ -1177,6 +1187,47 @@ export class CanvasService {
     }
 
     throw new BadRequestException("Canvas edge relation is not supported for semantic binding yet");
+  }
+
+  private shouldValidateInputSlotEdge(
+    sourceNode: CanvasNodeModel,
+    targetNode: CanvasNodeModel,
+    relation: CanvasEdgeRelation,
+  ): boolean {
+    return relation === "derived_from" && sourceNode.type !== targetNode.type && isSourceMediaNodeType(sourceNode.type);
+  }
+
+  private resolveInputSlotEdgeData(input: {
+    sourceNode: CanvasNodeModel;
+    targetNode: CanvasNodeModel;
+    relation: CanvasEdgeRelation;
+    dataJson: CanvasEdgeDataJson | undefined;
+    existingEdges: readonly CanvasEdgeModel[];
+  }): CanvasEdgeDataJson | undefined {
+    if (!this.shouldValidateInputSlotEdge(input.sourceNode, input.targetNode, input.relation)) {
+      return input.dataJson;
+    }
+
+    const preferredSlotId =
+      typeof input.dataJson?.slotId === "string" ? input.dataJson.slotId : undefined;
+    const validation = validateCanvasInputConnection({
+      sourceNode: this.toCanvasNodeRecord(input.sourceNode),
+      targetNode: this.toCanvasNodeRecord(input.targetNode),
+      existingEdges: input.existingEdges.map((edge) => this.toCanvasEdgeRecord(edge)),
+      preferredSlotId,
+    });
+
+    if (!validation.ok) {
+      throw new BadRequestException(validation.error.message);
+    }
+
+    return {
+      ...(input.dataJson ?? {}),
+      slotId: validation.edgeData.slotId,
+      inputKind: validation.edgeData.inputKind,
+      inputRole: validation.edgeData.inputRole,
+      order: validation.edgeData.order,
+    };
   }
 
   private async createSceneFrameLocationEdge(

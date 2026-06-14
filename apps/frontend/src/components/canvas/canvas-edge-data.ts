@@ -2,12 +2,14 @@ import type {
   CanvasEdgeData,
   CanvasEdgeRecord,
   CanvasEdgeRelation,
+  CanvasInputSlotEdgeData,
   CanvasNodeRecord,
   CanvasSnapshotJson,
   CreateCanvasEdgeInput,
   CreateCanvasEdgeResult,
   DeleteCanvasEdgeResult,
 } from "@guga-flow/shared-types";
+import { resolveCanvasInputSlot, validateCanvasInputConnection } from "@guga-flow/shared-types";
 
 import { buildBusinessNodeCardModel, isPhase3CanvasNodeType } from "./business-node-data";
 
@@ -61,7 +63,10 @@ export function getSemanticBindingRelation(
   sourceNode: CanvasNodeRecord,
   targetNode: CanvasNodeRecord,
 ): SemanticCanvasEdgeRelation | null {
-  if (canSourceMediaFeedTarget(sourceNode.type, targetNode.type)) {
+  if (
+    isSourceMediaNodeType(sourceNode.type) &&
+    resolveCanvasInputSlot({ sourceType: sourceNode.type, targetType: targetNode.type })
+  ) {
     return "derived_from";
   }
   if (sourceNode.type === "character_asset" && targetNode.type === "shot") {
@@ -91,13 +96,30 @@ export function buildSemanticCanvasEdgeInput(input: {
   targetShapeId?: string;
   visualArrowShapeId?: string;
   affectedShotNodeIds?: string[];
+  existingEdges?: readonly CanvasEdgeRecord[];
+  slotEdgeData?: CanvasInputSlotEdgeData;
 }): CreateCanvasEdgeInput<CanvasEdgeData> | null {
   const relation = getSemanticBindingRelation(input.sourceNode, input.targetNode);
   if (!relation) {
     return null;
   }
 
-  return {
+  const slotValidation =
+    relation === "derived_from" && !input.slotEdgeData
+      ? validateCanvasInputConnection({
+          sourceNode: input.sourceNode,
+          targetNode: input.targetNode,
+          existingEdges: input.existingEdges ?? [],
+        })
+      : null;
+
+  if (slotValidation && !slotValidation.ok) {
+    return null;
+  }
+
+  const slotEdgeData = input.slotEdgeData ?? (slotValidation?.ok ? slotValidation.edgeData : undefined);
+
+  const edgeInput: CreateCanvasEdgeInput<CanvasEdgeData> = {
     sourceNodeId: input.sourceNode.id,
     targetNodeId: input.targetNode.id,
     relation,
@@ -109,9 +131,15 @@ export function buildSemanticCanvasEdgeInput(input: {
         ? uniqueStrings(input.affectedShotNodeIds ?? [])
         : undefined,
   };
+
+  if (slotEdgeData) {
+    edgeInput.dataJson = slotEdgeData;
+  }
+
+  return edgeInput;
 }
 
-function canSourceMediaFeedTarget(sourceType: string, targetType: string): boolean {
+function isSourceMediaNodeType(sourceType: string): boolean {
   if (
     sourceType !== "source_text" &&
     sourceType !== "source_image" &&
@@ -120,22 +148,7 @@ function canSourceMediaFeedTarget(sourceType: string, targetType: string): boole
   ) {
     return false;
   }
-  if (targetType === "shot") {
-    return true;
-  }
-  if (targetType === "character_asset") {
-    return sourceType === "source_image" || sourceType === "source_audio";
-  }
-  if (targetType === "location_asset") {
-    return sourceType === "source_image" || sourceType === "source_video";
-  }
-  if (targetType === "image") {
-    return sourceType === "source_text" || sourceType === "source_image";
-  }
-  if (targetType === "video") {
-    return sourceType === "source_image" || sourceType === "source_video" || sourceType === "source_audio";
-  }
-  return false;
+  return true;
 }
 
 export function findExistingCanvasEdge(

@@ -9,8 +9,11 @@ import {
   AGENT_DEPLOYMENT_ROLES,
   AGENT_MEMORY_SCOPES,
   AGENT_MEMORY_SOURCES,
+  CANVAS_INPUT_KINDS,
+  CANVAS_INPUT_ROLES,
   CANVAS_NODE_CAPABILITIES,
   CANVAS_NODE_FAMILIES,
+  CANVAS_NODE_INPUT_SLOTS,
   CANVAS_NODE_REGISTRY,
   CANVAS_NODE_REGISTRY_ITEMS,
   CANVAS_EDGE_RELATIONS,
@@ -72,7 +75,9 @@ import {
   normalizeProviderErrorCategory,
   normalizeUpdateProviderConfigInput,
   programmableProviderId,
+  resolveCanvasInputSlot,
   resolveGenerationSettings,
+  validateCanvasInputConnection,
   type AssetListItem,
   type AgentCanvasActionJobInput,
   type AgentCanvasActionJobOutput,
@@ -241,6 +246,67 @@ describe("shared domain constants", () => {
     expect(CANVAS_EDGE_RELATIONS).toContain("generated_video");
     expect(CANVAS_EDGE_RELATIONS).toContain("story_seed");
     expect(CANVAS_EDGE_RELATIONS).toContain("sent_to_editor");
+  });
+
+  it("resolves and validates canvas input slot policies", () => {
+    expect(CANVAS_INPUT_KINDS).toEqual(["text", "image", "video", "audio"]);
+    expect(CANVAS_INPUT_ROLES).toContain("reference_image");
+    expect(CANVAS_NODE_INPUT_SLOTS.image?.map((slot) => slot.id)).toEqual([
+      "prompt_text",
+      "reference_image",
+    ]);
+    expect(
+      resolveCanvasInputSlot({
+        sourceType: "source_image",
+        targetType: "image",
+      }),
+    ).toMatchObject({ id: "reference_image", inputKind: "image" });
+    expect(
+      resolveCanvasInputSlot({
+        sourceType: "source_video",
+        targetType: "shot",
+      }),
+    ).toMatchObject({ id: "reference_video", inputKind: "video" });
+
+    const sourceImage = canvasNode("source_image_1", "source_image", "Reference", {});
+    const imageNode = canvasNode("image_1", "image", "Image", {});
+    const sourceAudio = canvasNode("source_audio_1", "source_audio", "Voice", {});
+    const valid = validateCanvasInputConnection({
+      sourceNode: sourceImage,
+      targetNode: imageNode,
+      existingEdges: [],
+    });
+    const mismatch = validateCanvasInputConnection({
+      sourceNode: sourceAudio,
+      targetNode: imageNode,
+      existingEdges: [],
+    });
+    const overflow = validateCanvasInputConnection({
+      sourceNode: sourceImage,
+      targetNode: imageNode,
+      existingEdges: Array.from({ length: 4 }, (_, index) => ({
+        ...canvasEdge(`edge_${index}`, `source_${index}`, imageNode.id, "derived_from"),
+        dataJson: { slotId: "reference_image", inputKind: "image", inputRole: "reference_image", order: index },
+      })),
+    });
+
+    expect(valid).toMatchObject({
+      ok: true,
+      edgeData: {
+        slotId: "reference_image",
+        inputKind: "image",
+        inputRole: "reference_image",
+        order: 0,
+      },
+    });
+    expect(mismatch).toMatchObject({
+      ok: false,
+      error: { code: "type_mismatch" },
+    });
+    expect(overflow).toMatchObject({
+      ok: false,
+      error: { code: "count_exceeded" },
+    });
   });
 
   it("models worker-visible generation lifecycle states", () => {

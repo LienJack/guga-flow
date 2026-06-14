@@ -79,6 +79,16 @@ export function CanvasEdgeInspector({
             <dd>{appliedCount}</dd>
           </div>
         ) : null}
+        {edgeData.slotId ? (
+          <div>
+            <dt>Input slot</dt>
+            <dd>
+              {edgeData.slotId}
+              {edgeData.inputKind ? ` / ${edgeData.inputKind}` : ""}
+              {typeof edgeData.order === "number" ? ` #${edgeData.order + 1}` : ""}
+            </dd>
+          </div>
+        ) : null}
       </dl>
       {error ? <p className="form-error">{error}</p> : null}
       <button className="danger-action compact" type="button" disabled={busy} onClick={handleDelete}>
@@ -116,6 +126,10 @@ function canvasEdgeData(value: unknown): CanvasEdgeData {
 
   const data = value as CanvasEdgeData;
   return {
+    slotId: typeof data.slotId === "string" ? data.slotId : undefined,
+    inputKind: typeof data.inputKind === "string" ? data.inputKind : undefined,
+    inputRole: typeof data.inputRole === "string" ? data.inputRole : undefined,
+    order: typeof data.order === "number" && Number.isInteger(data.order) ? data.order : undefined,
     appliedShotNodeIds: Array.isArray(data.appliedShotNodeIds)
       ? data.appliedShotNodeIds.filter((id): id is string => typeof id === "string")
       : undefined,

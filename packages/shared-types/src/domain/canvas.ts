@@ -260,6 +260,193 @@ export const CANVAS_EDGE_RELATIONS = [
 ] as const;
 export type CanvasEdgeRelation = (typeof CANVAS_EDGE_RELATIONS)[number];
 
+export const CANVAS_INPUT_KINDS = ["text", "image", "video", "audio"] as const;
+export type CanvasInputKind = (typeof CANVAS_INPUT_KINDS)[number];
+
+export const CANVAS_INPUT_ROLES = [
+  "prompt_context",
+  "source_text",
+  "reference_image",
+  "first_frame",
+  "reference_video",
+  "reference_audio",
+  "character_reference",
+  "location_reference",
+  "voice_reference",
+] as const;
+export type CanvasInputRole = (typeof CANVAS_INPUT_ROLES)[number];
+
+export interface CanvasNodeInputSlotDefinition {
+  id: string;
+  label: string;
+  inputKind: CanvasInputKind;
+  inputRole: CanvasInputRole;
+  required: boolean;
+  maxConnections: number;
+}
+
+export interface CanvasInputSlotEdgeData {
+  slotId: string;
+  inputKind: CanvasInputKind;
+  inputRole: CanvasInputRole;
+  order: number;
+}
+
+export interface CanvasInputConnectionError {
+  code: "type_mismatch" | "count_exceeded" | "model_unsupported";
+  message: string;
+}
+
+export type CanvasInputConnectionValidation =
+  | {
+      ok: true;
+      slot: CanvasNodeInputSlotDefinition;
+      edgeData: CanvasInputSlotEdgeData;
+    }
+  | {
+      ok: false;
+      error: CanvasInputConnectionError;
+    };
+
+export const CANVAS_NODE_OUTPUT_KINDS = {
+  novel: ["text"],
+  source_text: ["text"],
+  source_image: ["image"],
+  source_video: ["video", "audio"],
+  source_audio: ["audio"],
+  scene: ["text"],
+  shot: ["text"],
+  character_asset: ["text", "image", "audio"],
+  location_asset: ["text", "image", "video"],
+  image: ["image"],
+  video: ["video", "audio"],
+} as const satisfies Partial<Record<CanvasNodeType, readonly CanvasInputKind[]>>;
+
+export const CANVAS_NODE_INPUT_SLOTS = {
+  image: [
+    {
+      id: "prompt_text",
+      label: "Prompt context",
+      inputKind: "text",
+      inputRole: "prompt_context",
+      required: false,
+      maxConnections: 4,
+    },
+    {
+      id: "reference_image",
+      label: "Reference image",
+      inputKind: "image",
+      inputRole: "reference_image",
+      required: false,
+      maxConnections: 4,
+    },
+  ],
+  video: [
+    {
+      id: "prompt_text",
+      label: "Prompt context",
+      inputKind: "text",
+      inputRole: "prompt_context",
+      required: false,
+      maxConnections: 4,
+    },
+    {
+      id: "first_frame",
+      label: "First frame",
+      inputKind: "image",
+      inputRole: "first_frame",
+      required: false,
+      maxConnections: 1,
+    },
+    {
+      id: "reference_video",
+      label: "Reference video",
+      inputKind: "video",
+      inputRole: "reference_video",
+      required: false,
+      maxConnections: 2,
+    },
+    {
+      id: "reference_audio",
+      label: "Reference audio",
+      inputKind: "audio",
+      inputRole: "reference_audio",
+      required: false,
+      maxConnections: 2,
+    },
+  ],
+  shot: [
+    {
+      id: "source_text",
+      label: "Source text",
+      inputKind: "text",
+      inputRole: "source_text",
+      required: false,
+      maxConnections: 4,
+    },
+    {
+      id: "reference_image",
+      label: "Reference image",
+      inputKind: "image",
+      inputRole: "reference_image",
+      required: false,
+      maxConnections: 6,
+    },
+    {
+      id: "reference_video",
+      label: "Reference video",
+      inputKind: "video",
+      inputRole: "reference_video",
+      required: false,
+      maxConnections: 4,
+    },
+    {
+      id: "reference_audio",
+      label: "Reference audio",
+      inputKind: "audio",
+      inputRole: "reference_audio",
+      required: false,
+      maxConnections: 4,
+    },
+  ],
+  character_asset: [
+    {
+      id: "reference_image",
+      label: "Character reference image",
+      inputKind: "image",
+      inputRole: "character_reference",
+      required: false,
+      maxConnections: 6,
+    },
+    {
+      id: "voice_reference",
+      label: "Voice reference",
+      inputKind: "audio",
+      inputRole: "voice_reference",
+      required: false,
+      maxConnections: 4,
+    },
+  ],
+  location_asset: [
+    {
+      id: "reference_image",
+      label: "Location reference image",
+      inputKind: "image",
+      inputRole: "location_reference",
+      required: false,
+      maxConnections: 6,
+    },
+    {
+      id: "reference_video",
+      label: "Location reference video",
+      inputKind: "video",
+      inputRole: "location_reference",
+      required: false,
+      maxConnections: 2,
+    },
+  ],
+} as const satisfies Partial<Record<CanvasNodeType, readonly CanvasNodeInputSlotDefinition[]>>;
+
 export const NODE_STATUSES = [
   "draft",
   "queued",
@@ -575,9 +762,113 @@ export interface CanvasEdgeRecord<TData = unknown> {
 }
 
 export interface CanvasEdgeData {
+  slotId?: string;
+  inputKind?: CanvasInputKind;
+  inputRole?: CanvasInputRole;
+  order?: number;
   appliedShotNodeIds?: string[];
   childEdgeIds?: string[];
   batchSourceEdgeId?: string;
+}
+
+export function getCanvasNodeOutputKinds(type: CanvasNodeType): CanvasInputKind[] {
+  const outputKinds = CANVAS_NODE_OUTPUT_KINDS as Partial<
+    Record<CanvasNodeType, readonly CanvasInputKind[]>
+  >;
+  return [...(outputKinds[type] ?? [])];
+}
+
+export function getCanvasNodeInputSlots(type: CanvasNodeType): CanvasNodeInputSlotDefinition[] {
+  const inputSlots = CANVAS_NODE_INPUT_SLOTS as Partial<
+    Record<CanvasNodeType, readonly CanvasNodeInputSlotDefinition[]>
+  >;
+  return [...(inputSlots[type] ?? [])];
+}
+
+export function resolveCanvasInputSlot(input: {
+  sourceType: CanvasNodeType;
+  targetType: CanvasNodeType;
+  preferredSlotId?: string;
+}): CanvasNodeInputSlotDefinition | undefined {
+  const outputKinds = new Set(getCanvasNodeOutputKinds(input.sourceType));
+  const slots = getCanvasNodeInputSlots(input.targetType).filter((slot) =>
+    outputKinds.has(slot.inputKind),
+  );
+
+  if (input.preferredSlotId) {
+    const preferred = slots.find((slot) => slot.id === input.preferredSlotId);
+    if (preferred) {
+      return preferred;
+    }
+  }
+
+  return slots[0];
+}
+
+export function validateCanvasInputConnection(input: {
+  sourceNode: CanvasNodeRecord;
+  targetNode: CanvasNodeRecord;
+  existingEdges: readonly CanvasEdgeRecord[];
+  preferredSlotId?: string;
+}): CanvasInputConnectionValidation {
+  const slot = resolveCanvasInputSlot({
+    sourceType: input.sourceNode.type,
+    targetType: input.targetNode.type,
+    preferredSlotId: input.preferredSlotId,
+  });
+
+  if (!slot) {
+    return {
+      ok: false,
+      error: {
+        code: "type_mismatch",
+        message: `${readableNodeType(input.targetNode.type)} does not accept ${readableNodeType(input.sourceNode.type)} input.`,
+      },
+    };
+  }
+
+  const slotEdgeCount = input.existingEdges.filter((edge) => {
+    if (edge.targetNodeId !== input.targetNode.id) {
+      return false;
+    }
+    if (edge.sourceNodeId === input.sourceNode.id) {
+      return false;
+    }
+    return edgeSlotId(edge.dataJson) === slot.id;
+  }).length;
+
+  if (slotEdgeCount >= slot.maxConnections) {
+    return {
+      ok: false,
+      error: {
+        code: "count_exceeded",
+        message: `${slot.label} accepts at most ${slot.maxConnections} connection${slot.maxConnections === 1 ? "" : "s"}.`,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    slot,
+    edgeData: {
+      slotId: slot.id,
+      inputKind: slot.inputKind,
+      inputRole: slot.inputRole,
+      order: slotEdgeCount,
+    },
+  };
+}
+
+function edgeSlotId(dataJson: unknown): string | undefined {
+  if (typeof dataJson !== "object" || dataJson === null || Array.isArray(dataJson)) {
+    return undefined;
+  }
+  const slotId = (dataJson as { slotId?: unknown }).slotId;
+  return typeof slotId === "string" ? slotId : undefined;
+}
+
+function readableNodeType(type: CanvasNodeType): string {
+  return type.replace(/_/g, " ");
 }
 
 export interface CanvasLoadResult {
