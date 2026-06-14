@@ -246,6 +246,9 @@ describe("NovelStoryboardPanel", () => {
     expect(html).toContain("Adaptation strategy");
     expect(html).toContain("Script scenes");
     expect(html).toContain("Save workspace");
+    expect(html).toContain("Assets");
+    expect(html).toContain("Extract assets");
+    expect(html).toContain("No asset candidates");
     expect(html).toContain("Save draft");
     expect(html).toContain("Mark ready");
     expect(html).toContain("Import");

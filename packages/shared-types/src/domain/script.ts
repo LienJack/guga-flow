@@ -1,3 +1,5 @@
+import type { CanvasEdgeRecord, CanvasNodeRecord, CanvasNodeType } from "./canvas";
+
 export const SCRIPT_ADAPTATION_STRATEGIES = ["faithful", "short_drama", "visual_first"] as const;
 export type ScriptAdaptationStrategy = (typeof SCRIPT_ADAPTATION_STRATEGIES)[number];
 
@@ -93,4 +95,36 @@ export interface ScriptExportResult {
   scriptDraftId: string;
   filename: string;
   content: string;
+}
+
+export const SCRIPT_ASSET_CANDIDATE_TYPES = ["character", "location", "prop"] as const;
+export type ScriptAssetCandidateType = (typeof SCRIPT_ASSET_CANDIDATE_TYPES)[number];
+
+export interface ScriptAssetCandidate {
+  candidateId: string;
+  type: ScriptAssetCandidateType;
+  name: string;
+  description: string;
+  prompt: string;
+  dedupeKey: string;
+  sourceScriptDraftId: string;
+  sourceSceneIds: string[];
+  sourceBeatIds: string[];
+  mergeTargetNodeId?: string;
+}
+
+export interface ExtractScriptAssetsResult {
+  candidates: ScriptAssetCandidate[];
+}
+
+export interface ImportScriptAssetsInput {
+  candidates: ScriptAssetCandidate[];
+}
+
+export interface ImportScriptAssetsResult {
+  nodes: CanvasNodeRecord[];
+  edges: CanvasEdgeRecord[];
+  importedCount: number;
+  mergedCount: number;
+  nodeTypes: CanvasNodeType[];
 }

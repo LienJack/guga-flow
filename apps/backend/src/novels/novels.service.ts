@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type {
+  CanvasNodeRecord,
   CreateCreativeStoryboardInput,
   CreateCreativeStoryboardResult,
   CreateNovelDocumentInput,
@@ -9,9 +10,12 @@ import type {
   ExtractNovelChapterEventsResult,
   ExtractNovelEventsInput,
   ExtractNovelEventsResult,
+  ExtractScriptAssetsResult,
   GenerateStoryboardResult,
   GenerationJobRecord,
   GenerationJobStatus,
+  ImportScriptAssetsInput,
+  ImportScriptAssetsResult,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
   NovelChapterDetail,
@@ -32,6 +36,8 @@ import type {
   CreateScriptDraftResult,
   ScriptAdaptationStrategy,
   ScriptAdaptationPlan,
+  ScriptAssetCandidate,
+  ScriptAssetCandidateType,
   ScriptBeat,
   ScriptDraftContent,
   ScriptDraftListResult,
@@ -134,6 +140,32 @@ type ScriptDraftModel = {
   strategy: string;
   status: string;
   scriptJson: unknown;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+type CanvasDocumentModel = {
+  id: string;
+  projectId: string;
+  snapshotJson: unknown;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+type CanvasNodeModel = {
+  id: string;
+  projectId: string;
+  canvasDocumentId: string;
+  tldrawShapeId: string;
+  type: string;
+  title: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex: number;
+  status: string;
+  dataJson: unknown;
   createdAt: Date | string;
   updatedAt: Date | string;
 };
@@ -365,6 +397,41 @@ function uniqueNumbers(values: readonly unknown[]): number[] {
       ),
     ),
   ).sort((left, right) => left - right);
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+}
+
+function slugKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48) || "asset";
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1).toLowerCase()}`)
+    .join(" ");
+}
+
+function dedupeScriptAssetCandidates(
+  candidates: readonly ScriptAssetCandidate[],
+): ScriptAssetCandidate[] {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    if (seen.has(candidate.dedupeKey)) {
+      return false;
+    }
+    seen.add(candidate.dedupeKey);
+    return true;
+  });
 }
 
 function optionalDataString(value: unknown, key: string): string | undefined {
@@ -621,6 +688,54 @@ export class NovelsService {
     })) as ScriptDraftModel;
 
     return { scriptDraft: this.toScriptDraftRecord(scriptDraft) };
+  }
+
+  async extractScriptAssets(
+    projectId: string,
+    novelId: string,
+    scriptDraftId: string,
+  ): Promise<ExtractScriptAssetsResult> {
+    const scriptDraft = await this.findScriptDraft(projectId, novelId, scriptDraftId);
+    return {
+      candidates: this.buildScriptAssetCandidates(this.toScriptDraftRecord(scriptDraft)),
+    };
+  }
+
+  async importScriptAssets(
+    projectId: string,
+    novelId: string,
+    scriptDraftId: string,
+    input: ImportScriptAssetsInput,
+  ): Promise<ImportScriptAssetsResult> {
+    const scriptDraft = this.toScriptDraftRecord(
+      await this.findScriptDraft(projectId, novelId, scriptDraftId),
+    );
+    const candidates = input.candidates?.length
+      ? input.candidates.map((candidate) => this.normalizeScriptAssetCandidate(candidate, scriptDraft.id))
+      : this.buildScriptAssetCandidates(scriptDraft);
+    const nodes: CanvasNodeRecord[] = [];
+    let importedCount = 0;
+    let mergedCount = 0;
+
+    for (const [index, candidate] of candidates.entries()) {
+      if (candidate.mergeTargetNodeId) {
+        const node = await this.mergeScriptAssetCandidate(projectId, scriptDraft, candidate);
+        nodes.push(node);
+        mergedCount += 1;
+      } else {
+        const node = await this.createScriptAssetNode(projectId, scriptDraft, candidate, index);
+        nodes.push(node);
+        importedCount += 1;
+      }
+    }
+
+    return {
+      nodes,
+      edges: [],
+      importedCount,
+      mergedCount,
+      nodeTypes: Array.from(new Set(nodes.map((node) => node.type))),
+    };
   }
 
   async exportScriptDraft(
@@ -1166,6 +1281,258 @@ export class NovelsService {
       summary: `${strategyLabel} adaptation of ${novel.title} using ${eventCoverage} across ${script.scenes.length} scene${script.scenes.length === 1 ? "" : "s"}.`,
       targetFormat: strategyLabel,
       supervisionNotes: "Review skeleton coverage, scene order, and visual clarity before storyboard generation.",
+    };
+  }
+
+  private buildScriptAssetCandidates(scriptDraft: ScriptDraftRecord): ScriptAssetCandidate[] {
+    const scenes = scriptDraft.workspace.script.scenes;
+    const beats = scriptDraft.workspace.storySkeleton.beats;
+    const firstBeat = beats[0];
+    const candidates: ScriptAssetCandidate[] = [];
+
+    candidates.push({
+      candidateId: `script_${scriptDraft.id}_character_lead`,
+      type: "character",
+      name: "Lead",
+      description: firstBeat?.summary ?? scriptDraft.workspace.script.logline,
+      prompt: `consistent lead character, ${firstBeat?.summary ?? scriptDraft.workspace.script.logline}`,
+      dedupeKey: "character:lead",
+      sourceScriptDraftId: scriptDraft.id,
+      sourceSceneIds: scenes.slice(0, 3).map((scene) => scene.sceneId),
+      sourceBeatIds: beats.slice(0, 6).map((beat) => beat.beatId),
+    });
+
+    scenes.slice(0, 3).forEach((scene) => {
+      candidates.push({
+        candidateId: `script_${scriptDraft.id}_location_${scene.sceneId}`,
+        type: "location",
+        name: `${scene.title} Location`,
+        description: scene.summary,
+        prompt: `cinematic location for ${scene.summary}`,
+        dedupeKey: `location:${slugKey(scene.title)}`,
+        sourceScriptDraftId: scriptDraft.id,
+        sourceSceneIds: [scene.sceneId],
+        sourceBeatIds: scene.beats.map((beat) => beat.beatId),
+      });
+    });
+
+    const propName = this.extractPropCandidateName(beats);
+    if (propName) {
+      candidates.push({
+        candidateId: `script_${scriptDraft.id}_prop_${slugKey(propName)}`,
+        type: "prop",
+        name: propName,
+        description: `Story prop derived from ${scriptDraft.title}.`,
+        prompt: `production prop reference, ${propName}, coherent object design`,
+        dedupeKey: `prop:${slugKey(propName)}`,
+        sourceScriptDraftId: scriptDraft.id,
+        sourceSceneIds: scenes.slice(0, 2).map((scene) => scene.sceneId),
+        sourceBeatIds: beats.slice(0, 4).map((beat) => beat.beatId),
+      });
+    }
+
+    return dedupeScriptAssetCandidates(candidates);
+  }
+
+  private extractPropCandidateName(beats: readonly ScriptBeat[]): string | undefined {
+    const text = beats.map((beat) => `${beat.title} ${beat.summary}`).join(" ");
+    const preferred = ["signal", "key", "letter", "ring", "sword", "device", "map"].find((word) =>
+      new RegExp(`\\b${word}\\b`, "iu").test(text),
+    );
+    if (preferred) {
+      return titleCase(preferred);
+    }
+    return beats[0]?.title ? `${beats[0].title} Prop` : undefined;
+  }
+
+  private normalizeScriptAssetCandidate(
+    candidate: ScriptAssetCandidate,
+    scriptDraftId: string,
+  ): ScriptAssetCandidate {
+    const type = this.normalizeScriptAssetCandidateType(candidate.type);
+    const name = normalizeText(candidate.name, "Asset candidate name");
+    const description = normalizeText(candidate.description, "Asset candidate description");
+    const prompt = normalizeText(candidate.prompt, "Asset candidate prompt");
+    return {
+      candidateId: normalizeOptionalText(candidate.candidateId) ?? `${type}_${slugKey(name)}`,
+      type,
+      name,
+      description,
+      prompt,
+      dedupeKey: normalizeOptionalText(candidate.dedupeKey) ?? `${type}:${slugKey(name)}`,
+      sourceScriptDraftId: scriptDraftId,
+      sourceSceneIds: uniqueStrings(candidate.sourceSceneIds ?? []),
+      sourceBeatIds: uniqueStrings(candidate.sourceBeatIds ?? []),
+      ...(normalizeOptionalText(candidate.mergeTargetNodeId)
+        ? { mergeTargetNodeId: normalizeOptionalText(candidate.mergeTargetNodeId) }
+        : {}),
+    };
+  }
+
+  private normalizeScriptAssetCandidateType(value: ScriptAssetCandidateType): ScriptAssetCandidateType {
+    return value === "character" || value === "location" || value === "prop" ? value : "prop";
+  }
+
+  private async createScriptAssetNode(
+    projectId: string,
+    scriptDraft: ScriptDraftRecord,
+    candidate: ScriptAssetCandidate,
+    index: number,
+  ): Promise<CanvasNodeRecord> {
+    const canvasDocument = await this.getOrCreateCanvasDocument(projectId);
+    const node = (await this.prisma.canvasNode.create({
+      data: {
+        projectId,
+        canvasDocumentId: canvasDocument.id,
+        tldrawShapeId: `script_asset:${scriptDraft.id}:${candidate.candidateId}`,
+        type: this.canvasNodeTypeForScriptAsset(candidate.type),
+        title: candidate.name,
+        x: 80 + index * 36,
+        y: 120 + index * 28,
+        width: 320,
+        height: 220,
+        zIndex: index,
+        status: "draft",
+        dataJson: jsonValue(this.scriptAssetNodeData(scriptDraft, candidate)),
+      },
+    })) as CanvasNodeModel;
+    return this.toCanvasNodeRecord(node);
+  }
+
+  private async mergeScriptAssetCandidate(
+    projectId: string,
+    scriptDraft: ScriptDraftRecord,
+    candidate: ScriptAssetCandidate,
+  ): Promise<CanvasNodeRecord> {
+    const existing = (await this.prisma.canvasNode.findFirst({
+      where: {
+        id: candidate.mergeTargetNodeId,
+        projectId,
+        type: this.canvasNodeTypeForScriptAsset(candidate.type),
+      },
+    })) as CanvasNodeModel | null;
+    if (!existing) {
+      throw new NotFoundException("Merge target asset node not found");
+    }
+
+    const merged = (await this.prisma.canvasNode.update({
+      where: { id: existing.id },
+      data: {
+        dataJson: jsonValue(
+          this.mergeScriptAssetNodeData(existing.dataJson, scriptDraft, candidate),
+        ),
+      },
+    })) as CanvasNodeModel;
+    return this.toCanvasNodeRecord(merged);
+  }
+
+  private async getOrCreateCanvasDocument(projectId: string): Promise<CanvasDocumentModel> {
+    return (await this.prisma.canvasDocument.upsert({
+      where: { projectId },
+      update: {},
+      create: { projectId, snapshotJson: {} },
+    })) as CanvasDocumentModel;
+  }
+
+  private canvasNodeTypeForScriptAsset(type: ScriptAssetCandidateType): "character_asset" | "location_asset" | "prop_asset" {
+    if (type === "character") {
+      return "character_asset";
+    }
+    if (type === "location") {
+      return "location_asset";
+    }
+    return "prop_asset";
+  }
+
+  private scriptAssetNodeData(
+    scriptDraft: ScriptDraftRecord,
+    candidate: ScriptAssetCandidate,
+  ): Record<string, unknown> {
+    const source = {
+      scriptDraftId: scriptDraft.id,
+      version: scriptDraft.version,
+      candidateId: candidate.candidateId,
+      sourceSceneIds: candidate.sourceSceneIds,
+      sourceBeatIds: candidate.sourceBeatIds,
+    };
+    const variant = {
+      variantId: `${candidate.candidateId}_draft`,
+      label: "Draft",
+      status: "draft",
+      prompt: candidate.prompt,
+      description: candidate.description,
+      sourceScriptDraftId: scriptDraft.id,
+      sourceSceneId: candidate.sourceSceneIds[0],
+      sourceBeatId: candidate.sourceBeatIds[0],
+    };
+    const common = {
+      referenceAssetIds: [],
+      assetVariants: [variant],
+      scriptAssetSource: source,
+      assetKey: candidate.dedupeKey,
+    };
+    if (candidate.type === "character") {
+      return {
+        ...common,
+        name: candidate.name,
+        role: "character",
+        appearance: candidate.description,
+        identityPrompt: candidate.prompt,
+        consistencyPrompt: candidate.prompt,
+      };
+    }
+    if (candidate.type === "location") {
+      return {
+        ...common,
+        name: candidate.name,
+        environment: candidate.description,
+        locationPrompt: candidate.prompt,
+        consistencyPrompt: candidate.prompt,
+      };
+    }
+    return {
+      ...common,
+      name: candidate.name,
+      category: "script_prop",
+      description: candidate.description,
+      propPrompt: candidate.prompt,
+      consistencyPrompt: candidate.prompt,
+    };
+  }
+
+  private mergeScriptAssetNodeData(
+    current: unknown,
+    scriptDraft: ScriptDraftRecord,
+    candidate: ScriptAssetCandidate,
+  ): Record<string, unknown> {
+    const currentData = typeof current === "object" && current !== null && !Array.isArray(current)
+      ? (current as Record<string, unknown>)
+      : {};
+    const nextData = this.scriptAssetNodeData(scriptDraft, candidate);
+    const currentVariants = Array.isArray(currentData.assetVariants) ? currentData.assetVariants : [];
+    const nextVariants = Array.isArray(nextData.assetVariants) ? nextData.assetVariants : [];
+    const variantsById = new Map<string, unknown>();
+    [...currentVariants, ...nextVariants].forEach((variant) => {
+      if (typeof variant !== "object" || variant === null || Array.isArray(variant)) {
+        return;
+      }
+      const variantId = (variant as { variantId?: unknown }).variantId;
+      if (typeof variantId === "string" && variantId.trim()) {
+        variantsById.set(variantId, variant);
+      }
+    });
+
+    return {
+      ...currentData,
+      ...nextData,
+      referenceAssetIds: uniqueStrings([
+        ...stringList(currentData.referenceAssetIds),
+        ...stringList(nextData.referenceAssetIds),
+      ]),
+      assetVariants: Array.from(variantsById.values()),
+      selectedVariantId: typeof currentData.selectedVariantId === "string"
+        ? currentData.selectedVariantId
+        : nextData.selectedVariantId,
     };
   }
 
@@ -1956,6 +2323,26 @@ export class NovelsService {
       errorMessage: job.errorMessage ?? undefined,
       createdAt: toIsoString(job.createdAt),
       updatedAt: toIsoString(job.updatedAt),
+    };
+  }
+
+  private toCanvasNodeRecord(node: CanvasNodeModel): CanvasNodeRecord {
+    return {
+      id: node.id,
+      projectId: node.projectId,
+      canvasDocumentId: node.canvasDocumentId,
+      tldrawShapeId: node.tldrawShapeId,
+      type: node.type as CanvasNodeRecord["type"],
+      title: node.title ?? undefined,
+      x: node.x,
+      y: node.y,
+      width: node.width,
+      height: node.height,
+      zIndex: node.zIndex,
+      status: node.status as CanvasNodeRecord["status"],
+      dataJson: node.dataJson,
+      createdAt: toIsoString(node.createdAt),
+      updatedAt: toIsoString(node.updatedAt),
     };
   }
 

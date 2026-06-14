@@ -7,6 +7,7 @@ import {
   ExtractNovelChapterEventsDto,
   ExtractNovelEventsDto,
   ImportNovelSourceDto,
+  ImportScriptAssetsDto,
   UpdateNovelChapterDto,
   UpdateNovelDocumentDto,
   UpdateScriptDraftDto,
@@ -135,6 +136,25 @@ export class NovelsController {
     @Body() body: UpdateScriptDraftDto,
   ) {
     return this.novelsService.updateScriptDraft(projectId, novelId, scriptDraftId, body ?? {});
+  }
+
+  @Post(":novelId/script-drafts/:scriptDraftId/extract-assets")
+  extractScriptAssets(
+    @Param("projectId") projectId: string,
+    @Param("novelId") novelId: string,
+    @Param("scriptDraftId") scriptDraftId: string,
+  ) {
+    return this.novelsService.extractScriptAssets(projectId, novelId, scriptDraftId);
+  }
+
+  @Post(":novelId/script-drafts/:scriptDraftId/import-assets")
+  importScriptAssets(
+    @Param("projectId") projectId: string,
+    @Param("novelId") novelId: string,
+    @Param("scriptDraftId") scriptDraftId: string,
+    @Body() body: ImportScriptAssetsDto,
+  ) {
+    return this.novelsService.importScriptAssets(projectId, novelId, scriptDraftId, body);
   }
 
   @Get(":novelId/script-drafts/:scriptDraftId/export")

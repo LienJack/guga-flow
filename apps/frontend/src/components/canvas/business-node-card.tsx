@@ -27,7 +27,7 @@ export function BusinessNodeCard({
   const definition = getBusinessNodeDefinition(nodeType);
   const isCollapsed = collapsed ?? (nodeType === "scene_frame" && h <= 112);
   const semanticRoleClass =
-    nodeType === "character_asset" || nodeType === "location_asset"
+    nodeType === "character_asset" || nodeType === "location_asset" || nodeType === "prop_asset"
       ? "semantic-source"
       : nodeType === "shot" || nodeType === "scene_frame"
         ? "semantic-target"

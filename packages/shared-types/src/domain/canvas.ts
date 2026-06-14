@@ -255,6 +255,7 @@ export const PHASE_3_CANVAS_NODE_TYPES = [
   "shot",
   "character_asset",
   "location_asset",
+  "prop_asset",
   "ai_text",
   "ai_audio",
   "image",
@@ -588,6 +589,39 @@ export interface AudioReferenceData {
   sourceNodeId?: string;
 }
 
+export const DERIVED_ASSET_VARIANT_STATUSES = [
+  "draft",
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "selected",
+] as const;
+export type DerivedAssetVariantStatus = (typeof DERIVED_ASSET_VARIANT_STATUSES)[number];
+
+export interface DerivedAssetVariantData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  variantId: string;
+  label: string;
+  status: DerivedAssetVariantStatus;
+  parentAssetId?: string;
+  assetId?: string;
+  prompt?: string;
+  description?: string;
+  sourceScriptDraftId?: string;
+  sourceSceneId?: string;
+  sourceBeatId?: string;
+}
+
+export interface ScriptAssetSourceTraceData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  scriptDraftId: string;
+  version?: number;
+  candidateId?: string;
+  sourceSceneIds?: string[];
+  sourceBeatIds?: string[];
+}
+
 export interface NovelNodeData {
   sourceText?: string;
   synopsis?: string;
@@ -668,6 +702,9 @@ export interface CharacterAssetNodeData {
   locked?: boolean;
   lockedFields?: string[];
   referenceAssetIds?: string[];
+  assetVariants?: DerivedAssetVariantData[];
+  selectedVariantId?: string;
+  scriptAssetSource?: ScriptAssetSourceTraceData;
   voiceAssetIds?: string[];
   voiceReferences?: AudioReferenceData[];
   assetKey?: string;
@@ -682,6 +719,23 @@ export interface LocationAssetNodeData {
   locationPrompt?: string;
   locationType?: string;
   referenceAssetIds?: string[];
+  assetVariants?: DerivedAssetVariantData[];
+  selectedVariantId?: string;
+  scriptAssetSource?: ScriptAssetSourceTraceData;
+  assetKey?: string;
+}
+
+export interface PropAssetNodeData {
+  name?: string;
+  category?: string;
+  description?: string;
+  visualStyle?: string;
+  consistencyPrompt?: string;
+  propPrompt?: string;
+  referenceAssetIds?: string[];
+  assetVariants?: DerivedAssetVariantData[];
+  selectedVariantId?: string;
+  scriptAssetSource?: ScriptAssetSourceTraceData;
   assetKey?: string;
 }
 
@@ -785,6 +839,7 @@ export interface Phase3CanvasNodeDataByType {
   shot: ShotNodeData;
   character_asset: CharacterAssetNodeData;
   location_asset: LocationAssetNodeData;
+  prop_asset: PropAssetNodeData;
   ai_text: AiTextNodeData;
   ai_audio: AiAudioNodeData;
   image: ImageNodeData;

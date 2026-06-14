@@ -51,6 +51,7 @@ import type {
   ExtractNovelChapterEventsResult,
   ExtractNovelEventsInput,
   ExtractNovelEventsResult,
+  ExtractScriptAssetsResult,
   GenerateStoryboardResult,
   EditorExportDetailResult,
   EditorExportListResult,
@@ -83,6 +84,8 @@ import type {
   ProgrammableProviderDefinitionSummary,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
+  ImportScriptAssetsInput,
+  ImportScriptAssetsResult,
   ImportStoryboardToCanvasInput,
   ImportStoryboardToCanvasResult,
   MarkStoryboardDraftReadyResult,
@@ -558,6 +561,32 @@ export function generateStoryboardFromScriptDraft(
   return requestJson<GenerateStoryboardResult>(
     `/projects/${projectId}/novels/${novelId}/script-drafts/${scriptDraftId}/generate-storyboard`,
     { method: "POST" },
+  );
+}
+
+export function extractScriptAssets(
+  projectId: string,
+  novelId: string,
+  scriptDraftId: string,
+): Promise<ExtractScriptAssetsResult> {
+  return requestJson<ExtractScriptAssetsResult>(
+    `/projects/${projectId}/novels/${novelId}/script-drafts/${scriptDraftId}/extract-assets`,
+    { method: "POST" },
+  );
+}
+
+export function importScriptAssets(
+  projectId: string,
+  novelId: string,
+  scriptDraftId: string,
+  input: ImportScriptAssetsInput,
+): Promise<ImportScriptAssetsResult> {
+  return requestJson<ImportScriptAssetsResult>(
+    `/projects/${projectId}/novels/${novelId}/script-drafts/${scriptDraftId}/import-assets`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
   );
 }
 

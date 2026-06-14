@@ -135,6 +135,14 @@ export const BUSINESS_NODE_DEFINITIONS = {
     detailFallback: "Environment and visual style",
     tone: "asset",
   }),
+  prop_asset: defineBusinessNode("prop_asset", {
+    label: "Prop",
+    shortLabel: "Prop",
+    defaultTitle: "Prop",
+    summaryFallback: "Prop reference",
+    detailFallback: "Object continuity and prompt context",
+    tone: "asset",
+  }),
   ai_text: defineBusinessNode("ai_text", {
     label: "AI Text",
     shortLabel: "AI Text",
@@ -250,6 +258,17 @@ export function createDefaultBusinessNodeData<TType extends Phase3CanvasNodeType
         consistencyPrompt: "",
         locationPrompt: "",
         referenceAssetIds: [],
+      } as Phase3CanvasNodeData<TType>;
+    case "prop_asset":
+      return {
+        name: "",
+        category: "",
+        description: "",
+        visualStyle: "",
+        consistencyPrompt: "",
+        propPrompt: "",
+        referenceAssetIds: [],
+        assetVariants: [],
       } as Phase3CanvasNodeData<TType>;
     case "ai_text":
       return {
@@ -474,6 +493,14 @@ function referenceAssetText(data: Record<string, unknown>): string {
   return `${referenceCount} reference image${referenceCount === 1 ? "" : "s"}`;
 }
 
+function assetVariantText(data: Record<string, unknown>): string {
+  const variantCount = objectArray(data.assetVariants).filter((item) => text(item, "variantId")).length;
+  if (variantCount === 0) {
+    return "";
+  }
+  return `${variantCount} variant${variantCount === 1 ? "" : "s"}`;
+}
+
 function assetSizeText(data: Record<string, unknown>): string {
   const value = data.sizeBytes;
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
@@ -516,6 +543,7 @@ function titleFromData(type: Phase3CanvasNodeType, data: Record<string, unknown>
       return text(data, "originalFilename");
     case "character_asset":
     case "location_asset":
+    case "prop_asset":
       return text(data, "name");
     case "scene_frame":
       return text(data, "label");
@@ -555,6 +583,8 @@ function summaryForNode(
       return firstText(lifecycleStageCountText(data), text(data, "appearance"), text(data, "role"), fallback);
     case "location_asset":
       return firstText(text(data, "environment"), text(data, "visualStyle"), fallback);
+    case "prop_asset":
+      return firstText(text(data, "description"), text(data, "visualStyle"), text(data, "category"), fallback);
     case "ai_text":
       return firstText(text(data, "outputText"), text(data, "prompt"), fallback);
     case "ai_audio":
@@ -623,6 +653,7 @@ function detailForNode(
           text(data, "identityPrompt"),
           text(data, "consistencyPrompt"),
           referenceAssetText(data),
+          assetVariantText(data),
         ],
         fallback,
       );
@@ -634,6 +665,18 @@ function detailForNode(
           text(data, "locationPrompt"),
           text(data, "consistencyPrompt"),
           referenceAssetText(data),
+          assetVariantText(data),
+        ],
+        fallback,
+      );
+    case "prop_asset":
+      return compact(
+        [
+          text(data, "category"),
+          text(data, "propPrompt"),
+          text(data, "consistencyPrompt"),
+          referenceAssetText(data),
+          assetVariantText(data),
         ],
         fallback,
       );

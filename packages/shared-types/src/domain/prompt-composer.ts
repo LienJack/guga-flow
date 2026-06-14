@@ -759,7 +759,17 @@ function resolveReferenceAssetIds(
   missingContext: PromptMissingContext[],
 ): string[] {
   const requestedIds = uniqueStrings(
-    nodes.flatMap((node) => stringArray((dataObject(node) as { referenceAssetIds?: unknown }).referenceAssetIds)),
+    nodes.flatMap((node) => {
+      const data = dataObject(node) as {
+        referenceAssetIds?: unknown;
+        assetVariants?: unknown;
+        selectedVariantId?: unknown;
+      };
+      return [
+        ...stringArray(data.referenceAssetIds),
+        ...selectedVariantReferenceAssetIds(data),
+      ];
+    }),
   );
   if (!assets) {
     return requestedIds;
@@ -791,6 +801,26 @@ function resolveReferenceAssetIds(
   });
 
   return uniqueStrings(resolvedIds);
+}
+
+function selectedVariantReferenceAssetIds(data: {
+  assetVariants?: unknown;
+  selectedVariantId?: unknown;
+}): string[] {
+  if (!Array.isArray(data.assetVariants)) {
+    return [];
+  }
+  const selectedVariantId = optionalText(data.selectedVariantId);
+  const variants = data.assetVariants
+    .map((item) => (typeof item === "object" && item !== null && !Array.isArray(item) ? item : undefined))
+    .filter((item): item is Record<string, unknown> => Boolean(item));
+  const selected =
+    (selectedVariantId
+      ? variants.find((variant) => optionalText(variant.variantId) === selectedVariantId)
+      : undefined) ??
+    variants.find((variant) => optionalText(variant.status) === "selected");
+  const assetId = optionalText(selected?.assetId);
+  return assetId ? [assetId] : [];
 }
 
 function channelComposition(

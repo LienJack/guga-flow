@@ -24,6 +24,7 @@ import {
   exportProjectSettings,
   extractNovelEvents,
   extractNovelChapterEvents,
+  extractScriptAssets,
   exportScriptDraft,
   generateStoryboardFromScriptDraft,
   generateStoryboardDraft,
@@ -50,6 +51,7 @@ import {
   importStoryboardToCanvas,
   importCanvasFragment,
   importNovelSource,
+  importScriptAssets,
   listAssets,
   listAssetTags,
   listNovelChapters,
@@ -1306,6 +1308,22 @@ describe("frontend api client", () => {
     });
     await exportScriptDraft("project_1", "novel_1", "script_1");
     await generateStoryboardFromScriptDraft("project_1", "novel_1", "script_1");
+    await extractScriptAssets("project_1", "novel_1", "script_1");
+    await importScriptAssets("project_1", "novel_1", "script_1", {
+      candidates: [
+        {
+          candidateId: "candidate_1",
+          type: "character",
+          name: "Lead",
+          description: "Lead character",
+          prompt: "consistent lead",
+          dedupeKey: "character:lead",
+          sourceScriptDraftId: "script_1",
+          sourceSceneIds: ["scene_1"],
+          sourceBeatIds: ["beat_1"],
+        },
+      ],
+    });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -1413,6 +1431,19 @@ describe("frontend api client", () => {
       14,
       "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/script-drafts/script_1/generate-storyboard",
       expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      15,
+      "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/script-drafts/script_1/extract-assets",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      16,
+      "http://localhost:3002/api/v1/projects/project_1/novels/novel_1/script-drafts/script_1/import-assets",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("candidate_1"),
+      }),
     );
   });
 

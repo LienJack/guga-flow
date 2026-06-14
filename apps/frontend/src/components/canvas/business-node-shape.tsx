@@ -14,6 +14,7 @@ export const BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE = {
   shot: "business_shot",
   character_asset: "business_character_asset",
   location_asset: "business_location_asset",
+  prop_asset: "business_prop_asset",
   ai_text: "business_ai_text",
   ai_audio: "business_ai_audio",
   image: "business_image",
@@ -40,6 +41,7 @@ declare module "tldraw" {
     business_shot: BusinessNodeShapeProps;
     business_character_asset: BusinessNodeShapeProps;
     business_location_asset: BusinessNodeShapeProps;
+    business_prop_asset: BusinessNodeShapeProps;
     business_ai_text: BusinessNodeShapeProps;
     business_ai_audio: BusinessNodeShapeProps;
     business_image: BusinessNodeShapeProps;

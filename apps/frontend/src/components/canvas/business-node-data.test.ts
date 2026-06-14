@@ -169,6 +169,7 @@ describe("business node data helpers", () => {
   it("keeps Character and Location consistency fields available", () => {
     const character = createDefaultBusinessNodeData("character_asset");
     const location = createDefaultBusinessNodeData("location_asset");
+    const prop = createDefaultBusinessNodeData("prop_asset");
 
     expect(character).toHaveProperty("consistencyPrompt");
     expect(character).toHaveProperty("identityPrompt");
@@ -178,6 +179,8 @@ describe("business node data helpers", () => {
     expect(location).toHaveProperty("locationPrompt");
     expect(location).toHaveProperty("referenceAssetIds");
     expect(location).toHaveProperty("visualStyle");
+    expect(prop).toHaveProperty("propPrompt");
+    expect(prop).toHaveProperty("assetVariants");
   });
 
   it("surfaces Character and Location prompt/reference state on cards", () => {

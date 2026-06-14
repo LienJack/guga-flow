@@ -10,6 +10,7 @@ import type {
   NovelDocumentRecord,
   NovelEventGraphRecord,
   ScriptAdaptationStrategy,
+  ScriptAssetCandidate,
   ScriptBeat,
   ScriptDraftRecord,
   ScriptDraftWorkspace,
@@ -26,6 +27,7 @@ import {
   deleteNovelDocument,
   extractNovelChapterEvents,
   extractNovelEvents,
+  extractScriptAssets,
   exportScriptDraft,
   generateStoryboardFromScriptDraft,
   generateStoryboardDraft,
@@ -34,6 +36,7 @@ import {
   getNovelEventGraph,
   importStoryboardToCanvas,
   importNovelSource,
+  importScriptAssets,
   listNovelChapters,
   listScriptDrafts,
   listNovelDocuments,
@@ -113,6 +116,7 @@ export function NovelStoryboardPanel({
     initialScriptDrafts[0] ? cloneWorkspace(initialScriptDrafts[0].workspace) : undefined,
   );
   const [scriptWorkspaceDirty, setScriptWorkspaceDirty] = useState(false);
+  const [scriptAssetCandidates, setScriptAssetCandidates] = useState<ScriptAssetCandidate[]>([]);
   const [scriptStrategy, setScriptStrategy] = useState<ScriptAdaptationStrategy>("faithful");
   const [draftDirty, setDraftDirty] = useState(false);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
@@ -179,6 +183,7 @@ export function NovelStoryboardPanel({
     setSelectedScriptDraftId(undefined);
     setScriptWorkspace(undefined);
     setScriptWorkspaceDirty(false);
+    setScriptAssetCandidates([]);
     setConfirmNewVersion(false);
   }, [selectedNovel]);
 
@@ -299,6 +304,7 @@ export function NovelStoryboardPanel({
   useEffect(() => {
     setScriptWorkspace(selectedScriptDraft ? cloneWorkspace(selectedScriptDraft.workspace) : undefined);
     setScriptWorkspaceDirty(false);
+    setScriptAssetCandidates([]);
   }, [selectedScriptDraft]);
 
   useEffect(() => {
@@ -483,6 +489,40 @@ export function NovelStoryboardPanel({
       setScriptWorkspaceDirty(false);
       setNotice("Script workspace saved");
     });
+  }
+
+  async function handleExtractScriptAssets() {
+    if (!selectedNovel || !selectedScriptDraft) {
+      return;
+    }
+    await runAction("script", async () => {
+      const result = await extractScriptAssets(projectId, selectedNovel.id, selectedScriptDraft.id);
+      setScriptAssetCandidates(result.candidates);
+      setNotice("Script assets extracted");
+    });
+  }
+
+  async function handleImportScriptAssets() {
+    if (!selectedNovel || !selectedScriptDraft || scriptAssetCandidates.length === 0) {
+      return;
+    }
+    await runAction("script", async () => {
+      const result = await importScriptAssets(projectId, selectedNovel.id, selectedScriptDraft.id, {
+        candidates: scriptAssetCandidates,
+      });
+      setNotice(`Imported ${result.importedCount}, merged ${result.mergedCount}`);
+    });
+  }
+
+  function updateScriptAssetCandidate(
+    candidateId: string,
+    patch: Partial<ScriptAssetCandidate>,
+  ) {
+    setScriptAssetCandidates((current) =>
+      current.map((candidate) =>
+        candidate.candidateId === candidateId ? { ...candidate, ...patch } : candidate,
+      ),
+    );
   }
 
   async function handleExportScriptDraft(scriptDraft: ScriptDraftRecord) {
@@ -978,6 +1018,15 @@ export function NovelStoryboardPanel({
               onSkeletonChange={updateSkeleton}
             />
           ) : null}
+          {selectedScriptDraft ? (
+            <ScriptAssetCandidatePanel
+              busy={Boolean(busyAction)}
+              candidates={scriptAssetCandidates}
+              onCandidateChange={updateScriptAssetCandidate}
+              onExtract={() => void handleExtractScriptAssets()}
+              onImport={() => void handleImportScriptAssets()}
+            />
+          ) : null}
         </section>
       ) : null}
 
@@ -1212,6 +1261,101 @@ function ScriptWorkspaceEditor({
         Save workspace
       </button>
     </form>
+  );
+}
+
+interface ScriptAssetCandidatePanelProps {
+  busy: boolean;
+  candidates: ScriptAssetCandidate[];
+  onCandidateChange: (candidateId: string, patch: Partial<ScriptAssetCandidate>) => void;
+  onExtract: () => void;
+  onImport: () => void;
+}
+
+function ScriptAssetCandidatePanel({
+  busy,
+  candidates,
+  onCandidateChange,
+  onExtract,
+  onImport,
+}: ScriptAssetCandidatePanelProps) {
+  return (
+    <section className="script-workbench" aria-label="Script asset candidates">
+      <div className="panel-heading compact">
+        <h2>Assets</h2>
+        <span>{candidates.length}</span>
+      </div>
+      <div className="storyboard-action-row">
+        <button className="ghost-action compact" type="button" onClick={onExtract} disabled={busy}>
+          <RefreshCw size={15} aria-hidden="true" />
+          Extract assets
+        </button>
+        <button
+          className="primary-action compact"
+          type="button"
+          onClick={onImport}
+          disabled={busy || candidates.length === 0}
+        >
+          <Import size={15} aria-hidden="true" />
+          Import assets
+        </button>
+      </div>
+      {candidates.length === 0 ? (
+        <div className="empty-state small">
+          <strong>No asset candidates</strong>
+          <span>0 pending</span>
+        </div>
+      ) : (
+        <ul className="script-draft-list">
+          {candidates.map((candidate) => (
+            <li className="script-draft-row" key={candidate.candidateId}>
+              <div>
+                <strong>{candidate.name}</strong>
+                <span>
+                  {candidate.type} · {candidate.dedupeKey}
+                </span>
+              </div>
+              <label className="field-label">
+                <span>Name</span>
+                <input
+                  value={candidate.name}
+                  onChange={(event) => onCandidateChange(candidate.candidateId, { name: event.target.value })}
+                />
+              </label>
+              <label className="field-label">
+                <span>Description</span>
+                <textarea
+                  rows={2}
+                  value={candidate.description}
+                  onChange={(event) =>
+                    onCandidateChange(candidate.candidateId, { description: event.target.value })
+                  }
+                />
+              </label>
+              <label className="field-label">
+                <span>Prompt</span>
+                <textarea
+                  rows={2}
+                  value={candidate.prompt}
+                  onChange={(event) => onCandidateChange(candidate.candidateId, { prompt: event.target.value })}
+                />
+              </label>
+              <label className="field-label">
+                <span>Merge target</span>
+                <input
+                  value={candidate.mergeTargetNodeId ?? ""}
+                  onChange={(event) =>
+                    onCandidateChange(candidate.candidateId, {
+                      mergeTargetNodeId: event.target.value.trim() || undefined,
+                    })
+                  }
+                />
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

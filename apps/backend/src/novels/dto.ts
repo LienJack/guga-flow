@@ -5,6 +5,7 @@ import type {
   CreativeAgentMode,
   ExtractNovelChapterEventsInput,
   ExtractNovelEventsInput,
+  ImportScriptAssetsInput,
   ScriptAdaptationStrategy,
   ImportNovelSourceInput,
   NovelLanguage,
@@ -204,4 +205,9 @@ export class UpdateScriptDraftDto implements UpdateScriptDraftInput {
 
   @IsOptional()
   workspace?: UpdateScriptDraftInput["workspace"];
+}
+
+export class ImportScriptAssetsDto implements ImportScriptAssetsInput {
+  @IsArray()
+  candidates!: ImportScriptAssetsInput["candidates"];
 }

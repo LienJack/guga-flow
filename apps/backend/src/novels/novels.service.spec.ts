@@ -164,6 +164,38 @@ function scriptDraft(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function canvasDocument(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "canvas_1",
+    projectId: "project_1",
+    snapshotJson: {},
+    createdAt,
+    updatedAt,
+    ...overrides,
+  };
+}
+
+function canvasNode(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "node_1",
+    projectId: "project_1",
+    canvasDocumentId: "canvas_1",
+    tldrawShapeId: "script_asset:script_1:node_1",
+    type: "character_asset",
+    title: "Lead",
+    x: 80,
+    y: 120,
+    width: 320,
+    height: 220,
+    zIndex: 0,
+    status: "draft",
+    dataJson: {},
+    createdAt,
+    updatedAt,
+    ...overrides,
+  };
+}
+
 function createPrismaMock() {
   return {
     project: {
@@ -197,8 +229,14 @@ function createPrismaMock() {
       create: vi.fn(async ({ data }) => scriptDraft(data)),
       update: vi.fn(async ({ data }) => scriptDraft(data)),
     },
+    canvasDocument: {
+      upsert: vi.fn(async () => canvasDocument()),
+    },
     canvasNode: {
       findMany: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(async ({ data }) => canvasNode(data)),
+      update: vi.fn(async ({ data }) => canvasNode(data)),
       deleteMany: vi.fn(),
     },
     canvasEdge: {
@@ -617,6 +655,105 @@ describe("NovelsService", () => {
     );
     expect(result.scriptDraft.workspace.script.logline).toBe("Updated script logline.");
     expect(result.scriptDraft.strategy).toBe("visual_first");
+  });
+
+  it("extracts editable asset candidates from script drafts", async () => {
+    prisma.novelDocument.findFirst.mockResolvedValue(novel());
+    prisma.scriptDraft.findFirst.mockResolvedValue(scriptDraft());
+
+    const result = await service.extractScriptAssets("project_1", "novel_1", "script_1");
+
+    expect(result.candidates.map((candidate) => candidate.type)).toEqual(
+      expect.arrayContaining(["character", "location", "prop"]),
+    );
+    expect(result.candidates[0]).toMatchObject({
+      sourceScriptDraftId: "script_1",
+      dedupeKey: "character:lead",
+      prompt: expect.stringContaining("consistent lead character"),
+    });
+  });
+
+  it("imports script asset candidates as traced canvas asset nodes", async () => {
+    prisma.novelDocument.findFirst.mockResolvedValue(novel());
+    prisma.scriptDraft.findFirst.mockResolvedValue(scriptDraft());
+    prisma.canvasNode.create.mockImplementation(async ({ data }) =>
+      canvasNode({
+        ...data,
+        id: `${data.type}_1`,
+      }),
+    );
+
+    const extracted = await service.extractScriptAssets("project_1", "novel_1", "script_1");
+    const result = await service.importScriptAssets("project_1", "novel_1", "script_1", {
+      candidates: extracted.candidates.slice(0, 3),
+    });
+
+    expect(prisma.canvasDocument.upsert).toHaveBeenCalledWith({
+      where: { projectId: "project_1" },
+      update: {},
+      create: { projectId: "project_1", snapshotJson: {} },
+    });
+    expect(result.importedCount).toBe(3);
+    expect(result.nodeTypes).toEqual(
+      expect.arrayContaining(["character_asset", "location_asset", "prop_asset"]),
+    );
+    expect(result.nodes[0]?.dataJson).toMatchObject({
+      scriptAssetSource: expect.objectContaining({
+        scriptDraftId: "script_1",
+        candidateId: expect.any(String),
+      }),
+      assetVariants: [
+        expect.objectContaining({
+          status: "draft",
+          sourceScriptDraftId: "script_1",
+        }),
+      ],
+    });
+  });
+
+  it("merges script asset candidates without replacing selected variants", async () => {
+    prisma.novelDocument.findFirst.mockResolvedValue(novel());
+    prisma.scriptDraft.findFirst.mockResolvedValue(scriptDraft());
+    prisma.canvasNode.findFirst.mockResolvedValue(
+      canvasNode({
+        id: "character_existing",
+        type: "character_asset",
+        dataJson: {
+          name: "Lead",
+          selectedVariantId: "variant_selected",
+          assetVariants: [
+            {
+              variantId: "variant_selected",
+              label: "Selected",
+              status: "selected",
+              assetId: "asset_selected",
+            },
+          ],
+        },
+      }),
+    );
+    prisma.canvasNode.update.mockImplementation(async ({ data }) =>
+      canvasNode({
+        id: "character_existing",
+        type: "character_asset",
+        dataJson: data.dataJson,
+      }),
+    );
+
+    const [candidate] = (await service.extractScriptAssets("project_1", "novel_1", "script_1")).candidates;
+    const result = await service.importScriptAssets("project_1", "novel_1", "script_1", {
+      candidates: [{ ...candidate!, mergeTargetNodeId: "character_existing" }],
+    });
+
+    expect(result.importedCount).toBe(0);
+    expect(result.mergedCount).toBe(1);
+    expect(result.nodes[0]?.dataJson).toMatchObject({
+      selectedVariantId: "variant_selected",
+      assetVariants: expect.arrayContaining([
+        expect.objectContaining({ variantId: "variant_selected" }),
+        expect.objectContaining({ sourceScriptDraftId: "script_1" }),
+      ]),
+    });
   });
 
   it("exports script drafts as plain text and marks them exported", async () => {

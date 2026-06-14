@@ -85,6 +85,14 @@ export const BUSINESS_NODE_FIELDS = {
     { key: "consistencyPrompt", label: "Consistency Prompt", multiline: true },
     { key: "locationPrompt", label: "Location Prompt", multiline: true },
   ],
+  prop_asset: [
+    { key: "name", label: "Name" },
+    { key: "category", label: "Category" },
+    { key: "description", label: "Description", multiline: true },
+    { key: "visualStyle", label: "Visual Style", multiline: true },
+    { key: "consistencyPrompt", label: "Consistency Prompt", multiline: true },
+    { key: "propPrompt", label: "Prop Prompt", multiline: true },
+  ],
   ai_text: [
     { key: "prompt", label: "Prompt", multiline: true },
     { key: "outputText", label: "Output Text", multiline: true },

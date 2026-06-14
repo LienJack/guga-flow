@@ -1058,6 +1058,7 @@ describe("shared domain constants", () => {
       "shot",
       "character_asset",
       "location_asset",
+      "prop_asset",
       "ai_text",
       "ai_audio",
       "image",
@@ -1802,6 +1803,7 @@ describe("shared domain constants", () => {
     expect(result.referenceAssetIds).toEqual([
       "asset_hero_ref",
       "asset_shared_ref",
+      "asset_hero_alert_variant",
       "asset_friend_ref",
       "asset_location_ref",
     ]);
@@ -1934,7 +1936,10 @@ describe("shared domain constants", () => {
     });
 
     expect(before.referenceAssetIds.filter((assetId) => assetId === "asset_shared_ref")).toHaveLength(1);
+    expect(before.referenceAssetIds).toContain("asset_hero_alert_variant");
+    expect(before.referenceAssetIds).not.toContain("asset_hero_default_variant");
     expect(after.referenceAssetIds.filter((assetId) => assetId === "asset_shared_ref")).toHaveLength(1);
+    expect(after.referenceAssetIds).toContain("asset_hero_alert_variant");
     expect(after.image.prompt).toContain("edited hero identity prompt");
     expect(after.image.prompt).toContain("edited location prompt");
     expect(after.image.prompt).not.toContain("Hero identity prompt");
@@ -2885,6 +2890,23 @@ function promptComposerGraph(): {
         },
       ],
       referenceAssetIds: ["asset_hero_ref", "asset_shared_ref", "asset_shared_ref"],
+      selectedVariantId: "variant_alert",
+      assetVariants: [
+        {
+          variantId: "variant_default",
+          label: "Default",
+          status: "succeeded",
+          assetId: "asset_hero_default_variant",
+          prompt: "default hero reference",
+        },
+        {
+          variantId: "variant_alert",
+          label: "Alert",
+          status: "selected",
+          assetId: "asset_hero_alert_variant",
+          prompt: "alert hero reference",
+        },
+      ],
     }),
     canvasNode<CharacterAssetNodeData>("character_2", "character_asset", "Friend", {
       name: "Friend",
@@ -2951,6 +2973,7 @@ function promptComposerGraph(): {
     ],
     assets: [
       assetListItem("asset_hero_ref", "image"),
+      assetListItem("asset_hero_alert_variant", "image"),
       assetListItem("asset_shared_ref", "image"),
       assetListItem("asset_friend_ref", "image"),
       assetListItem("asset_location_ref", "image"),
