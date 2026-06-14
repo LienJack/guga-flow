@@ -1,6 +1,18 @@
 "use client";
 
-import type { SkillTemplateSummary } from "@guga-flow/shared-types";
+import type {
+  AgentDeploymentRole,
+  ListSkillTemplatesInput,
+  SkillTemplatePresetCategory,
+  SkillTemplateSummary,
+  SkillTemplateTriggerMode,
+} from "@guga-flow/shared-types";
+import {
+  AGENT_DEPLOYMENT_ROLES,
+  SKILL_TEMPLATE_PRESET_CATEGORIES,
+  SKILL_TEMPLATE_TRIGGER_MODES,
+  filterSkillTemplateSummaries,
+} from "@guga-flow/shared-types";
 import { FileText, RotateCcw, Save } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 
@@ -28,6 +40,7 @@ export function SkillTemplateSettingsPanel({
   const [templates, setTemplates] = useState<SkillTemplateSummary[]>(initialSkillTemplates ?? []);
   const [selectedKey, setSelectedKey] = useState(() => initialSkillTemplates?.[0] ? templateKey(initialSkillTemplates[0]) : "");
   const [sourceDraft, setSourceDraft] = useState(() => activeVersion(initialSkillTemplates?.[0])?.sourceText ?? "");
+  const [filters, setFilters] = useState<ListSkillTemplatesInput>({});
   const [state, setState] = useState<PanelState>({});
   const [loading, setLoading] = useState(!initialSkillTemplates);
 
@@ -59,9 +72,15 @@ export function SkillTemplateSettingsPanel({
     };
   }, [projectId]);
 
+  const filteredTemplates = useMemo(
+    () => filterSkillTemplateSummaries(templates, filters),
+    [filters, templates],
+  );
   const selectedTemplate = useMemo(
-    () => templates.find((template) => templateKey(template) === selectedKey) ?? templates[0],
-    [selectedKey, templates],
+    () =>
+      filteredTemplates.find((template) => templateKey(template) === selectedKey) ??
+      filteredTemplates[0],
+    [filteredTemplates, selectedKey],
   );
 
   useEffect(() => {
@@ -138,13 +157,80 @@ export function SkillTemplateSettingsPanel({
       <div className="provider-group">
         <div className="provider-group-heading">
           <h2>Prompt and Agent Skills</h2>
-          <span>{templates.length}</span>
+          <span>{filteredTemplates.length}/{templates.length}</span>
         </div>
         <div className="provider-config-grid programmable">
           <label className="generation-field">
+            <span>Search</span>
+            <input
+              value={filters.query ?? ""}
+              onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))}
+            />
+          </label>
+          <label className="generation-field">
+            <span>Category</span>
+            <select
+              value={filters.category ?? ""}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  category: optionalSelectValue<SkillTemplatePresetCategory>(event.target.value),
+                }))
+              }
+            >
+              <option value="">All categories</option>
+              {SKILL_TEMPLATE_PRESET_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {categoryLabel(category)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="generation-field">
+            <span>Agent role</span>
+            <select
+              value={filters.agentRole ?? ""}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  agentRole: optionalSelectValue<AgentDeploymentRole>(event.target.value),
+                }))
+              }
+            >
+              <option value="">All roles</option>
+              {AGENT_DEPLOYMENT_ROLES.map((role) => (
+                <option key={role} value={role}>
+                  {roleLabel(role)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="generation-field">
+            <span>Trigger</span>
+            <select
+              value={filters.triggerMode ?? ""}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  triggerMode: optionalSelectValue<SkillTemplateTriggerMode>(event.target.value),
+                }))
+              }
+            >
+              <option value="">All triggers</option>
+              {SKILL_TEMPLATE_TRIGGER_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {triggerLabel(mode)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="generation-field">
             <span>Target</span>
-            <select value={selectedTemplate ? templateKey(selectedTemplate) : ""} onChange={(event) => setSelectedKey(event.target.value)}>
-              {templates.map((template) => (
+            <select
+              value={selectedTemplate ? templateKey(selectedTemplate) : ""}
+              onChange={(event) => setSelectedKey(event.target.value)}
+            >
+              {filteredTemplates.map((template) => (
                 <option key={templateKey(template)} value={templateKey(template)}>
                   {template.displayName}
                 </option>
@@ -175,15 +261,22 @@ export function SkillTemplateSettingsPanel({
             <div className="provider-name-block">
               <div className="provider-name-line">
                 <strong>{selectedTemplate.displayName}</strong>
-                <span className={`provider-status-pill ${selectedTemplate.enabled ? "ready" : "blocked"}`}>
-                  {selectedTemplate.enabled ? "Enabled" : "Disabled"}
+                <span className={`provider-status-pill ${selectedTemplate.indexStatus === "ready" ? "ready" : "blocked"}`}>
+                  {indexStatusLabel(selectedTemplate.indexStatus)}
                 </span>
               </div>
               <div className="provider-meta-line">
                 <span>{selectedTemplate.kind}</span>
                 <span>{selectedTemplate.slug}</span>
-                <span>{selectedTemplate.activeVersionId ? "active" : "inactive"}</span>
+                <span>{selectedTemplate.presetCategories.map(categoryLabel).join(", ")}</span>
+                <span>{selectedTemplate.agentRoles.map(roleLabel).join(", ")}</span>
+                <span>{selectedTemplate.triggerModes.map(triggerLabel).join(", ")}</span>
               </div>
+              {selectedTemplate.activeSummary ? (
+                <div className="provider-meta-line">
+                  <span>{selectedTemplate.activeSummary}</span>
+                </div>
+              ) : null}
             </div>
             <FileText size={18} aria-hidden="true" />
           </div>
@@ -224,6 +317,26 @@ function templateKey(template: Pick<SkillTemplateSummary, "kind" | "slug">): str
 
 function activeVersion(template: SkillTemplateSummary | undefined) {
   return template?.versions.find((version) => version.active) ?? template?.versions[0];
+}
+
+function optionalSelectValue<TValue extends string>(value: string): TValue | undefined {
+  return value ? (value as TValue) : undefined;
+}
+
+function categoryLabel(category: SkillTemplatePresetCategory): string {
+  return category.replace("ai-", "AI ");
+}
+
+function triggerLabel(mode: SkillTemplateTriggerMode): string {
+  return mode === "insert_prompt" ? "Insert prompt" : "Direct generate";
+}
+
+function roleLabel(role: AgentDeploymentRole): string {
+  return role.replace(/_/g, " ");
+}
+
+function indexStatusLabel(status: SkillTemplateSummary["indexStatus"]): string {
+  return status.replace(/_/g, " ");
 }
 
 function upsertTemplate(

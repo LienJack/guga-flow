@@ -52,7 +52,10 @@ import {
   SCRIPT_DRAFT_STATUSES,
   SETTINGS_CENTER_MODULES,
   SETTINGS_CENTER_MODULE_STATUSES,
+  SKILL_TEMPLATE_INDEX_STATUSES,
   SKILL_TEMPLATE_KINDS,
+  SKILL_TEMPLATE_PRESET_CATEGORIES,
+  SKILL_TEMPLATE_TRIGGER_MODES,
   SKILL_TEMPLATE_VERSION_STATUSES,
   SOURCE_MEDIA_IMPORT_METHODS,
   STORYBOARD_IMPORT_DUPLICATE_POLICIES,
@@ -67,6 +70,7 @@ import {
   canvasNodeTypesByFamily,
   composeShotPrompt,
   findStoryboardImportLayoutOverlaps,
+  filterSkillTemplateSummaries,
   hasStoryboardImportProvenance,
   managedProviderId,
   managedProviderKind,
@@ -77,6 +81,7 @@ import {
   programmableProviderId,
   resolveCanvasInputSlot,
   resolveGenerationSettings,
+  skillTemplateMetadata,
   validateCanvasInputConnection,
   type AssetListItem,
   type AgentCanvasActionJobInput,
@@ -151,6 +156,7 @@ import {
   type ScriptDraftRecord,
   type SourceMediaNodeData,
   type SkillTemplatePromptContext,
+  type SkillTemplateSummary,
   type StoryboardDraftRecord,
   type StoryboardResult,
   type TimelineManifest,
@@ -375,8 +381,33 @@ describe("shared domain constants", () => {
     expect(PROGRAMMABLE_PROVIDER_CREDENTIAL_INPUT_TYPES).toEqual(["password", "text", "url"]);
     expect(PROGRAMMABLE_PROVIDER_HTTP_METHODS).toEqual(["GET", "POST"]);
     expect(PROGRAMMABLE_PROVIDER_OUTPUT_SOURCES).toEqual(["url", "base64"]);
-    expect(SKILL_TEMPLATE_KINDS).toEqual(["story", "art", "production", "agent"]);
+    expect(SKILL_TEMPLATE_KINDS).toEqual([
+      "story",
+      "art",
+      "production",
+      "agent",
+      "ai-image",
+      "ai-text",
+      "ai-video",
+      "ai-audio",
+    ]);
     expect(SKILL_TEMPLATE_VERSION_STATUSES).toEqual(["valid", "invalid"]);
+    expect(SKILL_TEMPLATE_PRESET_CATEGORIES).toEqual([
+      "ai-image",
+      "ai-text",
+      "ai-video",
+      "ai-audio",
+      "story",
+      "production",
+      "agent",
+    ]);
+    expect(SKILL_TEMPLATE_TRIGGER_MODES).toEqual(["insert_prompt", "direct_generate"]);
+    expect(SKILL_TEMPLATE_INDEX_STATUSES).toEqual([
+      "ready",
+      "disabled",
+      "missing_description",
+      "invalid_source",
+    ]);
     expect(SCRIPT_ADAPTATION_STRATEGIES).toEqual(["faithful", "short_drama", "visual_first"]);
     expect(SCRIPT_DRAFT_STATUSES).toEqual(["draft", "selected", "exported"]);
     expect(SETTINGS_CENTER_MODULES).toEqual([
@@ -1570,6 +1601,51 @@ describe("shared domain constants", () => {
     );
   });
 
+  it("filters skill templates by preset index metadata", () => {
+    expect(skillTemplateMetadata("ai-image")).toMatchObject({
+      presetCategories: ["ai-image"],
+      triggerModes: ["insert_prompt", "direct_generate"],
+      agentRoles: ["asset", "video_prompt"],
+    });
+
+    const templates = [
+      skillTemplateSummary({
+        id: "skill_ai_image",
+        kind: "ai-image",
+        displayName: "AI Image Preset",
+        activeSummary: "Reference-image style prompt",
+      }),
+      skillTemplateSummary({
+        id: "skill_agent",
+        kind: "agent",
+        displayName: "Agent Skill",
+        activeSummary: "Canvas operation summary",
+      }),
+      skillTemplateSummary({
+        id: "skill_video",
+        kind: "ai-video",
+        displayName: "Video Motion Preset",
+        activeSummary: "Motion and camera prompt",
+      }),
+    ];
+
+    expect(filterSkillTemplateSummaries(templates, { category: "ai-image" }).map((template) => template.id)).toEqual([
+      "skill_ai_image",
+    ]);
+    expect(filterSkillTemplateSummaries(templates, { agentRole: "production" }).map((template) => template.id)).toEqual([
+      "skill_video",
+    ]);
+    expect(filterSkillTemplateSummaries(templates, { query: "canvas" }).map((template) => template.id)).toEqual([
+      "skill_agent",
+    ]);
+    expect(
+      filterSkillTemplateSummaries(templates, {
+        templateIds: ["skill_video"],
+        triggerMode: "direct_generate",
+      }).map((template) => template.id),
+    ).toEqual(["skill_video"]);
+  });
+
   it("composes Phase 7 shot prompts from linked graph context and reference images", () => {
     const graph = promptComposerGraph();
     const skillTemplates: SkillTemplatePromptContext[] = [
@@ -1578,6 +1654,9 @@ describe("shared domain constants", () => {
         kind: "art",
         slug: "art-default",
         displayName: "Art Skill",
+        summary: "Visual style summary",
+        presetCategories: ["ai-image"],
+        agentRoles: ["asset", "video_prompt"],
         sourceText: "Use cyan highlights and keep character silhouettes consistent.",
         versionId: "skill_version_1",
         version: 1,
@@ -2814,6 +2893,36 @@ function canvasEdge(
     targetNodeId,
     relation,
     createdAt: "2026-06-12T00:00:00.000Z",
+  };
+}
+
+function skillTemplateSummary(
+  overrides: Partial<SkillTemplateSummary> & Pick<SkillTemplateSummary, "id" | "kind" | "displayName">,
+): SkillTemplateSummary {
+  const metadata = skillTemplateMetadata(overrides.kind);
+  return {
+    projectId: "project_1",
+    slug: `${overrides.kind}-default`,
+    description: "Default prompt preset",
+    enabled: true,
+    activeVersionId: `${overrides.id}_version_1`,
+    indexStatus: "ready",
+    activeSummary: "Default prompt summary",
+    versions: [
+      {
+        id: `${overrides.id}_version_1`,
+        version: 1,
+        sourceText: "Default prompt source",
+        status: "valid",
+        diagnostics: [],
+        createdAt: "2026-06-14T00:00:00.000Z",
+        active: true,
+      },
+    ],
+    createdAt: "2026-06-14T00:00:00.000Z",
+    updatedAt: "2026-06-14T00:00:00.000Z",
+    ...metadata,
+    ...overrides,
   };
 }
 

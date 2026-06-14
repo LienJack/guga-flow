@@ -9,9 +9,12 @@ import type {
   ImageProviderMode,
   ImageNodeData,
   ShotNodeData,
+  SkillTemplatePresetCategory,
+  SkillTemplateSummary,
   VideoProviderCatalogItem,
   VideoProviderCatalogResult,
 } from "@guga-flow/shared-types";
+import { filterSkillTemplateSummaries } from "@guga-flow/shared-types";
 import { Ban, ImagePlus, RotateCcw, Video } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 
@@ -22,6 +25,7 @@ import {
   createGenerationJob,
   getProjectImageProviderCatalog,
   getProjectVideoProviderCatalog,
+  listSkillTemplates,
   retryGenerationJob,
 } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
@@ -127,6 +131,8 @@ export function GenerationActions({
     videoSettingsForProvider(FALLBACK_VIDEO_PROVIDER),
   );
   const [refinementPrompt, setRefinementPrompt] = useState("");
+  const [skillTemplates, setSkillTemplates] = useState<SkillTemplateSummary[]>([]);
+  const [selectedSkillTemplateId, setSelectedSkillTemplateId] = useState("");
   const actions = generationActionsForNode(node);
   const hasImageProviderAction = actions.some((action) => isImageProviderOperation(action.operation));
   const hasVideoProviderAction = actions.some((action) => action.operation === "image_to_video");
@@ -157,6 +163,16 @@ export function GenerationActions({
   );
   const activeJob = nodeJobs.find((job) => ACTIVE_STATUSES.has(job.status));
   const failedJob = nodeJobs.find((job) => job.status === "failed");
+  const presetCategory = presetCategoryForActions(actions);
+  const compatibleSkillTemplates = useMemo(
+    () =>
+      presetCategory
+        ? filterSkillTemplateSummaries(skillTemplates, { category: presetCategory })
+        : [],
+    [presetCategory, skillTemplates],
+  );
+  const selectedSkillTemplate =
+    compatibleSkillTemplates.find((template) => template.id === selectedSkillTemplateId);
 
   useEffect(() => {
     if (imageProviderCatalog) {
@@ -216,6 +232,38 @@ export function GenerationActions({
     };
   }, [hasVideoProviderAction, projectId, videoProviderCatalog]);
 
+  useEffect(() => {
+    if (!actions.length) {
+      return;
+    }
+
+    let cancelled = false;
+    listSkillTemplates(projectId)
+      .then((result) => {
+        if (!cancelled) {
+          setSkillTemplates(result.templates);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSkillTemplates([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [actions.length, projectId]);
+
+  useEffect(() => {
+    if (
+      selectedSkillTemplateId &&
+      !compatibleSkillTemplates.some((template) => template.id === selectedSkillTemplateId)
+    ) {
+      setSelectedSkillTemplateId("");
+    }
+  }, [compatibleSkillTemplates, selectedSkillTemplateId]);
+
   if (!actions.length) {
     return null;
   }
@@ -234,6 +282,7 @@ export function GenerationActions({
           normalizedImageSettings,
           normalizedVideoSettings,
           trimmedRefinementPrompt,
+          selectedSkillTemplate ? [selectedSkillTemplate.id] : [],
         ),
       );
       setLastResult(t("generation.queued"));
@@ -286,12 +335,48 @@ export function GenerationActions({
     (operation === "image_to_video" && !selectedVideoProvider.enabled) ||
     (operation === "image_refinement" && !trimmedRefinementPrompt);
 
+  function handleInsertPreset() {
+    const sourceText = activeSkillTemplateSource(selectedSkillTemplate);
+    if (!sourceText) {
+      return;
+    }
+    setRefinementPrompt((current) => [current.trim(), sourceText].filter(Boolean).join("\n\n"));
+  }
+
   return (
     <section className="generation-panel" aria-label={t("generation.title")}>
       <div className="section-heading-row">
         <h3>{t("generation.title")}</h3>
         {activeJob ? <span className="status-chip">{statusLabel(activeJob.status, t)}</span> : null}
       </div>
+      {compatibleSkillTemplates.length ? (
+        <div className="generation-field">
+          <label htmlFor={`generation-skill-preset-${node.id}`}>Preset</label>
+          <select
+            id={`generation-skill-preset-${node.id}`}
+            value={selectedSkillTemplateId}
+            disabled={busy || Boolean(activeJob)}
+            onChange={(event) => setSelectedSkillTemplateId(event.target.value)}
+          >
+            <option value="">No preset</option>
+            {compatibleSkillTemplates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.displayName}
+              </option>
+            ))}
+          </select>
+          {hasRefinementAction ? (
+            <button
+              className="ghost-action compact"
+              type="button"
+              disabled={busy || Boolean(activeJob) || !activeSkillTemplateSource(selectedSkillTemplate)}
+              onClick={handleInsertPreset}
+            >
+              Insert Preset
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {hasImageProviderAction ? (
         <ImageGenerationSettings
           busy={busy || Boolean(activeJob)}
@@ -908,7 +993,9 @@ export function buildGenerationJobInputForOperation(
   imageSettings: ImageGenerationFormSettings = settingsForProvider(FALLBACK_IMAGE_PROVIDER),
   videoSettings: VideoGenerationFormSettings = videoSettingsForProvider(FALLBACK_VIDEO_PROVIDER),
   refinementPrompt = "",
+  skillTemplateIds: string[] = [],
 ): CreateGenerationJobInput {
+  const selectedSkillTemplateIds = skillTemplateIds.length ? { skillTemplateIds } : {};
   if (operation === "image_to_video") {
     return {
       operation,
@@ -919,6 +1006,7 @@ export function buildGenerationJobInputForOperation(
       durationSeconds: videoSettings.durationSeconds,
       resolution: videoSettings.resolution,
       videoProviderParams: videoSettings.videoProviderParams,
+      ...selectedSkillTemplateIds,
     };
   }
 
@@ -931,6 +1019,7 @@ export function buildGenerationJobInputForOperation(
       model: imageSettings.model,
       aspectRatio: imageSettings.aspectRatio,
       providerParams: imageSettings.providerParams,
+      ...selectedSkillTemplateIds,
     };
   }
 
@@ -942,6 +1031,7 @@ export function buildGenerationJobInputForOperation(
       model: imageSettings.model,
       aspectRatio: imageSettings.aspectRatio,
       providerParams: imageSettings.providerParams,
+      ...selectedSkillTemplateIds,
     };
   }
 
@@ -953,7 +1043,22 @@ export function buildGenerationJobInputForOperation(
     aspectRatio: imageSettings.aspectRatio,
     count: imageSettings.count,
     providerParams: imageSettings.providerParams,
+    ...selectedSkillTemplateIds,
   };
+}
+
+function presetCategoryForActions(actions: readonly GenerationAction[]): SkillTemplatePresetCategory | undefined {
+  if (actions.some((action) => action.operation === "image_to_video")) {
+    return "ai-video";
+  }
+  if (actions.some((action) => isImageProviderOperation(action.operation))) {
+    return "ai-image";
+  }
+  return undefined;
+}
+
+function activeSkillTemplateSource(template: SkillTemplateSummary | undefined): string {
+  return template?.versions.find((version) => version.active)?.sourceText ?? "";
 }
 
 export function buildBatchShotsToImagesJobInput(

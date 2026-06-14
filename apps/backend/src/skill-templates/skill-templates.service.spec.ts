@@ -1,4 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
+import { SKILL_TEMPLATE_KINDS } from "@guga-flow/shared-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PrismaService } from "../prisma/prisma.service";
@@ -145,6 +146,10 @@ describe("SkillTemplatesService", () => {
 
     expect(result.templates.map((template) => template.kind).sort()).toEqual([
       "agent",
+      "ai-audio",
+      "ai-image",
+      "ai-text",
+      "ai-video",
       "art",
       "production",
       "story",
@@ -159,6 +164,38 @@ describe("SkillTemplatesService", () => {
     const contexts = await service.activePromptContexts("project_1", ["story", "art", "production"]);
     expect(contexts.map((context) => context.kind).sort()).toEqual(["art", "production", "story"]);
     expect(contexts.find((context) => context.kind === "art")?.sourceText).toContain("visual direction");
+    expect(contexts.find((context) => context.kind === "art")).toMatchObject({
+      summary: expect.stringContaining("Keep visual direction"),
+      presetCategories: ["ai-image"],
+      agentRoles: ["asset", "video_prompt"],
+    });
+  });
+
+  it("filters templates by prompt preset metadata and selected ids", async () => {
+    const aiVideo = await service.listSkillTemplates("project_1", { category: "ai-video" });
+    expect(aiVideo.templates.map((template) => template.kind).sort()).toEqual(["ai-video", "production"]);
+
+    const productionContexts = await service.activePromptContexts("project_1", SKILL_TEMPLATE_KINDS, {
+      agentRole: "production",
+    });
+    expect(productionContexts.map((context) => context.kind).sort()).toEqual([
+      "ai-audio",
+      "ai-video",
+      "production",
+    ]);
+
+    const selected = await service.activePromptContexts("project_1", SKILL_TEMPLATE_KINDS, {
+      templateIds: [aiVideo.templates.find((template) => template.kind === "ai-video")?.id ?? ""],
+    });
+    expect(selected).toEqual([
+      expect.objectContaining({
+        kind: "ai-video",
+        displayName: "AI Video Preset",
+      }),
+    ]);
+
+    const query = await service.listSkillTemplates("project_1", { query: "audio" });
+    expect(query.templates.map((template) => template.kind)).toContain("ai-audio");
   });
 
   it("saves versions, blocks invalid activation, and rolls back to earlier valid text", async () => {

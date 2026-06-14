@@ -193,6 +193,11 @@ const skillTemplates: SkillTemplateSummary[] = [
     slug: "art-default",
     displayName: "Art Skill",
     enabled: true,
+    presetCategories: ["ai-image"],
+    triggerModes: ["insert_prompt", "direct_generate"],
+    agentRoles: ["asset", "video_prompt"],
+    indexStatus: "ready",
+    activeSummary: "Use crisp highlights.",
     activeVersionId: "skill_version_1",
     versions: [
       {

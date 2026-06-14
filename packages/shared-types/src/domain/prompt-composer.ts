@@ -102,6 +102,7 @@ export interface ComposeShotPromptInput {
   globalStylePrompt?: string;
   projectGenerationSettings?: GenerationCreativeSettings;
   skillTemplates?: readonly SkillTemplatePromptContext[];
+  skillTemplateIds?: string[];
   modelPromptSuffix?: string;
 }
 

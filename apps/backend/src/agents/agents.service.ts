@@ -57,6 +57,7 @@ import {
   AGENT_MEMORY_SOURCES,
   LLM_PROVIDER_IDS,
   PHASE_3_CANVAS_NODE_TYPES,
+  SKILL_TEMPLATE_KINDS,
 } from "@guga-flow/shared-types";
 import { Prisma } from "../generated/prisma/client";
 
@@ -309,7 +310,9 @@ export class AgentsService {
     await this.ensureProjectExists(projectId);
     const recall = await this.recallMemoriesForAction(projectId, message);
     const skillTemplates = this.skillTemplatesService
-      ? await this.skillTemplatesService.activePromptContexts(projectId)
+      ? await this.skillTemplatesService.activePromptContexts(projectId, SKILL_TEMPLATE_KINDS, {
+          agentRole: runtime.config.role,
+        })
       : [];
     const skillTemplateSummary = this.skillTemplateSummary(skillTemplates);
 
@@ -1096,7 +1099,7 @@ export class AgentsService {
 
   private skillTemplateSummary(templates: readonly SkillTemplatePromptContext[]): string | undefined {
     const summary = templates
-      .map((template) => `${template.displayName} v${template.version}: ${this.memorySummary(template.sourceText)}`)
+      .map((template) => `${template.displayName} v${template.version}: ${template.summary}`)
       .join("\n");
     return summary || undefined;
   }

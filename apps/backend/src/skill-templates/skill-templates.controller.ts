@@ -1,6 +1,10 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Patch, Post, Query } from "@nestjs/common";
 
-import { ActivateSkillTemplateVersionDto, UpdateSkillTemplateSourceDto } from "./dto";
+import {
+  ActivateSkillTemplateVersionDto,
+  ListSkillTemplatesDto,
+  UpdateSkillTemplateSourceDto,
+} from "./dto";
 import { SkillTemplatesService } from "./skill-templates.service";
 
 @Controller("projects/:projectId/skills")
@@ -10,8 +14,11 @@ export class SkillTemplatesController {
   ) {}
 
   @Get()
-  listSkillTemplates(@Param("projectId") projectId: string) {
-    return this.skillTemplatesService.listSkillTemplates(projectId);
+  listSkillTemplates(
+    @Param("projectId") projectId: string,
+    @Query() query: ListSkillTemplatesDto,
+  ) {
+    return this.skillTemplatesService.listSkillTemplates(projectId, query);
   }
 
   @Patch(":kind/:slug/source")

@@ -14,6 +14,11 @@ const skillTemplates: SkillTemplateSummary[] = [
     displayName: "Art Skill",
     description: "Visual style rules",
     enabled: true,
+    presetCategories: ["ai-image"],
+    triggerModes: ["insert_prompt", "direct_generate"],
+    agentRoles: ["asset", "video_prompt"],
+    indexStatus: "ready",
+    activeSummary: "Use crisp cyan highlights.",
     activeVersionId: "skill_version_2",
     versions: [
       {
@@ -57,8 +62,14 @@ describe("SkillTemplateSettingsPanel", () => {
 
     expect(html).toContain("Skill Templates");
     expect(html).toContain("Prompt and Agent Skills");
+    expect(html).toContain("All categories");
+    expect(html).toContain("AI image");
+    expect(html).toContain("All roles");
+    expect(html).toContain("Insert prompt");
     expect(html).toContain("Art Skill");
     expect(html).toContain("Use crisp cyan highlights.");
+    expect(html).toContain("asset");
+    expect(html).toContain("video prompt");
     expect(html).toContain("v2");
     expect(html).toContain("v1");
     expect(html).toContain("invalid");

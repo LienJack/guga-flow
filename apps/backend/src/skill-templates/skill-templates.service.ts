@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from "@nes
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type {
+  ListSkillTemplatesInput,
   SkillTemplateKind,
   SkillTemplateListResult,
   SkillTemplatePromptContext,
@@ -12,7 +13,11 @@ import type {
   SkillTemplateVersionSummary,
   UpdateSkillTemplateSourceInput,
 } from "@guga-flow/shared-types";
-import { SKILL_TEMPLATE_KINDS } from "@guga-flow/shared-types";
+import {
+  SKILL_TEMPLATE_KINDS,
+  filterSkillTemplateSummaries,
+  skillTemplateMetadata,
+} from "@guga-flow/shared-types";
 
 import { Prisma } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
@@ -66,6 +71,73 @@ type DefaultSkillTemplate = {
   sourceText: string;
 };
 
+const BUILT_IN_DEFAULT_SKILL_TEMPLATES: DefaultSkillTemplate[] = [
+  {
+    kind: "story",
+    slug: "story-default",
+    displayName: "Story Skill",
+    description: "Default rules for adapting story beats into short-form visual scenes.",
+    sourceText:
+      "Prioritize concrete story beats over exposition. Preserve character motivation, conflict, and consequence. When expanding a scene, keep the cause-and-effect chain visible in every shot.",
+  },
+  {
+    kind: "art",
+    slug: "art-default",
+    displayName: "Art Skill",
+    description: "Default visual style guidance for image and video prompts.",
+    sourceText:
+      "Keep visual direction specific, inspectable, and production-ready. Describe palette, lighting, composition, texture, and continuity anchors. Avoid vague mood-only style words when a concrete camera or art direction choice is possible.",
+  },
+  {
+    kind: "production",
+    slug: "production-default",
+    displayName: "Production Skill",
+    description: "Default production constraints for repeatable short-video generation.",
+    sourceText:
+      "Favor repeatable shot instructions that survive provider changes. Keep prompts concise enough for model limits, call out required references, and preserve export-facing details such as duration, sequence order, subtitles, and packaging notes.",
+  },
+  {
+    kind: "agent",
+    slug: "agent-default",
+    displayName: "Agent Skill",
+    description: "Default rules for conversational canvas operations.",
+    sourceText:
+      "Canvas agent actions must be explicit, reversible, and auditable. Prefer creating or updating existing canvas records over hidden state. When a user asks for structural changes, keep the action summary tied to concrete node or edge ids.",
+  },
+  {
+    kind: "ai-image",
+    slug: "ai-image-default",
+    displayName: "AI Image Preset",
+    description: "Default image-generation preset for reference-aware visual prompts.",
+    sourceText:
+      "Describe the subject, camera framing, lighting, material details, and reference usage in concrete terms. Keep style guidance inspectable and avoid vague atmosphere-only prompts.",
+  },
+  {
+    kind: "ai-text",
+    slug: "ai-text-default",
+    displayName: "AI Text Preset",
+    description: "Default text-generation preset for story, caption, and prompt expansion nodes.",
+    sourceText:
+      "Use upstream context explicitly. Preserve named entities, causal order, and production intent. Return concise text that can be reused by downstream visual or script nodes.",
+  },
+  {
+    kind: "ai-video",
+    slug: "ai-video-default",
+    displayName: "AI Video Preset",
+    description: "Default video-generation preset for motion, continuity, and provider-ready prompts.",
+    sourceText:
+      "Specify motion, camera movement, temporal continuity, duration expectations, and reference media usage. Keep each instruction compatible with short video generation and editor export.",
+  },
+  {
+    kind: "ai-audio",
+    slug: "ai-audio-default",
+    displayName: "AI Audio Preset",
+    description: "Default audio-generation preset for voice, narration, and background sound direction.",
+    sourceText:
+      "Describe voice character, pacing, emotion, environment, and timing. Keep audio direction reusable by TTS, narration, ambience, and shot-level sound references.",
+  },
+];
+
 const CODE_LIKE_PATTERNS: Array<{ pattern: RegExp; message: string }> = [
   { pattern: /\bexport\s+default\b/i, message: "ES module exports are not allowed in skill text" },
   { pattern: /\bimport\s+.+\s+from\b/i, message: "Imports are not allowed in skill text" },
@@ -115,11 +187,50 @@ function defaultSkillRoots(): string[] {
   ];
 }
 
+function defaultTemplateKey(template: Pick<DefaultSkillTemplate, "kind" | "slug">): string {
+  return `${template.kind}:${template.slug}`;
+}
+
+function mergeBuiltInDefaultTemplates(templates: readonly DefaultSkillTemplate[]): DefaultSkillTemplate[] {
+  const byKey = new Map(templates.map((template) => [defaultTemplateKey(template), template]));
+  for (const template of BUILT_IN_DEFAULT_SKILL_TEMPLATES) {
+    if (!byKey.has(defaultTemplateKey(template))) {
+      byKey.set(defaultTemplateKey(template), template);
+    }
+  }
+  return Array.from(byKey.values());
+}
+
+function summarizeSourceText(sourceText: string): string {
+  const compact = sourceText.replace(/\s+/g, " ").trim();
+  return compact.length > 180 ? `${compact.slice(0, 177).trim()}...` : compact;
+}
+
+function skillTemplateIndexStatus(input: {
+  description: string | null;
+  enabled: boolean;
+  activeVersion?: SkillTemplateVersionSummary;
+}): SkillTemplateSummary["indexStatus"] {
+  if (!input.enabled) {
+    return "disabled";
+  }
+  if (input.activeVersion?.status === "invalid") {
+    return "invalid_source";
+  }
+  if (!input.description?.trim()) {
+    return "missing_description";
+  }
+  return "ready";
+}
+
 @Injectable()
 export class SkillTemplatesService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async listSkillTemplates(projectId: string): Promise<SkillTemplateListResult> {
+  async listSkillTemplates(
+    projectId: string,
+    filters: ListSkillTemplatesInput = {},
+  ): Promise<SkillTemplateListResult> {
     await this.ensureProject(projectId);
     await this.ensureDefaultTemplates(projectId);
     const rows = (await this.skillPrisma().skillTemplate.findMany({
@@ -128,7 +239,7 @@ export class SkillTemplatesService {
       orderBy: [{ kind: "asc" }, { displayName: "asc" }],
     })) as SkillTemplateModel[];
 
-    return { templates: rows.map((row) => this.toSummary(row)) };
+    return { templates: filterSkillTemplateSummaries(rows.map((row) => this.toSummary(row)), filters) };
   }
 
   async updateSkillTemplateSource(
@@ -193,6 +304,7 @@ export class SkillTemplatesService {
   async activePromptContexts(
     projectId: string,
     kinds: readonly SkillTemplateKind[] = SKILL_TEMPLATE_KINDS,
+    filters: Omit<ListSkillTemplatesInput, "triggerMode"> = {},
   ): Promise<SkillTemplatePromptContext[]> {
     await this.ensureProject(projectId);
     await this.ensureDefaultTemplates(projectId);
@@ -203,18 +315,23 @@ export class SkillTemplatesService {
       orderBy: [{ kind: "asc" }, { displayName: "asc" }],
     })) as SkillTemplateModel[];
 
-    return rows
-      .filter((row) => allowed.has(this.requireSkillKind(row.kind)))
-      .map((row) => {
-        const version = (row.versions ?? []).find((candidate) => candidate.id === row.activeVersionId);
+    return filterSkillTemplateSummaries(
+      rows.filter((row) => allowed.has(this.requireSkillKind(row.kind))).map((row) => this.toSummary(row)),
+      filters,
+    )
+      .map((summary) => {
+        const version = summary.versions.find((candidate) => candidate.id === summary.activeVersionId);
         if (!version || version.status !== "valid") {
           return undefined;
         }
         return {
-          id: row.id,
-          kind: this.requireSkillKind(row.kind),
-          slug: row.slug,
-          displayName: row.displayName,
+          id: summary.id,
+          kind: summary.kind,
+          slug: summary.slug,
+          displayName: summary.displayName,
+          summary: summary.activeSummary ?? summarizeSourceText(version.sourceText),
+          presetCategories: summary.presetCategories,
+          agentRoles: summary.agentRoles,
           sourceText: version.sourceText,
           versionId: version.id,
           version: version.version,
@@ -279,13 +396,13 @@ export class SkillTemplatesService {
             .map((entry) => this.readDefaultTemplate(join(root, entry))),
         );
         if (templates.length > 0) {
-          return templates;
+          return mergeBuiltInDefaultTemplates(templates);
         }
       } catch {
         // Try the next plausible root.
       }
     }
-    throw new Error("No default skill templates were found in data/skills");
+    return [...BUILT_IN_DEFAULT_SKILL_TEMPLATES];
   }
 
   private async readDefaultTemplate(path: string): Promise<DefaultSkillTemplate> {
@@ -393,16 +510,27 @@ export class SkillTemplatesService {
   }
 
   private toSummary(row: SkillTemplateModel): SkillTemplateSummary {
+    const kind = this.requireSkillKind(row.kind);
+    const versions = (row.versions ?? []).map((version) => this.toVersionSummary(version, row.activeVersionId));
+    const activeVersion = versions.find((version) => version.id === row.activeVersionId);
+    const metadata = skillTemplateMetadata(kind);
     return {
       id: row.id,
       projectId: row.projectId,
-      kind: this.requireSkillKind(row.kind),
+      kind,
       slug: row.slug,
       displayName: row.displayName,
       ...(row.description ? { description: row.description } : {}),
       enabled: row.enabled,
+      ...metadata,
+      indexStatus: skillTemplateIndexStatus({
+        description: row.description,
+        enabled: row.enabled,
+        activeVersion,
+      }),
+      ...(activeVersion ? { activeSummary: summarizeSourceText(activeVersion.sourceText) } : {}),
       ...(row.activeVersionId ? { activeVersionId: row.activeVersionId } : {}),
-      versions: (row.versions ?? []).map((version) => this.toVersionSummary(version, row.activeVersionId)),
+      versions,
       createdAt: toIsoString(row.createdAt),
       updatedAt: toIsoString(row.updatedAt),
     };

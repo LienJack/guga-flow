@@ -1203,12 +1203,24 @@ export class GenerationService {
     }
   }
 
+  private composeShotPromptForGeneration(
+    projectId: string,
+    shotNodeId: string,
+    input: CreateGenerationJobInput,
+  ) {
+    const skillTemplateIds = uniqueStrings(input.skillTemplateIds ?? []);
+    if (skillTemplateIds.length === 0) {
+      return this.promptService.composeShotPrompt(projectId, shotNodeId);
+    }
+    return this.promptService.composeShotPrompt(projectId, shotNodeId, { skillTemplateIds });
+  }
+
   private async buildShotToImageInput(
     projectId: string,
     shotNodeId: string,
     input: CreateGenerationJobInput,
   ): Promise<ShotToImageJobInput> {
-    const composition = await this.promptService.composeShotPrompt(projectId, shotNodeId);
+    const composition = await this.composeShotPromptForGeneration(projectId, shotNodeId, input);
     const providerSettings = await this.resolveImageProviderSettings(projectId, input);
     const referenceLimit = providerSettings.provider.supportsReferenceImages
       ? providerSettings.provider.maxReferenceImages
@@ -1345,7 +1357,7 @@ export class GenerationService {
 
     const parentShot = this.findParentShot(canvas, imageNode);
     const parentComposition = parentShot
-      ? await this.promptService.composeShotPrompt(projectId, parentShot.id)
+      ? await this.composeShotPromptForGeneration(projectId, parentShot.id, input)
       : undefined;
     const generationSettings =
       parentComposition?.resolvedGenerationSettings ??
@@ -1410,7 +1422,7 @@ export class GenerationService {
 
     const parentShot = this.findParentShot(canvas, imageNode);
     const parentComposition = parentShot
-      ? await this.promptService.composeShotPrompt(projectId, parentShot.id)
+      ? await this.composeShotPromptForGeneration(projectId, parentShot.id, input)
       : undefined;
     const generationSettings =
       parentComposition?.resolvedGenerationSettings ??

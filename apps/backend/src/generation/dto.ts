@@ -60,6 +60,13 @@ export class CreateGenerationJobDto implements CreateGenerationJobInput {
   refinementPrompt?: string;
 
   @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @IsString({ each: true })
+  @MaxLength(160, { each: true })
+  skillTemplateIds?: string[];
+
+  @IsOptional()
   @IsString()
   @MaxLength(80)
   provider?: AnyImageProviderId;

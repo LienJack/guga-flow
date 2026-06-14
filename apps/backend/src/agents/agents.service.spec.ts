@@ -246,6 +246,9 @@ function createSkillTemplatesServiceMock() {
         kind: "agent" as const,
         slug: "agent-default",
         displayName: "Agent Skill",
+        summary: "Prefer auditable node edits.",
+        presetCategories: ["agent" as const],
+        agentRoles: ["universal" as const, "supervision" as const],
         sourceText: "Prefer auditable node edits.",
         versionId: "skill_version_1",
         version: 1,
@@ -404,7 +407,20 @@ describe("AgentsService", () => {
         }),
       }),
     });
-    expect(skillTemplatesService.activePromptContexts).toHaveBeenCalledWith("project_1");
+    expect(skillTemplatesService.activePromptContexts).toHaveBeenCalledWith(
+      "project_1",
+      [
+        "story",
+        "art",
+        "production",
+        "agent",
+        "ai-image",
+        "ai-text",
+        "ai-video",
+        "ai-audio",
+      ],
+      { agentRole: "universal" },
+    );
     expect(canvasService.createNode).toHaveBeenCalledWith(
       "project_1",
       expect.objectContaining({

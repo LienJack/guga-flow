@@ -1042,6 +1042,10 @@ describe("frontend api client", () => {
           slug: "art-default",
           displayName: "Art Skill",
           enabled: true,
+          presetCategories: ["ai-image"],
+          triggerModes: ["insert_prompt", "direct_generate"],
+          agentRoles: ["asset", "video_prompt"],
+          indexStatus: "ready",
           versions: [],
           createdAt: "2026-06-13T00:00:00.000Z",
           updatedAt: "2026-06-13T00:00:00.000Z",
@@ -1050,7 +1054,13 @@ describe("frontend api client", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await listSkillTemplates("project_1");
+    await listSkillTemplates("project_1", {
+      category: "ai-image",
+      query: "cyan",
+      agentRole: "asset",
+      triggerMode: "insert_prompt",
+      templateIds: ["skill_1"],
+    });
     await updateSkillTemplateSource("project_1", "art", "art-default", {
       sourceText: "Use crisp cyan highlights.",
     });
@@ -1060,7 +1070,7 @@ describe("frontend api client", () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "http://localhost:3002/api/v1/projects/project_1/skills",
+      "http://localhost:3002/api/v1/projects/project_1/skills?query=cyan&category=ai-image&triggerMode=insert_prompt&agentRole=asset&templateIds=skill_1",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(

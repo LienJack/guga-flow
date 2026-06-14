@@ -1127,6 +1127,7 @@ export interface CreateGenerationJobInput extends ImageGenerationSettings, Video
   operation: Phase8GenerationOperation;
   sourceNodeId: string;
   refinementPrompt?: string;
+  skillTemplateIds?: string[];
   forceFailure?: boolean;
 }
 

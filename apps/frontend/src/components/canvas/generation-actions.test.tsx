@@ -176,7 +176,7 @@ describe("GenerationActions", () => {
         aspectRatio: "9:16",
         count: 3,
         providerParams: { quality: "high" },
-      }),
+      }, undefined, "", ["skill_ai_image"]),
     ).toEqual({
       operation: "shot_to_image",
       sourceNodeId: "shot_1",
@@ -185,6 +185,7 @@ describe("GenerationActions", () => {
       aspectRatio: "9:16",
       count: 3,
       providerParams: { quality: "high" },
+      skillTemplateIds: ["skill_ai_image"],
     });
 
     expect(

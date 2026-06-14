@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import {
+  SKILL_TEMPLATE_KINDS,
   composeShotPrompt as composeShotPromptCore,
   normalizeGenerationCreativeSettings,
   type ShotPromptCompositionResult,
@@ -45,8 +46,13 @@ export class PromptService {
       throw new NotFoundException("Project not found");
     }
 
+    const selectedTemplateIds = uniqueStrings(input.skillTemplateIds ?? []);
     const skillTemplates = this.skillTemplatesService
-      ? await this.skillTemplatesService.activePromptContexts(projectId, ["story", "art", "production"])
+      ? await this.skillTemplatesService.activePromptContexts(
+          projectId,
+          selectedTemplateIds.length ? SKILL_TEMPLATE_KINDS : ["story", "art", "production"],
+          selectedTemplateIds.length ? { templateIds: selectedTemplateIds } : {},
+        )
       : [];
 
     return composeShotPromptCore({
@@ -57,7 +63,12 @@ export class PromptService {
       globalStylePrompt: input.globalStylePrompt,
       projectGenerationSettings: normalizeGenerationCreativeSettings(project.generationSettingsJson),
       skillTemplates,
+      skillTemplateIds: selectedTemplateIds,
       modelPromptSuffix: input.modelPromptSuffix,
     });
   }
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim()).map((value) => value.trim())));
 }

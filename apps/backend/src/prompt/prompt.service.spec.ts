@@ -57,6 +57,9 @@ function createSkillTemplatesServiceMock() {
         kind: "art" as const,
         slug: "art-default",
         displayName: "Art Skill",
+        summary: "Use controlled cyan contrast.",
+        presetCategories: ["ai-image" as const],
+        agentRoles: ["asset" as const, "video_prompt" as const],
         sourceText: "Use controlled cyan contrast from the active art skill.",
         versionId: "skill_version_1",
         version: 1,
@@ -97,7 +100,7 @@ describe("PromptService", () => {
       "story",
       "art",
       "production",
-    ]);
+    ], {});
     expect(result.sourceNodeIds).toMatchObject({
       shotNodeId: "shot_1",
       sceneNodeId: "scene_1",
@@ -162,6 +165,27 @@ describe("PromptService", () => {
     expect(result.image.prompt).toContain("single lantern in rain");
     expect(result.missingContext.map((item) => item.kind)).toEqual(
       expect.arrayContaining(["scene", "character", "location"]),
+    );
+  });
+
+  it("loads explicitly selected skill templates for prompt preview", async () => {
+    await service.composeShotPrompt("project_1", "shot_1", {
+      skillTemplateIds: ["skill_ai_image"],
+    });
+
+    expect(skillTemplatesService.activePromptContexts).toHaveBeenLastCalledWith(
+      "project_1",
+      [
+        "story",
+        "art",
+        "production",
+        "agent",
+        "ai-image",
+        "ai-text",
+        "ai-video",
+        "ai-audio",
+      ],
+      { templateIds: ["skill_ai_image"] },
     );
   });
 

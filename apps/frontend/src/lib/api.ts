@@ -67,6 +67,7 @@ import type {
   LlmProviderCatalogResult,
   LoginInput,
   LoginResult,
+  ListSkillTemplatesInput,
   LogoutResult,
   VideoProviderCatalogResult,
   ProviderConfigUpdateResult,
@@ -932,8 +933,28 @@ export function disableProgrammableProvider(
   );
 }
 
-export function listSkillTemplates(projectId: string): Promise<SkillTemplateListResult> {
-  return requestJson<SkillTemplateListResult>(`/projects/${projectId}/skills`);
+export function listSkillTemplates(
+  projectId: string,
+  filters: ListSkillTemplatesInput = {},
+): Promise<SkillTemplateListResult> {
+  const params = new URLSearchParams();
+  if (filters.query) {
+    params.set("query", filters.query);
+  }
+  if (filters.category) {
+    params.set("category", filters.category);
+  }
+  if (filters.triggerMode) {
+    params.set("triggerMode", filters.triggerMode);
+  }
+  if (filters.agentRole) {
+    params.set("agentRole", filters.agentRole);
+  }
+  if (filters.templateIds?.length) {
+    params.set("templateIds", filters.templateIds.join(","));
+  }
+  const query = params.toString();
+  return requestJson<SkillTemplateListResult>(`/projects/${projectId}/skills${query ? `?${query}` : ""}`);
 }
 
 export function updateSkillTemplateSource(
