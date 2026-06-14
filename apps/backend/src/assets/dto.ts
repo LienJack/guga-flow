@@ -6,13 +6,19 @@ import {
   ASSET_TYPES,
   type AssetBatchInput,
   type AssetCollectionKind,
+  type AssetMaintenanceInput,
   type AssetPurpose,
   type AssetType,
   type EditAssetInput,
+  type ImportLocalAssetInput,
+  type ImportRemoteAssetInput,
+  type UploadableAssetMimeType,
 } from "@guga-flow/shared-types";
+import { UPLOADABLE_ASSET_MIME_TYPES } from "@guga-flow/shared-types";
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsObject,
@@ -27,6 +33,44 @@ export class UploadAssetDto {
   @IsOptional()
   @IsIn(ASSET_PURPOSES)
   purpose?: AssetPurpose;
+}
+
+export class ImportRemoteAssetDto implements ImportRemoteAssetInput {
+  @IsString()
+  @MaxLength(2000)
+  url!: string;
+
+  @IsOptional()
+  @IsIn(ASSET_PURPOSES)
+  purpose?: AssetPurpose;
+}
+
+export class ImportLocalAssetDto implements ImportLocalAssetInput {
+  @IsString()
+  @MaxLength(1000)
+  storageKey!: string;
+
+  @IsIn(UPLOADABLE_ASSET_MIME_TYPES)
+  mimeType!: UploadableAssetMimeType;
+
+  @IsOptional()
+  @IsIn(ASSET_PURPOSES)
+  purpose?: AssetPurpose;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  originalFilename?: string;
+}
+
+export class AssetMaintenanceDto implements AssetMaintenanceInput {
+  @IsBoolean()
+  dryRun!: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  confirm?: string;
 }
 
 export class AssetListQueryDto {

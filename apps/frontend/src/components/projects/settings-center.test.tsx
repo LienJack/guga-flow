@@ -12,13 +12,20 @@ import { SettingsCenter } from "./settings-center";
 import { I18nProvider } from "../../lib/i18n";
 
 vi.mock("../../lib/api", () => ({
+  cleanupAssets: vi.fn(),
   exportProjectSettings: vi.fn(),
+  exportProjectPackage: vi.fn(),
   getAgentDeployment: vi.fn(async () => agentDeployment),
   getProject: vi.fn(async () => projectDetail),
+  getProjectRecoverySnapshot: vi.fn(),
   getProjectSettingsSummary: vi.fn(async () => settingsSummary),
   getProviderManagement: vi.fn(async () => providerManagement),
+  importLocalAsset: vi.fn(),
+  importProjectPackage: vi.fn(),
+  importRemoteAsset: vi.fn(),
   listProgrammableProviders: vi.fn(async () => ({ providers: [] })),
   listSkillTemplates: vi.fn(async () => ({ templates: skillTemplates })),
+  validateProjectPackageImport: vi.fn(),
   validateProjectSettingsImport: vi.fn(),
   activateProgrammableProviderVersion: vi.fn(),
   activateSkillTemplateVersion: vi.fn(),
@@ -264,6 +271,10 @@ describe("SettingsCenter", () => {
     expect(html).toContain("Cold open style pack");
     expect(html).toContain("Export JSON");
     expect(html).toContain("Import payload");
+    expect(html).toContain("Package");
+    expect(html).toContain("Asset maintenance");
+    expect(html).toContain("Remote URL");
+    expect(html).toContain("Dry run");
     expect(html).toContain("Total assets");
     expect(html).toContain("audio");
     expect(html).toContain("Version");
@@ -290,6 +301,8 @@ describe("SettingsCenter", () => {
     expect(html).toContain("Agent 部署");
     expect(html).toContain("导出 JSON");
     expect(html).toContain("导入载荷");
+    expect(html).toContain("资产维护");
+    expect(html).toContain("远程 URL");
     expect(html).toContain("资产总数");
     expect(html).toContain("Visual manual");
     expect(html).toContain("Image 2");

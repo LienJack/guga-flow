@@ -56,6 +56,7 @@ import {
   getProjectLlmProviderCatalog,
   getProjectVideoProviderCatalog,
   batchAssets,
+  cleanupAssets,
   createAssetCollection,
   createAssetTag,
   listAssetCollections,
@@ -67,7 +68,9 @@ import {
   importStoryboardToCanvas,
   importProjectPackage,
   importCanvasFragment,
+  importLocalAsset,
   importNovelSource,
+  importRemoteAsset,
   importScriptAssets,
   listAssets,
   listAssetTags,
@@ -500,6 +503,18 @@ describe("frontend api client", () => {
       action: "add_tags",
       tagIds: ["tag_1"],
     });
+    await importRemoteAsset("project_1", {
+      url: "https://cdn.example.com/hero.png?token=hidden",
+      purpose: "uploaded",
+    });
+    await importLocalAsset("project_1", {
+      storageKey: "imports/voice.mp3",
+      mimeType: "audio/mpeg",
+    });
+    await cleanupAssets("project_1", {
+      dryRun: false,
+      confirm: "DELETE_UNREFERENCED_ASSETS",
+    });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -541,6 +556,39 @@ describe("frontend api client", () => {
           assetIds: ["asset_1"],
           action: "add_tags",
           tagIds: ["tag_1"],
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "http://localhost:3002/api/v1/projects/project_1/assets/import-url",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          url: "https://cdn.example.com/hero.png?token=hidden",
+          purpose: "uploaded",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      "http://localhost:3002/api/v1/projects/project_1/assets/import-local",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          storageKey: "imports/voice.mp3",
+          mimeType: "audio/mpeg",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      9,
+      "http://localhost:3002/api/v1/projects/project_1/assets/maintenance/cleanup",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          dryRun: false,
+          confirm: "DELETE_UNREFERENCED_ASSETS",
         }),
       }),
     );

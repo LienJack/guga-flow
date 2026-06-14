@@ -19,6 +19,8 @@ import {
   type AssetDetail,
   type AssetListFilters,
   type AssetListItem,
+  type AssetMaintenanceInput,
+  type AssetMaintenanceResult,
   type AssetMediaInfo,
   type AssetMediaMetadata,
   type AssetPromptMetadata,
@@ -32,12 +34,16 @@ import {
   type EditAssetResult,
   type EditorExportPackageOutput,
   type GeneratedMediaProviderOutput,
+  type ImportedAssetResult,
+  type ImportLocalAssetInput,
+  type ImportRemoteAssetInput,
   type MediaMetadataJobOutput,
   type MediaMetadataItemOutput,
   type UploadableAssetMimeType,
 } from "@guga-flow/shared-types";
 import { EDITOR_PACKAGE_MIME_TYPE } from "@guga-flow/shared-types";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import path from "node:path";
 
 import { Prisma } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
@@ -394,6 +400,161 @@ export class AssetsService {
     return this.toAssetRecord(asset);
   }
 
+  async importRemoteAsset(
+    projectId: string,
+    input: ImportRemoteAssetInput,
+  ): Promise<ImportedAssetResult> {
+    await this.ensureProjectExists(projectId);
+    const parsedUrl = this.validateRemoteImportUrl(input.url);
+    const canonicalUrl = canonicalRemoteUrl(parsedUrl);
+    const sourceUrlHash = sha256String(canonicalUrl);
+    const existingByUrl = await this.findExistingImportedAsset(projectId, { sourceUrlHash });
+    if (existingByUrl) {
+      return { asset: this.toAssetRecord(existingByUrl), deduplicated: true };
+    }
+
+    const response = await this.fetchImpl(parsedUrl);
+    if (!response.ok) {
+      throw new BadRequestException(`Remote asset download failed with ${response.status}`);
+    }
+    const mimeType = this.responseUploadableMimeType(response.headers.get("content-type"));
+    this.assertResponseContentLength(response.headers.get("content-length"), "Remote asset is too large");
+    const buffer = this.validateGeneratedBytes(Buffer.from(await response.arrayBuffer()));
+    const contentHash = sha256Buffer(buffer);
+    const existingByHash = await this.findExistingImportedAsset(projectId, { contentHash });
+    if (existingByHash) {
+      return { asset: this.toAssetRecord(existingByHash), deduplicated: true };
+    }
+
+    const filename = remoteFilename(parsedUrl, mimeType);
+    const stored = await this.storage.putObject({
+      projectId,
+      originalFilename: filename,
+      mimeType,
+      buffer,
+    });
+    const asset = await this.prisma.asset.create({
+      data: {
+        projectId,
+        type: assetTypeForMime(mimeType),
+        purpose: input.purpose ?? "uploaded",
+        storageKey: stored.storageKey,
+        mimeType,
+        originalFilename: filename,
+        sizeBytes: stored.sizeBytes,
+        metadataJson: {
+          previewKind: previewKindForMime(mimeType),
+          importSource: "remote_url",
+          sourceUrl: canonicalUrl,
+          sourceUrlHash,
+          contentHash,
+          importedAt: new Date().toISOString(),
+          safety: { ssrfChecked: true },
+        },
+      },
+    });
+
+    return { asset: this.toAssetRecord(asset), deduplicated: false };
+  }
+
+  async importLocalAsset(
+    projectId: string,
+    input: ImportLocalAssetInput,
+  ): Promise<ImportedAssetResult> {
+    await this.ensureProjectExists(projectId);
+    const storageKey = normalizeControlledStorageKey(input.storageKey);
+    if (!isUploadableMimeType(input.mimeType)) {
+      throw new BadRequestException("Local asset mime type is unsupported");
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = this.validateGeneratedBytes(await this.storage.readObject(storageKey));
+    } catch {
+      throw new BadRequestException("Local asset source is not available");
+    }
+    const contentHash = sha256Buffer(buffer);
+    const existing = await this.findExistingImportedAsset(projectId, { contentHash });
+    if (existing) {
+      return { asset: this.toAssetRecord(existing), deduplicated: true };
+    }
+
+    const originalFilename = input.originalFilename?.trim() || path.posix.basename(storageKey);
+    const stored = await this.storage.putObject({
+      projectId,
+      originalFilename,
+      mimeType: input.mimeType,
+      buffer,
+    });
+    const asset = await this.prisma.asset.create({
+      data: {
+        projectId,
+        type: assetTypeForMime(input.mimeType),
+        purpose: input.purpose ?? "uploaded",
+        storageKey: stored.storageKey,
+        mimeType: input.mimeType,
+        originalFilename,
+        sizeBytes: stored.sizeBytes,
+        metadataJson: {
+          previewKind: previewKindForMime(input.mimeType),
+          importSource: "local_storage_key",
+          sourceStorageKeyHash: sha256String(storageKey),
+          contentHash,
+          importedAt: new Date().toISOString(),
+          safety: { storageRootChecked: true },
+        },
+      },
+    });
+
+    return { asset: this.toAssetRecord(asset), deduplicated: false };
+  }
+
+  async cleanupAssets(
+    projectId: string,
+    input: AssetMaintenanceInput,
+  ): Promise<AssetMaintenanceResult> {
+    await this.ensureProjectExists(projectId);
+    const assets = await this.libraryPrisma().asset.findMany({
+      where: { projectId },
+      orderBy: { createdAt: "asc" },
+    }) as AssetModel[];
+    const references = await this.assetReferenceSummaries(projectId, assets.map((asset) => asset.id));
+    const unreferenced = references.filter((reference) => !reference.nodeIds.length && !reference.jobIds.length);
+    const summary = {
+      totalAssets: assets.length,
+      referencedAssets: assets.length - unreferenced.length,
+      unreferencedAssets: unreferenced.length,
+      candidateAssetIds: unreferenced.map((reference) => reference.assetId),
+    };
+
+    if (input.dryRun) {
+      return { summary };
+    }
+    if (input.confirm !== "DELETE_UNREFERENCED_ASSETS") {
+      throw new BadRequestException("Asset cleanup requires confirmation");
+    }
+
+    const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
+    for (const assetId of summary.candidateAssetIds) {
+      const asset = assetsById.get(assetId);
+      if (asset) {
+        await this.storage.deleteObject(asset.storageKey);
+      }
+    }
+    if (summary.candidateAssetIds.length > 0) {
+      await this.libraryPrisma().asset.deleteMany({
+        where: { projectId, id: { in: summary.candidateAssetIds } },
+      });
+    }
+
+    return {
+      summary: {
+        ...summary,
+        deletedAssetIds: summary.candidateAssetIds,
+      },
+    };
+  }
+
   async createGeneratedAsset(
     projectId: string,
     input: CreateGeneratedAssetInput,
@@ -503,8 +664,57 @@ export class AssetsService {
     if (!response.ok) {
       throw new BadRequestException(`Generated asset remote download failed with ${response.status}`);
     }
+    this.assertResponseContentLength(response.headers.get("content-length"), "Generated asset is too large");
 
     return this.validateGeneratedBytes(Buffer.from(await response.arrayBuffer()));
+  }
+
+  private validateRemoteImportUrl(remoteUrl: string): URL {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(remoteUrl);
+    } catch {
+      throw new BadRequestException("Remote asset URL is invalid");
+    }
+    if (parsedUrl.protocol !== "https:") {
+      throw new BadRequestException("Remote asset URL must use https");
+    }
+    if (isBlockedRemoteHost(parsedUrl.hostname)) {
+      throw new BadRequestException("Remote asset URL host is not allowed");
+    }
+    return parsedUrl;
+  }
+
+  private responseUploadableMimeType(value: string | null): UploadableAssetMimeType {
+    const mimeType = value?.split(";")[0]?.trim().toLowerCase() ?? "";
+    if (!isUploadableMimeType(mimeType)) {
+      throw new BadRequestException("Remote asset mime type is unsupported");
+    }
+    return mimeType;
+  }
+
+  private assertResponseContentLength(value: string | null, message: string): void {
+    const contentLength = Number(value);
+    if (Number.isFinite(contentLength) && contentLength > MAX_UPLOAD_BYTES) {
+      throw new BadRequestException(message);
+    }
+  }
+
+  private async findExistingImportedAsset(
+    projectId: string,
+    hashes: { sourceUrlHash?: string; contentHash?: string },
+  ): Promise<AssetModel | undefined> {
+    const assets = await this.prisma.asset.findMany({
+      where: { projectId },
+      orderBy: { createdAt: "asc" },
+    }) as AssetModel[];
+    return assets.find((asset) => {
+      const metadata = dataObject(asset.metadataJson);
+      return (
+        (hashes.sourceUrlHash && metadata.sourceUrlHash === hashes.sourceUrlHash) ||
+        (hashes.contentHash && metadata.contentHash === hashes.contentHash)
+      );
+    });
   }
 
   private validateGeneratedBytes(buffer: Buffer): Buffer {
@@ -1096,6 +1306,64 @@ function isBlockedRemoteHost(hostname: string): boolean {
 
   const private172Match = /^172\.(1[6-9]|2\d|3[0-1])\./.exec(normalized);
   return Boolean(private172Match);
+}
+
+function canonicalRemoteUrl(parsedUrl: URL): string {
+  return `${parsedUrl.origin}${parsedUrl.pathname}`;
+}
+
+function remoteFilename(parsedUrl: URL, mimeType: UploadableAssetMimeType): string {
+  const basename = path.posix.basename(parsedUrl.pathname);
+  if (basename && basename !== "/" && basename.includes(".")) {
+    return basename;
+  }
+  return `remote-asset.${extensionForUploadMime(mimeType)}`;
+}
+
+function normalizeControlledStorageKey(storageKey: string): string {
+  const trimmed = storageKey.trim();
+  if (!trimmed || path.isAbsolute(trimmed) || /^[A-Za-z]:[\\/]/.test(trimmed)) {
+    throw new BadRequestException("Local asset storage key is invalid");
+  }
+  const slashKey = trimmed.replace(/\\/g, "/");
+  if (slashKey.split("/").includes("..")) {
+    throw new BadRequestException("Local asset storage key is outside the allowed root");
+  }
+  const normalized = path.posix.normalize(slashKey);
+  if (normalized.startsWith("../") || normalized === ".." || normalized.startsWith("/")) {
+    throw new BadRequestException("Local asset storage key is outside the allowed root");
+  }
+  return normalized;
+}
+
+function sha256String(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function sha256Buffer(buffer: Buffer): string {
+  return createHash("sha256").update(buffer).digest("hex");
+}
+
+function extensionForUploadMime(mimeType: UploadableAssetMimeType): string {
+  if (mimeType === "image/jpeg") {
+    return "jpg";
+  }
+  if (mimeType === "image/png") {
+    return "png";
+  }
+  if (mimeType === "image/webp") {
+    return "webp";
+  }
+  if (mimeType === "video/mp4") {
+    return "mp4";
+  }
+  if (mimeType === "video/webm") {
+    return "webm";
+  }
+  if (mimeType.startsWith("audio/")) {
+    return mimeType.split("/")[1]?.replace(/^x-/, "") || "audio";
+  }
+  return mimeType === "text/markdown" ? "md" : "txt";
 }
 
 function extensionForMime(mimeType: string): string {

@@ -249,3 +249,37 @@ export interface EditAssetInput {
 export interface EditAssetResult {
   assets: AssetListItem[];
 }
+
+export interface ImportRemoteAssetInput {
+  url: string;
+  purpose?: AssetPurpose;
+}
+
+export interface ImportLocalAssetInput {
+  storageKey: string;
+  mimeType: UploadableAssetMimeType;
+  purpose?: AssetPurpose;
+  originalFilename?: string;
+}
+
+export interface ImportedAssetResult {
+  asset: AssetDetail;
+  deduplicated: boolean;
+}
+
+export interface AssetMaintenanceInput {
+  dryRun: boolean;
+  confirm?: string;
+}
+
+export interface AssetMaintenanceSummary {
+  totalAssets: number;
+  referencedAssets: number;
+  unreferencedAssets: number;
+  candidateAssetIds: string[];
+  deletedAssetIds?: string[];
+}
+
+export interface AssetMaintenanceResult {
+  summary: AssetMaintenanceSummary;
+}

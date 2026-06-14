@@ -8,6 +8,8 @@ describe("i18n", () => {
     expect(translate("zh", "queue.queued", { count: 3 })).toBe("排队 3");
     expect(translate("en", "shortcuts.canvasFit")).toBe("Fit canvas");
     expect(translate("zh", "shortcuts.canvasFit")).toBe("适应画布");
+    expect(translate("en", "maintenance.importedAsset", { assetId: "asset_1" })).toBe("Imported asset_1");
+    expect(translate("zh", "maintenance.importedAsset", { assetId: "asset_1" })).toBe("已导入 asset_1");
   });
 
   it("falls back to English and then the key", () => {

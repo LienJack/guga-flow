@@ -19,7 +19,9 @@ import {
 } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { ProjectGenerationSettingsPanel } from "../canvas/generation-creative-settings-panel";
+import { ProjectPackagePanel } from "../canvas/project-package-panel";
 import { AgentDeploymentSettingsPanel } from "./agent-deployment-settings-panel";
+import { DataMaintenancePanel } from "./data-maintenance-panel";
 import { ProviderSettingsPanel } from "./provider-settings-panel";
 import { ShortcutPreferencesPanel } from "./shortcut-preferences-panel";
 import { SkillTemplateSettingsPanel } from "./skill-template-settings-panel";
@@ -260,6 +262,8 @@ export function SettingsCenter({
               {importState.status ? <span className="generation-status">{importState.status}</span> : null}
             </div>
             {importState.error ? <p className="form-error">{importState.error}</p> : null}
+            <ProjectPackagePanel projectId={projectId} />
+            <DataMaintenancePanel projectId={projectId} />
           </section>
 
           <section id="settings-files" className="settings-center-section">

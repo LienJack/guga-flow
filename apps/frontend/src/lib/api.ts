@@ -5,6 +5,8 @@ import type {
   AssetCollectionRecord,
   AssetListFilters,
   AssetListItem,
+  AssetMaintenanceInput,
+  AssetMaintenanceResult,
   AssetPurpose,
   AssetTagRecord,
   CurrentSessionResult,
@@ -111,6 +113,9 @@ import type {
   SelectProductionTrackVideoResult,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
+  ImportedAssetResult,
+  ImportLocalAssetInput,
+  ImportRemoteAssetInput,
   ImportScriptAssetsInput,
   ImportScriptAssetsResult,
   ImportStoryboardToCanvasInput,
@@ -412,6 +417,26 @@ export function uploadAsset(
   });
 }
 
+export function importRemoteAsset(
+  projectId: string,
+  input: ImportRemoteAssetInput,
+): Promise<ImportedAssetResult> {
+  return requestJson<ImportedAssetResult>(`/projects/${projectId}/assets/import-url`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function importLocalAsset(
+  projectId: string,
+  input: ImportLocalAssetInput,
+): Promise<ImportedAssetResult> {
+  return requestJson<ImportedAssetResult>(`/projects/${projectId}/assets/import-local`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function deleteAsset(projectId: string, assetId: string): Promise<{ deleted: true }> {
   return requestJson<{ deleted: true }>(`/projects/${projectId}/assets/${assetId}`, {
     method: "DELETE",
@@ -451,6 +476,16 @@ export function batchAssets(
   input: AssetBatchInput,
 ): Promise<AssetBatchResult> {
   return requestJson<AssetBatchResult>(`/projects/${projectId}/assets/batch`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function cleanupAssets(
+  projectId: string,
+  input: AssetMaintenanceInput,
+): Promise<AssetMaintenanceResult> {
+  return requestJson<AssetMaintenanceResult>(`/projects/${projectId}/assets/maintenance/cleanup`, {
     method: "POST",
     body: JSON.stringify(input),
   });

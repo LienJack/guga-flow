@@ -1,10 +1,11 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { EDITOR_PACKAGE_MIME_TYPE, type EditorExportPackageOutput } from "@guga-flow/shared-types";
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PrismaService } from "../prisma/prisma.service";
 import { LocalStorageService } from "../storage/local-storage.service";
-import { AssetsService } from "./assets.service";
+import { AssetsService, MAX_UPLOAD_BYTES } from "./assets.service";
 
 const createdAt = new Date("2026-06-12T00:00:00.000Z");
 
@@ -227,6 +228,196 @@ describe("AssetsService", () => {
 
     expect(storage.putObject).not.toHaveBeenCalled();
     expect(prisma.asset.create).not.toHaveBeenCalled();
+  });
+
+  it("imports remote URL assets with safe metadata and dedupes by canonical URL", async () => {
+    fetchImpl.mockResolvedValue(
+      new Response(Buffer.from("remote image"), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    prisma.asset.create.mockResolvedValue(
+      asset({
+        id: "asset_remote_1",
+        storageKey: "project_1/stored-remote.png",
+        originalFilename: "hero.png",
+        metadataJson: { previewKind: "image", importSource: "remote_url" },
+      }),
+    );
+
+    const result = await service.importRemoteAsset("project_1", {
+      url: "https://cdn.example.com/hero.png?token=secret",
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(new URL("https://cdn.example.com/hero.png?token=secret"));
+    expect(storage.putObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project_1",
+        originalFilename: "hero.png",
+        mimeType: "image/png",
+      }),
+    );
+    expect(prisma.asset.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadataJson: expect.objectContaining({
+            sourceUrl: "https://cdn.example.com/hero.png",
+            sourceUrlHash: expect.any(String),
+            contentHash: expect.any(String),
+          }),
+        }),
+      }),
+    );
+    expect(JSON.stringify(prisma.asset.create.mock.calls[0]?.[0])).not.toContain("token=secret");
+    expect(result.deduplicated).toBe(false);
+
+    prisma.asset.findMany.mockResolvedValueOnce([
+      asset({
+        id: "asset_remote_existing",
+        metadataJson: {
+          sourceUrlHash: createHash("sha256")
+            .update("https://cdn.example.com/hero.png")
+            .digest("hex"),
+        },
+      }),
+    ]);
+    fetchImpl.mockClear();
+
+    const duplicate = await service.importRemoteAsset("project_1", {
+      url: "https://cdn.example.com/hero.png?another=secret",
+    });
+
+    expect(duplicate).toMatchObject({ deduplicated: true, asset: { id: "asset_remote_existing" } });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsafe remote imports before creating assets", async () => {
+    await expect(
+      service.importRemoteAsset("project_1", { url: "http://cdn.example.com/hero.png" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.importRemoteAsset("project_1", { url: "https://127.0.0.1/hero.png" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(prisma.asset.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects remote download failures and unsupported remote MIME types", async () => {
+    fetchImpl.mockResolvedValueOnce(new Response("nope", { status: 502 }));
+    await expect(
+      service.importRemoteAsset("project_1", { url: "https://cdn.example.com/broken.png" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    fetchImpl.mockResolvedValueOnce(
+      new Response("binary", {
+        status: 200,
+        headers: { "content-type": "application/octet-stream" },
+      }),
+    );
+    await expect(
+      service.importRemoteAsset("project_1", { url: "https://cdn.example.com/binary.bin" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.asset.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized remote imports before writing storage", async () => {
+    fetchImpl.mockResolvedValueOnce(
+      new Response("too large", {
+        status: 200,
+        headers: {
+          "content-type": "image/png",
+          "content-length": String(MAX_UPLOAD_BYTES + 1),
+        },
+      }),
+    );
+
+    await expect(
+      service.importRemoteAsset("project_1", { url: "https://cdn.example.com/huge.png" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(storage.putObject).not.toHaveBeenCalled();
+    expect(prisma.asset.create).not.toHaveBeenCalled();
+  });
+
+  it("imports local storage-key assets without accepting path traversal", async () => {
+    prisma.asset.create.mockResolvedValue(
+      asset({
+        id: "asset_local_1",
+        originalFilename: "voice.mp3",
+        mimeType: "audio/mpeg",
+        type: "audio",
+        metadataJson: { previewKind: "audio", importSource: "local_storage_key" },
+      }),
+    );
+
+    const result = await service.importLocalAsset("project_1", {
+      storageKey: "imports/voice.mp3",
+      mimeType: "audio/mpeg",
+      originalFilename: "voice.mp3",
+    });
+
+    expect(storage.readObject).toHaveBeenCalledWith("imports/voice.mp3");
+    expect(prisma.asset.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "audio",
+          metadataJson: expect.objectContaining({
+            sourceStorageKeyHash: expect.any(String),
+            contentHash: expect.any(String),
+          }),
+        }),
+      }),
+    );
+    expect(JSON.stringify(prisma.asset.create.mock.calls[0]?.[0])).not.toContain("imports/voice.mp3");
+    expect(result.deduplicated).toBe(false);
+
+    await expect(
+      service.importLocalAsset("project_1", {
+        storageKey: "../secret.png",
+        mimeType: "image/png",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.importLocalAsset("project_1", {
+        storageKey: "imports/../secret.png",
+        mimeType: "image/png",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("summarizes and confirms unreferenced asset cleanup", async () => {
+    prisma.asset.findMany.mockResolvedValue([
+      asset({ id: "asset_1", storageKey: "project_1/asset_1.png" }),
+      asset({ id: "asset_2", storageKey: "project_1/asset_2.png" }),
+    ]);
+    prisma.canvasNode.findMany.mockResolvedValue([
+      { id: "node_1", dataJson: { referenceAssetIds: ["asset_1"] } },
+    ]);
+
+    await expect(service.cleanupAssets("project_1", { dryRun: false })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+
+    const dryRun = await service.cleanupAssets("project_1", { dryRun: true });
+    expect(dryRun.summary).toMatchObject({
+      totalAssets: 2,
+      referencedAssets: 1,
+      unreferencedAssets: 1,
+      candidateAssetIds: ["asset_2"],
+    });
+
+    const cleaned = await service.cleanupAssets("project_1", {
+      dryRun: false,
+      confirm: "DELETE_UNREFERENCED_ASSETS",
+    });
+
+    expect(storage.deleteObject).toHaveBeenCalledWith("project_1/asset_2.png");
+    expect(prisma.asset.deleteMany).toHaveBeenCalledWith({
+      where: { projectId: "project_1", id: { in: ["asset_2"] } },
+    });
+    expect(cleaned.summary.deletedAssetIds).toEqual(["asset_2"]);
   });
 
   it("creates generated mock asset records with placeholder bytes", async () => {

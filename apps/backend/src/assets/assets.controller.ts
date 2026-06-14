@@ -20,10 +20,13 @@ import { memoryStorage } from "multer";
 import { AssetsService, MAX_UPLOAD_BYTES } from "./assets.service";
 import {
   AssetBatchDto,
+  AssetMaintenanceDto,
   AssetListQueryDto,
   CreateAssetCollectionDto,
   CreateAssetTagDto,
   EditAssetDto,
+  ImportLocalAssetDto,
+  ImportRemoteAssetDto,
   UploadAssetDto,
 } from "./dto";
 
@@ -84,6 +87,21 @@ export class AssetsController {
     file: Express.Multer.File,
   ) {
     return this.assetsService.uploadAsset(projectId, file, body);
+  }
+
+  @Post("import-url")
+  importRemoteAsset(@Param("projectId") projectId: string, @Body() body: ImportRemoteAssetDto) {
+    return this.assetsService.importRemoteAsset(projectId, body);
+  }
+
+  @Post("import-local")
+  importLocalAsset(@Param("projectId") projectId: string, @Body() body: ImportLocalAssetDto) {
+    return this.assetsService.importLocalAsset(projectId, body);
+  }
+
+  @Post("maintenance/cleanup")
+  cleanupAssets(@Param("projectId") projectId: string, @Body() body: AssetMaintenanceDto) {
+    return this.assetsService.cleanupAssets(projectId, body);
   }
 
   @Get(":assetId")
