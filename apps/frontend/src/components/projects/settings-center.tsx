@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  ProjectDetail,
   ProjectSettingsExportResult,
   ProjectSettingsSummaryResult,
   ProviderManagementResult,
@@ -12,15 +13,18 @@ import React, { useEffect, useMemo, useState } from "react";
 
 import {
   exportProjectSettings,
+  getProject,
   getProjectSettingsSummary,
   validateProjectSettingsImport,
 } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import { ProjectGenerationSettingsPanel } from "../canvas/generation-creative-settings-panel";
 import { AgentDeploymentSettingsPanel } from "./agent-deployment-settings-panel";
 import { ProviderSettingsPanel } from "./provider-settings-panel";
 import { SkillTemplateSettingsPanel } from "./skill-template-settings-panel";
 
 interface SettingsCenterProps {
+  initialProject?: ProjectDetail;
   initialProgrammableProviders?: ProgrammableProviderDefinitionSummary[];
   initialProviders?: ProviderManagementResult;
   initialSkillTemplates?: SkillTemplateSummary[];
@@ -35,6 +39,7 @@ type PanelState = {
 };
 
 export function SettingsCenter({
+  initialProject,
   initialProgrammableProviders,
   initialProviders,
   initialSkillTemplates,
@@ -42,6 +47,7 @@ export function SettingsCenter({
   projectId,
 }: SettingsCenterProps) {
   const { t } = useI18n();
+  const [project, setProject] = useState<ProjectDetail | null>(initialProject ?? null);
   const [summary, setSummary] = useState<ProjectSettingsSummaryResult | null>(initialSummary ?? null);
   const [exportResult, setExportResult] = useState<ProjectSettingsExportResult | null>(null);
   const [importPayload, setImportPayload] = useState("");
@@ -52,10 +58,11 @@ export function SettingsCenter({
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getProjectSettingsSummary(projectId)
-      .then((result) => {
+    Promise.all([getProjectSettingsSummary(projectId), getProject(projectId)])
+      .then(([result, projectDetail]) => {
         if (!cancelled) {
           setSummary(result);
+          setProject(projectDetail);
           setLoadError(null);
         }
       })
@@ -74,6 +81,22 @@ export function SettingsCenter({
       cancelled = true;
     };
   }, [projectId]);
+
+  function handleProjectUpdated(updated: ProjectDetail) {
+    setProject(updated);
+    setSummary((current) =>
+      current
+        ? {
+            ...current,
+            project: {
+              ...current.project,
+              defaultAspectRatio: updated.defaultAspectRatio,
+              generationSettingsCount: Object.keys(updated.generationSettings ?? {}).length,
+            },
+          }
+        : current,
+    );
+  }
 
   const exportJson = useMemo(
     () => (exportResult ? JSON.stringify(exportResult.export, null, 2) : ""),
@@ -188,6 +211,7 @@ export function SettingsCenter({
                 <dd>{summary.resourceCounts.canvasNodes}</dd>
               </div>
             </dl>
+            <ProjectGenerationSettingsPanel project={project} onProjectUpdated={handleProjectUpdated} />
           </section>
 
           <section id="settings-data" className="settings-center-section">

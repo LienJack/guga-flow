@@ -19,6 +19,14 @@ function createPrismaMock() {
         generationSettingsJson: {
           visualStyle: "export noir",
           aspectRatio: "16:9",
+          visualManual: {
+            artStyle: "export painterly noir",
+            palette: "cyan shadows with amber signal lights",
+          },
+          directorManual: {
+            cameraLanguage: "slow surveillance push-ins",
+            audioNarration: "restrained low narration",
+          },
           subtitle: { label: "Project captions" },
           bgm: { status: "available", assetId: "asset_bgm_1", label: "Main cue" },
           stylePack: { status: "available", assetId: "asset_missing_style", label: "Missing pack" },
@@ -240,6 +248,8 @@ describe("EditorExportsService", () => {
     expect(jobInput.exportPreset).toBe("gif_preview");
     expect(jobInput.sourceEditorExportId).toBe("export_previous");
     expect(jobInput.generationSettings?.effective.visualStyle).toBe("export noir");
+    expect(jobInput.generationSettings?.effective.visualManual?.artStyle).toBe("export painterly noir");
+    expect(jobInput.generationSettings?.effective.directorManual?.cameraLanguage).toBe("slow surveillance push-ins");
     expect(jobInput.generationSettings?.effective.viralReference?.hook).toBe("Manual platform-safe hook");
     expect(jobInput.generationSettings?.effective.continuity?.mode).toBe("one_take");
     expect(jobInput.packagingReferences?.subtitle?.status).toBe("requested_unresolved");

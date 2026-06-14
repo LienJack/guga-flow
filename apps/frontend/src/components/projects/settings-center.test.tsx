@@ -1,4 +1,5 @@
 import type {
+  ProjectDetail,
   ProjectSettingsSummaryResult,
   ProviderManagementResult,
   SkillTemplateSummary,
@@ -13,6 +14,7 @@ import { I18nProvider } from "../../lib/i18n";
 vi.mock("../../lib/api", () => ({
   exportProjectSettings: vi.fn(),
   getAgentDeployment: vi.fn(async () => agentDeployment),
+  getProject: vi.fn(async () => projectDetail),
   getProjectSettingsSummary: vi.fn(async () => settingsSummary),
   getProviderManagement: vi.fn(async () => providerManagement),
   listProgrammableProviders: vi.fn(async () => ({ providers: [] })),
@@ -24,6 +26,7 @@ vi.mock("../../lib/api", () => ({
   disableProgrammableProvider: vi.fn(),
   testProviderConfig: vi.fn(),
   updateAgentDeployment: vi.fn(),
+  updateProject: vi.fn(),
   updateProviderConfig: vi.fn(),
   updateProgrammableProviderSource: vi.fn(),
   updateSkillTemplateSource: vi.fn(),
@@ -112,6 +115,28 @@ const settingsSummary: ProjectSettingsSummaryResult = {
     apiVersion: "v1",
     nodeVersion: "v26.3.0",
     generatedAt: "2026-06-13T00:00:00.000Z",
+  },
+};
+
+const projectDetail: ProjectDetail = {
+  id: "project_1",
+  ownerUserId: "user_1",
+  title: "Rain Night",
+  defaultAspectRatio: "16:9",
+  assetCount: 2,
+  createdAt: "2026-06-13T00:00:00.000Z",
+  updatedAt: "2026-06-13T00:00:00.000Z",
+  generationSettings: {
+    visualStyle: "project cinematic noir",
+    visualManual: {
+      artStyle: "rainy noir storyboard",
+      palette: "cyan shadows and amber signals",
+    },
+    directorManual: {
+      cameraLanguage: "slow push-ins and locked-off surveillance",
+      audioNarration: "low, restrained narration",
+    },
+    stylePack: { status: "requested_unresolved", label: "Cold open style pack" },
   },
 };
 
@@ -220,6 +245,7 @@ describe("SettingsCenter", () => {
     const html = renderToStaticMarkup(
       <SettingsCenter
         projectId="project_1"
+        initialProject={projectDetail}
         initialSummary={settingsSummary}
         initialProviders={providerManagement}
         initialSkillTemplates={skillTemplates}
@@ -231,6 +257,11 @@ describe("SettingsCenter", () => {
     expect(html).toContain("Agent Deployment");
     expect(html).toContain("Prompts and Skills");
     expect(html).toContain("Project Defaults");
+    expect(html).toContain("Visual manual");
+    expect(html).toContain("Director manual");
+    expect(html).toContain("rainy noir storyboard");
+    expect(html).toContain("slow push-ins and locked-off surveillance");
+    expect(html).toContain("Cold open style pack");
     expect(html).toContain("Export JSON");
     expect(html).toContain("Import payload");
     expect(html).toContain("Total assets");
@@ -246,6 +277,7 @@ describe("SettingsCenter", () => {
       <I18nProvider initialLocale="zh">
         <SettingsCenter
           projectId="project_1"
+          initialProject={projectDetail}
           initialSummary={settingsSummary}
           initialProviders={providerManagement}
           initialSkillTemplates={skillTemplates}
@@ -259,6 +291,7 @@ describe("SettingsCenter", () => {
     expect(html).toContain("导出 JSON");
     expect(html).toContain("导入载荷");
     expect(html).toContain("资产总数");
+    expect(html).toContain("Visual manual");
     expect(html).toContain("Image 2");
     expect(html).toContain("Art Skill");
   });
