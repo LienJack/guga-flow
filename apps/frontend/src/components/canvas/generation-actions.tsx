@@ -15,6 +15,7 @@ import type {
   SkillTemplateSummary,
   VideoProviderCatalogItem,
   VideoProviderCatalogResult,
+  VideoProviderMode,
 } from "@guga-flow/shared-types";
 import { filterSkillTemplateSummaries } from "@guga-flow/shared-types";
 import { Ban, FileAudio, FileText, ImagePlus, RotateCcw, Video } from "lucide-react";
@@ -64,7 +65,7 @@ const FALLBACK_VIDEO_PROVIDER: VideoProviderCatalogItem = {
   enabled: true,
   requiresApiKey: false,
   defaultModel: "mock-video-v1",
-  models: [{ id: "mock-video-v1", displayName: "Mock Video v1", default: true }],
+  models: [{ id: "mock-video-v1", displayName: "Mock Video v1", default: true, modes: ["image_to_video"] }],
   supportedModes: ["image_to_video"],
   supportsFirstFrame: true,
   supportsLastFrame: false,
@@ -874,6 +875,8 @@ function VideoGenerationSettings({
   const disabledProviderReasons = providers.filter(
     (provider) => provider.id !== selectedProvider.id && !provider.enabled && provider.disabledReason,
   );
+  const videoModes = effectiveVideoModesForModel(selectedProvider, settings.videoModel);
+  const videoInputLabels = videoReferenceInputLabels(selectedProvider, t);
 
   return (
     <div className="generation-settings">
@@ -1023,6 +1026,17 @@ function VideoGenerationSettings({
           ))}
         </div>
       ) : null}
+      <div className="generation-resolved-settings">
+        <span>
+          {t("generation.videoModes")}: {videoModes.map((mode) => videoProviderModeLabel(mode, t)).join(", ")}
+        </span>
+        <span>
+          {t("generation.videoInputs")}: {videoInputLabels.length ? videoInputLabels.join(", ") : t("generation.none")}
+        </span>
+      </div>
+      {!videoModes.includes("image_to_video") ? (
+        <p className="generation-disabled-note">{t("generation.videoModelUnsupported")}</p>
+      ) : null}
       {!selectedProvider.enabled && selectedProvider.disabledReason ? (
         <p className="generation-disabled-note">{selectedProvider.disabledReason}</p>
       ) : null}
@@ -1165,6 +1179,45 @@ function videoSettingsForProvider(provider: VideoProviderCatalogItem): VideoGene
     resolution: provider.defaultResolution,
     videoProviderParams: defaultVideoProviderParams(provider),
   };
+}
+
+function effectiveVideoModesForModel(
+  provider: VideoProviderCatalogItem,
+  modelId: string,
+): VideoProviderMode[] {
+  const model = provider.models.find((candidate) => candidate.id === modelId);
+  return model?.modes?.length ? model.modes : provider.supportedModes;
+}
+
+function videoProviderModeLabel(
+  mode: VideoProviderMode,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  switch (mode) {
+    case "text_to_video":
+      return t("generation.videoModeText");
+    case "image_to_video":
+      return t("generation.videoModeImage");
+    case "reference_to_video":
+      return t("generation.videoModeReference");
+    case "video_edit":
+      return t("generation.videoModeEdit");
+    default:
+      return mode;
+  }
+}
+
+function videoReferenceInputLabels(
+  provider: VideoProviderCatalogItem,
+  t: ReturnType<typeof useI18n>["t"],
+): string[] {
+  return [
+    provider.supportsFirstFrame ? t("generation.videoInputFirstFrame") : undefined,
+    provider.supportsLastFrame ? t("generation.videoInputLastFrame") : undefined,
+    provider.supportsReferenceImages ? t("generation.videoInputReferenceImages") : undefined,
+    provider.supportsReferenceVideo ? t("generation.videoInputReferenceVideo") : undefined,
+    provider.supportsReferenceAudio ? t("generation.videoInputReferenceAudio") : undefined,
+  ].filter((value): value is string => Boolean(value));
 }
 
 function settingsForProvider(provider: ImageProviderCatalogItem): ImageGenerationFormSettings {

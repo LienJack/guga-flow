@@ -107,10 +107,53 @@ export const VIDEO_REFERENCE_MEDIA_ROLES = [
 ] as const;
 export type VideoReferenceMediaRole = (typeof VIDEO_REFERENCE_MEDIA_ROLES)[number];
 
+export const VIDEO_PROMPT_MODES = [
+  "generic_multi_reference",
+  "first_frame",
+  "first_last_frame",
+  "provider_specific",
+] as const;
+export type VideoPromptMode = (typeof VIDEO_PROMPT_MODES)[number];
+
+export const VIDEO_PROMPT_CHECK_SEVERITIES = ["info", "warning", "error"] as const;
+export type VideoPromptCheckSeverity = (typeof VIDEO_PROMPT_CHECK_SEVERITIES)[number];
+
+export const VIDEO_PROMPT_CHECK_CODES = [
+  "missing_first_frame",
+  "missing_dialogue",
+  "missing_video_prompt",
+  "unsupported_mode",
+  "unsupported_reference_media",
+  "invalid_duration",
+] as const;
+export type VideoPromptCheckCode = (typeof VIDEO_PROMPT_CHECK_CODES)[number];
+
 export interface VideoReferenceMediaInput {
   assetId: string;
   role: VideoReferenceMediaRole;
   sourceNodeId?: string;
+}
+
+export interface VideoPromptCheck {
+  code: VideoPromptCheckCode;
+  severity: VideoPromptCheckSeverity;
+  message: string;
+  sourceNodeId?: string;
+  referenceAssetId?: string;
+  role?: VideoReferenceMediaRole;
+}
+
+export interface VideoPromptDebugSummary {
+  mode: VideoPromptMode;
+  providerMode: VideoProviderMode;
+  provider: string;
+  model?: string;
+  supportedModes: VideoProviderMode[];
+  modelSupportedModes: VideoProviderMode[];
+  referenceMediaRoles: VideoReferenceMediaRole[];
+  debugPartKinds: PromptDebugPart["kind"][];
+  missingContextKinds: PromptMissingContext["kind"][];
+  checks: VideoPromptCheck[];
 }
 
 export const WORKFLOW_RUN_KINDS = ["comfyui", "runninghub"] as const;
@@ -1572,6 +1615,9 @@ export interface ImageToVideoJobInput {
   parentShotTitle?: string;
   referenceAssetIds: string[];
   referenceMedia?: VideoReferenceMediaInput[];
+  videoProviderMode?: VideoProviderMode;
+  videoPromptMode?: VideoPromptMode;
+  videoPromptDebugSummary?: VideoPromptDebugSummary;
   sourceNodeIds: string[];
   provider: string;
   providerVersionId?: string;

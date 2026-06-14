@@ -120,6 +120,56 @@ describe("GenerationActions", () => {
     expect(html).toContain("Refinement prompt");
     expect(html).toContain("Provider");
     expect(html).toContain("Mock Video");
+    expect(html).toContain("Modes");
+    expect(html).toContain("Image to video");
+    expect(html).toContain("Inputs");
+    expect(html).toContain("first frame");
+    expect(html).toContain("reference images");
+  });
+
+  it("renders model-specific video mode availability", () => {
+    const html = renderToStaticMarkup(
+      <GenerationActions
+        generationJobs={[]}
+        projectId="project_1"
+        videoProviderCatalog={{
+          providers: [
+            {
+              id: "seedance",
+              displayName: "Seedance",
+              enabled: true,
+              requiresApiKey: true,
+              defaultModel: "seedance-text-only",
+              models: [
+                { id: "seedance-text-only", displayName: "Seedance Text Only", default: true, modes: ["text_to_video"] },
+                { id: "seedance-image", displayName: "Seedance Image", modes: ["text_to_video", "image_to_video"] },
+              ],
+              supportedModes: ["text_to_video", "image_to_video"],
+              supportsFirstFrame: true,
+              supportsLastFrame: false,
+              supportsReferenceImages: true,
+              maxReferenceImages: 1,
+              supportsReferenceAudio: false,
+              supportsReferenceVideo: false,
+              supportsCancel: true,
+              defaultDurationSeconds: 5,
+              supportedDurationSeconds: [5, 10],
+              defaultResolution: "720p",
+              supportedResolutions: ["720p", "1080p"],
+              defaultAspectRatio: "16:9",
+              supportedAspectRatios: ["9:16", "16:9", "1:1"],
+              parameters: [],
+            },
+          ],
+        }}
+        node={node<ImageNodeData>("image_1", "image", { assetId: "asset_image_1" })}
+      />,
+    );
+
+    expect(html).toContain("Seedance");
+    expect(html).toContain("Text to video");
+    expect(html).not.toContain("Image to video,");
+    expect(html).toContain("Selected model does not support image-to-video.");
   });
 
   it("renders AI Text generation controls with the node prompt", () => {

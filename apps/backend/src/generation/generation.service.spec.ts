@@ -366,7 +366,9 @@ function videoProviderCatalogFixture(seedanceEnabled: boolean): VideoProviderCat
         enabled: true,
         requiresApiKey: false,
         defaultModel: "mock-video-v1",
-        models: [{ id: "mock-video-v1", displayName: "Mock Video v1", default: true }],
+        models: [
+          { id: "mock-video-v1", displayName: "Mock Video v1", default: true, modes: ["image_to_video"] },
+        ],
         supportedModes: ["image_to_video"],
         supportsFirstFrame: true,
         supportsLastFrame: false,
@@ -388,7 +390,19 @@ function videoProviderCatalogFixture(seedanceEnabled: boolean): VideoProviderCat
         disabledReason: seedanceEnabled ? undefined : "Seedance server-side key is not configured",
         requiresApiKey: true,
         defaultModel: "seedance-1-0-pro",
-        models: [{ id: "seedance-1-0-pro", displayName: "Seedance 1.0 Pro", default: true }],
+        models: [
+          {
+            id: "seedance-1-0-pro",
+            displayName: "Seedance 1.0 Pro",
+            default: true,
+            modes: ["text_to_video", "image_to_video"],
+          },
+          {
+            id: "seedance-text-only",
+            displayName: "Seedance Text Only",
+            modes: ["text_to_video"],
+          },
+        ],
         supportedModes: ["text_to_video", "image_to_video"],
         supportsFirstFrame: true,
         supportsLastFrame: false,
@@ -653,6 +667,27 @@ describe("GenerationService", () => {
             { assetId: "asset_image_1", role: "first_frame", sourceNodeId: "image_1" },
             { assetId: "asset_ref_1", role: "reference_image" },
           ],
+          videoProviderMode: "image_to_video",
+          videoPromptMode: "generic_multi_reference",
+          videoPromptDebugSummary: {
+            mode: "generic_multi_reference",
+            providerMode: "image_to_video",
+            provider: "mock-video",
+            model: "mock-video-v1",
+            supportedModes: ["image_to_video"],
+            modelSupportedModes: ["image_to_video"],
+            referenceMediaRoles: ["first_frame", "reference_image"],
+            debugPartKinds: [],
+            missingContextKinds: [],
+            checks: [
+              {
+                code: "missing_dialogue",
+                severity: "warning",
+                message: "The parent Shot has no dialogue; the video prompt will rely on visual/action context.",
+                sourceNodeId: "shot_1",
+              },
+            ],
+          },
           generationSettings: expect.objectContaining({
             effective: expect.objectContaining({
               visualStyle: "project cinematic noir",
@@ -972,6 +1007,15 @@ describe("GenerationService", () => {
           resolution: "1080p",
           providerParams: { cameraFixed: true },
           referenceAssetIds: ["asset_ref_1"],
+          videoProviderMode: "image_to_video",
+          videoPromptMode: "generic_multi_reference",
+          videoPromptDebugSummary: expect.objectContaining({
+            provider: "seedance",
+            model: "seedance-1-0-pro",
+            supportedModes: ["text_to_video", "image_to_video"],
+            modelSupportedModes: ["text_to_video", "image_to_video"],
+            referenceMediaRoles: ["first_frame", "reference_image"],
+          }),
         }),
       }),
     });
@@ -993,6 +1037,16 @@ describe("GenerationService", () => {
         durationSeconds: 15,
       }),
     ).rejects.toThrow("Duration 15s is not available for Mock Video");
+
+    enableSeedance(providersService);
+    await expect(
+      service.createJob("project_1", {
+        operation: "image_to_video",
+        sourceNodeId: "image_1",
+        videoProvider: "seedance",
+        videoModel: "seedance-text-only",
+      }),
+    ).rejects.toThrow("Seedance seedance-text-only does not support image-to-video generation");
   });
 
   it("rejects invalid image-to-video source nodes", async () => {

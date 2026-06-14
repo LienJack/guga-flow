@@ -65,6 +65,9 @@ import {
   UPLOADABLE_ASSET_MIME_TYPES,
   VIDEO_PROVIDER_IDS,
   VIDEO_PROVIDER_MODES,
+  VIDEO_PROMPT_CHECK_CODES,
+  VIDEO_PROMPT_CHECK_SEVERITIES,
+  VIDEO_PROMPT_MODES,
   VIDEO_PROVIDER_RESOLUTIONS,
   VIDEO_PROVIDER_TASK_STATUSES,
   buildStoryboardImportPlan,
@@ -368,6 +371,21 @@ describe("shared domain constants", () => {
       "image_to_video",
       "reference_to_video",
       "video_edit",
+    ]);
+    expect(VIDEO_PROMPT_MODES).toEqual([
+      "generic_multi_reference",
+      "first_frame",
+      "first_last_frame",
+      "provider_specific",
+    ]);
+    expect(VIDEO_PROMPT_CHECK_SEVERITIES).toEqual(["info", "warning", "error"]);
+    expect(VIDEO_PROMPT_CHECK_CODES).toEqual([
+      "missing_first_frame",
+      "missing_dialogue",
+      "missing_video_prompt",
+      "unsupported_mode",
+      "unsupported_reference_media",
+      "invalid_duration",
     ]);
     expect(VIDEO_PROVIDER_RESOLUTIONS).toEqual(["720p", "1080p"]);
     expect(VIDEO_PROVIDER_TASK_STATUSES).toEqual([
@@ -2102,6 +2120,21 @@ describe("shared domain constants", () => {
       parentShotNodeId: "shot_1",
       parentShotTitle: "Shot 01",
       referenceAssetIds: ["asset_ref_1"],
+      referenceMedia: [{ assetId: "asset_image_1", role: "first_frame", sourceNodeId: "image_1" }],
+      videoProviderMode: "image_to_video",
+      videoPromptMode: "first_frame",
+      videoPromptDebugSummary: {
+        mode: "first_frame",
+        providerMode: "image_to_video",
+        provider: videoCreateInput.videoProvider ?? "mock-video",
+        model: videoCreateInput.videoModel,
+        supportedModes: ["image_to_video"],
+        modelSupportedModes: ["image_to_video"],
+        referenceMediaRoles: ["first_frame"],
+        debugPartKinds: ["shot"],
+        missingContextKinds: [],
+        checks: [],
+      },
       sourceNodeIds: ["image_1", "shot_1"],
       provider: videoCreateInput.videoProvider ?? "mock-video",
       model: videoCreateInput.videoModel,

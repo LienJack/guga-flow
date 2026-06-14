@@ -2,12 +2,18 @@ import type {
   AiAudioGenerationJobInput,
   AiTextGenerationJobInput,
   GenerationJobRecord,
+  ImageToVideoJobInput,
   ProgrammableProviderManifest,
   ShotToImageJobInput,
 } from "@guga-flow/shared-types";
+import type { VideoGenerationInput } from "@guga-flow/provider-contracts";
 import { describe, expect, it, vi } from "vitest";
 
-import { createGenerationExecutorRegistry, executeGenerationJob } from "./generation-executors";
+import {
+  createGenerationExecutorRegistry,
+  executeGenerationJob,
+  type GenerationExecutorRegistry,
+} from "./generation-executors";
 
 const imageManifest: ProgrammableProviderManifest = {
   id: "custom:atlas-cloud",
@@ -114,6 +120,38 @@ describe("generation executors", () => {
       },
     });
   });
+
+  it("passes the resolved video provider mode into video provider execution", async () => {
+    const createTask = vi.fn(async (input: VideoGenerationInput) => ({
+      status: "provider_waiting" as const,
+      providerTaskId: "task_reference_mode",
+      rawJson: { mode: input.mode },
+    }));
+    const registry: GenerationExecutorRegistry = {
+      imageProviders: {
+        get: vi.fn(),
+        list: vi.fn(() => []),
+      },
+      videoProviders: {
+        get: vi.fn(() => ({
+          capability: { id: "mock-video", displayName: "Mock Video", requiresApiKey: false },
+          createTask,
+          getTask: vi.fn(),
+          cancelTask: vi.fn(),
+          generateVideo: vi.fn(),
+        })),
+        list: vi.fn(() => []),
+      },
+    };
+
+    const result = await executeGenerationJob(jobRecord(videoInput()), registry);
+
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ mode: "reference_to_video" }));
+    expect(result).toMatchObject({
+      status: "provider_waiting",
+      rawJson: { mode: "reference_to_video" },
+    });
+  });
 });
 
 function shotInput(): ShotToImageJobInput {
@@ -186,7 +224,35 @@ function aiAudioInput(): AiAudioGenerationJobInput {
   };
 }
 
-function jobRecord<TInput extends ShotToImageJobInput | AiTextGenerationJobInput | AiAudioGenerationJobInput>(
+function videoInput(): ImageToVideoJobInput {
+  return {
+    operation: "image_to_video",
+    projectId: "project_1",
+    sourceNodeId: "image_1",
+    imageNodeId: "image_1",
+    sourceImageAssetId: "asset_first_frame",
+    prompt: "Slow dolly across the generated frame.",
+    durationSeconds: 5,
+    referenceAssetIds: ["asset_reference_video"],
+    referenceMedia: [
+      { assetId: "asset_first_frame", role: "first_frame", sourceNodeId: "image_1" },
+      { assetId: "asset_reference_video", role: "reference_video" },
+    ],
+    videoProviderMode: "reference_to_video",
+    videoPromptMode: "generic_multi_reference",
+    sourceNodeIds: ["image_1", "shot_1"],
+    provider: "mock-video",
+    model: "mock-video-v1",
+  };
+}
+
+function jobRecord<
+  TInput extends
+    | ShotToImageJobInput
+    | ImageToVideoJobInput
+    | AiTextGenerationJobInput
+    | AiAudioGenerationJobInput,
+>(
   input: TInput,
 ): GenerationJobRecord<TInput> {
   return {

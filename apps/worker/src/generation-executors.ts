@@ -282,7 +282,7 @@ export async function executeGenerationJob(
     const result = await provider.createTask({
       projectId: input.projectId,
       prompt: input.prompt,
-      mode: "image_to_video",
+      mode: input.videoProviderMode ?? "image_to_video",
       model: input.model,
       sourceImageAssetId: input.sourceImageAssetId,
       firstFrameAssetId: input.referenceMedia?.find((item) => item.role === "first_frame")?.assetId,

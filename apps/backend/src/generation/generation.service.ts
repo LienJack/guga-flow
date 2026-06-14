@@ -54,10 +54,15 @@ import type {
   ResolvedGenerationSettings,
   RetryGenerationJobResult,
   ShotNodeData,
+  ShotPromptCompositionResult,
   ShotToImageJobInput,
   VideoProviderCatalogItem,
+  VideoProviderMode,
   VideoReferenceMediaInput,
   VideoProviderResolution,
+  VideoPromptCheck,
+  VideoPromptDebugSummary,
+  VideoPromptMode,
   WorkerGenerationJobWaitInput,
   WorkerProviderRuntimeConfigInput,
   WorkflowRunJobInput,
@@ -232,6 +237,31 @@ function stringArray(value: unknown): string[] {
 
 function uniqueStrings(values: readonly (string | undefined)[]): string[] {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
+}
+
+function uniqueVideoReferenceRoles(
+  media: readonly VideoReferenceMediaInput[],
+): VideoPromptDebugSummary["referenceMediaRoles"] {
+  return Array.from(new Set(media.map((item) => item.role)));
+}
+
+function uniquePromptDebugKinds(
+  parts: readonly ShotPromptCompositionResult["debugParts"][number][],
+): VideoPromptDebugSummary["debugPartKinds"] {
+  return Array.from(new Set(parts.map((part) => part.kind)));
+}
+
+function uniqueMissingContextKinds(
+  missingContext: readonly ShotPromptCompositionResult["missingContext"][number][],
+): VideoPromptDebugSummary["missingContextKinds"] {
+  return Array.from(new Set(missingContext.map((item) => item.kind)));
+}
+
+function videoModelSupportedModes(
+  provider: VideoProviderCatalogItem,
+  model: VideoProviderCatalogItem["models"][number],
+): VideoProviderMode[] {
+  return Array.from(new Set(model.modes?.length ? model.modes : provider.supportedModes));
 }
 
 function compactText(values: readonly (string | undefined)[]): string {
@@ -1676,6 +1706,23 @@ export class GenerationService {
       imageNode.id,
       referenceAssetIds,
     );
+    const videoProviderMode = this.videoProviderModeFor(providerSettings.modelSupportedModes, referenceMedia);
+    const videoPromptMode = this.videoPromptModeFor(
+      providerSettings.provider,
+      providerSettings.model,
+      referenceMedia,
+    );
+    const videoPromptDebugSummary = this.videoPromptDebugSummary({
+      mode: videoPromptMode,
+      providerMode: videoProviderMode,
+      provider: providerSettings.provider,
+      model: providerSettings.model,
+      modelSupportedModes: providerSettings.modelSupportedModes,
+      referenceMedia,
+      parentComposition,
+      parentShot,
+      parentShotData,
+    });
     const sourceNodeIds = uniqueStrings([
       imageNode.id,
       parentShot?.id,
@@ -1698,6 +1745,9 @@ export class GenerationService {
       parentShotTitle: parentShot?.title,
       referenceAssetIds,
       referenceMedia,
+      videoProviderMode,
+      videoPromptMode,
+      videoPromptDebugSummary,
       sourceNodeIds,
       provider: providerSettings.provider.id,
       providerVersionId: providerSettings.provider.providerVersionId,
@@ -2111,6 +2161,97 @@ export class GenerationService {
     return deduped;
   }
 
+  private videoPromptModeFor(
+    provider: VideoProviderCatalogItem,
+    model: string,
+    referenceMedia: readonly VideoReferenceMediaInput[],
+  ): VideoPromptMode {
+    if (referenceMedia.some((item) => item.role === "last_frame")) {
+      return "first_last_frame";
+    }
+    if (referenceMedia.some((item) => item.role !== "first_frame")) {
+      return "generic_multi_reference";
+    }
+    if (provider.providerVersionId || provider.id === "seedance" || provider.id === "happyhorse" || model.includes("/")) {
+      return "provider_specific";
+    }
+    return "first_frame";
+  }
+
+  private videoProviderModeFor(
+    modelSupportedModes: readonly VideoProviderMode[],
+    referenceMedia: readonly VideoReferenceMediaInput[],
+  ): VideoProviderMode {
+    const needsReferenceMode = referenceMedia.some((item) =>
+      item.role === "last_frame" || item.role === "reference_video" || item.role === "reference_audio",
+    );
+    return needsReferenceMode && modelSupportedModes.includes("reference_to_video")
+      ? "reference_to_video"
+      : "image_to_video";
+  }
+
+  private videoPromptDebugSummary(input: {
+    mode: VideoPromptMode;
+    providerMode: VideoProviderMode;
+    provider: VideoProviderCatalogItem;
+    model: string;
+    modelSupportedModes: VideoProviderMode[];
+    referenceMedia: readonly VideoReferenceMediaInput[];
+    parentComposition?: ShotPromptCompositionResult;
+    parentShot?: CanvasNodeRecord;
+    parentShotData: ShotNodeData;
+  }): VideoPromptDebugSummary {
+    return {
+      mode: input.mode,
+      providerMode: input.providerMode,
+      provider: input.provider.id,
+      model: input.model,
+      supportedModes: [...input.provider.supportedModes],
+      modelSupportedModes: [...input.modelSupportedModes],
+      referenceMediaRoles: uniqueVideoReferenceRoles(input.referenceMedia),
+      debugPartKinds: uniquePromptDebugKinds(input.parentComposition?.video.parts ?? []),
+      missingContextKinds: uniqueMissingContextKinds(input.parentComposition?.missingContext ?? []),
+      checks: this.videoPromptChecks(input),
+    };
+  }
+
+  private videoPromptChecks(input: {
+    referenceMedia: readonly VideoReferenceMediaInput[];
+    parentComposition?: ShotPromptCompositionResult;
+    parentShot?: CanvasNodeRecord;
+    parentShotData: ShotNodeData;
+  }): VideoPromptCheck[] {
+    const checks: VideoPromptCheck[] = [];
+    if (!input.referenceMedia.some((item) => item.role === "first_frame")) {
+      checks.push({
+        code: "missing_first_frame",
+        severity: "error",
+        message: "Image-to-video generation requires a first frame image asset.",
+        sourceNodeId: input.parentShot?.id,
+      });
+    }
+    if (input.parentShot && !optionalString(input.parentShotData.dialogue)) {
+      checks.push({
+        code: "missing_dialogue",
+        severity: "warning",
+        message: "The parent Shot has no dialogue; the video prompt will rely on visual/action context.",
+        sourceNodeId: input.parentShot.id,
+      });
+    }
+    for (const missing of input.parentComposition?.missingContext ?? []) {
+      if (missing.kind !== "video_prompt") {
+        continue;
+      }
+      checks.push({
+        code: "missing_video_prompt",
+        severity: "warning",
+        message: missing.message,
+        sourceNodeId: missing.sourceNodeId,
+      });
+    }
+    return checks;
+  }
+
   private characterReferencePrompt(
     node: CanvasNodeRecord,
     data: CharacterAssetNodeData,
@@ -2382,6 +2523,7 @@ export class GenerationService {
   ): Promise<{
     provider: VideoProviderCatalogItem;
     model: string;
+    modelSupportedModes: VideoProviderMode[];
     aspectRatio: ProjectAspectRatio;
     durationSeconds: number;
     resolution: VideoProviderResolution;
@@ -2401,8 +2543,13 @@ export class GenerationService {
     }
 
     const model = input.videoModel ?? provider.defaultModel;
-    if (!provider.models.some((candidate) => candidate.id === model)) {
+    const modelOption = provider.models.find((candidate) => candidate.id === model);
+    if (!modelOption) {
       throw new BadRequestException(`Model ${model} is not available for ${provider.displayName}`);
+    }
+    const modelSupportedModes = videoModelSupportedModes(provider, modelOption);
+    if (!modelSupportedModes.includes("image_to_video")) {
+      throw new BadRequestException(`${provider.displayName} ${model} does not support image-to-video generation`);
     }
 
     const aspectRatio = input.videoAspectRatio ?? provider.defaultAspectRatio;
@@ -2431,6 +2578,7 @@ export class GenerationService {
     return {
       provider,
       model,
+      modelSupportedModes,
       aspectRatio,
       durationSeconds,
       resolution,
