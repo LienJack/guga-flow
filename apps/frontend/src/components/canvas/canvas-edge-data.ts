@@ -11,7 +11,10 @@ import type {
 
 import { buildBusinessNodeCardModel, isPhase3CanvasNodeType } from "./business-node-data";
 
-export type SemanticCanvasEdgeRelation = "references_character" | "references_location";
+export type SemanticCanvasEdgeRelation =
+  | "derived_from"
+  | "references_character"
+  | "references_location";
 
 export interface CanvasGraphState {
   nodes: CanvasNodeRecord[];
@@ -58,6 +61,9 @@ export function getSemanticBindingRelation(
   sourceNode: CanvasNodeRecord,
   targetNode: CanvasNodeRecord,
 ): SemanticCanvasEdgeRelation | null {
+  if (canSourceMediaFeedTarget(sourceNode.type, targetNode.type)) {
+    return "derived_from";
+  }
   if (sourceNode.type === "character_asset" && targetNode.type === "shot") {
     return "references_character";
   }
@@ -103,6 +109,33 @@ export function buildSemanticCanvasEdgeInput(input: {
         ? uniqueStrings(input.affectedShotNodeIds ?? [])
         : undefined,
   };
+}
+
+function canSourceMediaFeedTarget(sourceType: string, targetType: string): boolean {
+  if (
+    sourceType !== "source_text" &&
+    sourceType !== "source_image" &&
+    sourceType !== "source_video" &&
+    sourceType !== "source_audio"
+  ) {
+    return false;
+  }
+  if (targetType === "shot") {
+    return true;
+  }
+  if (targetType === "character_asset") {
+    return sourceType === "source_image" || sourceType === "source_audio";
+  }
+  if (targetType === "location_asset") {
+    return sourceType === "source_image" || sourceType === "source_video";
+  }
+  if (targetType === "image") {
+    return sourceType === "source_text" || sourceType === "source_image";
+  }
+  if (targetType === "video") {
+    return sourceType === "source_image" || sourceType === "source_video" || sourceType === "source_audio";
+  }
+  return false;
 }
 
 export function findExistingCanvasEdge(

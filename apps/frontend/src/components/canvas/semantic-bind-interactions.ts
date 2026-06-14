@@ -21,7 +21,15 @@ export interface SemanticBindTarget {
 export function canStartSemanticBind(
   sourceNode: CanvasNodeRecord | undefined,
 ): sourceNode is CanvasNodeRecord {
-  return sourceNode?.type === "character_asset" || sourceNode?.type === "location_asset";
+  return Boolean(
+    sourceNode &&
+      (sourceNode.type === "character_asset" ||
+        sourceNode.type === "location_asset" ||
+        sourceNode.type === "source_text" ||
+        sourceNode.type === "source_image" ||
+        sourceNode.type === "source_video" ||
+        sourceNode.type === "source_audio"),
+  );
 }
 
 export function getAvailableSemanticBindTargets(

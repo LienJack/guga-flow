@@ -237,6 +237,60 @@ describe("CanvasService", () => {
     expect(result.node.dataJson).toEqual(dataJson);
   });
 
+  it("creates Asset-backed source media canvas nodes", async () => {
+    const dataJson = {
+      assetId: "asset_image_1",
+      mimeType: "image/png",
+      originalFilename: "reference.png",
+      sizeBytes: 2048,
+      width: 1080,
+      height: 1920,
+      source: "asset",
+      importMethod: "drag_drop",
+      previewKind: "image",
+      previewUrl: "/api/v1/projects/project_1/assets/asset_image_1/preview",
+    };
+    prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
+    prisma.canvasNode.create.mockResolvedValue(
+      canvasNode({
+        id: "source_image_1",
+        tldrawShapeId: "shape:source-image-1",
+        type: "source_image",
+        title: "reference.png",
+        dataJson,
+      }),
+    );
+
+    const result = await service.createNode("project_1", {
+      tldrawShapeId: "shape:source-image-1",
+      type: "source_image",
+      title: "reference.png",
+      x: 24,
+      y: 48,
+      width: 320,
+      height: 220,
+      dataJson,
+    });
+
+    expect(prisma.canvasNode.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        canvasDocumentId: "canvas_1",
+        tldrawShapeId: "shape:source-image-1",
+        type: "source_image",
+        title: "reference.png",
+        x: 24,
+        y: 48,
+        width: 320,
+        height: 220,
+        status: "draft",
+        dataJson,
+      }),
+    });
+    expect(result.node.type).toBe("source_image");
+    expect(result.node.dataJson).toEqual(dataJson);
+  });
+
   it("updates business fields for project-scoped canvas nodes", async () => {
     const dataJson = {
       visualDescription: "Closer shot with brighter practical lights.",
@@ -906,6 +960,46 @@ describe("CanvasService", () => {
     const result = await service.createEdge("project_1", {
       sourceNodeId: "shot_1",
       targetNodeId: "shot_2",
+      relation: "derived_from",
+    });
+
+    expect(result.edge.relation).toBe("derived_from");
+    expect(result.updatedNodes).toEqual([]);
+    expect(prisma.canvasNode.update).not.toHaveBeenCalled();
+  });
+
+  it("creates source media upstream edges without mutating target node data", async () => {
+    const sourceImage = canvasNode({
+      id: "source_image_1",
+      tldrawShapeId: "shape:source-image-1",
+      type: "source_image",
+    });
+    const imageNode = canvasNode({
+      id: "image_1",
+      tldrawShapeId: "shape:image-1",
+      type: "image",
+    });
+    prisma.canvasNode.findFirst.mockImplementation(async ({ where }) => {
+      if (where.id === "source_image_1") {
+        return sourceImage;
+      }
+      if (where.id === "image_1") {
+        return imageNode;
+      }
+      return null;
+    });
+    prisma.canvasEdge.create.mockResolvedValue(
+      canvasEdge({
+        id: "edge_source_image",
+        sourceNodeId: "source_image_1",
+        targetNodeId: "image_1",
+        relation: "derived_from",
+      }),
+    );
+
+    const result = await service.createEdge("project_1", {
+      sourceNodeId: "source_image_1",
+      targetNodeId: "image_1",
       relation: "derived_from",
     });
 

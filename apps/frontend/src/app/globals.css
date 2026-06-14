@@ -433,6 +433,11 @@ select {
   --node-soft: #fff2df;
 }
 
+.business-node-card.tone-source {
+  --node-accent: #3e6d91;
+  --node-soft: #e5f0f7;
+}
+
 .business-node-card.tone-scene {
   --node-accent: #256f6c;
   --node-soft: #e1f1ee;

@@ -3,6 +3,10 @@ import type { EditorExportPreset, GenerationCreativeSettings, ResolvedGeneration
 
 export const CANVAS_NODE_TYPES = [
   "novel",
+  "source_text",
+  "source_image",
+  "source_video",
+  "source_audio",
   "scene_frame",
   "scene",
   "shot",
@@ -65,6 +69,38 @@ export const CANVAS_NODE_REGISTRY = {
     label: "Novel",
     description: "Long-form source text and story blueprint context.",
     capabilities: ["accepts_text", "produces_text", "has_preview"],
+  },
+  source_text: {
+    type: "source_text",
+    family: "source_media",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.source_media,
+    label: "Source Text",
+    description: "Uploaded text or markdown source file stored as a project asset.",
+    capabilities: ["accepts_text", "produces_text", "has_preview"],
+  },
+  source_image: {
+    type: "source_image",
+    family: "source_media",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.source_media,
+    label: "Source Image",
+    description: "Uploaded source image asset for references, prompts, and generation context.",
+    capabilities: ["accepts_image", "produces_asset", "has_preview"],
+  },
+  source_video: {
+    type: "source_video",
+    family: "source_media",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.source_media,
+    label: "Source Video",
+    description: "Uploaded source video asset for clips, reference motion, and editor context.",
+    capabilities: ["accepts_video", "accepts_audio", "produces_asset", "has_preview"],
+  },
+  source_audio: {
+    type: "source_audio",
+    family: "source_media",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.source_media,
+    label: "Source Audio",
+    description: "Uploaded source audio asset for voice, music, narration, or sound references.",
+    capabilities: ["accepts_audio", "produces_asset", "has_preview"],
   },
   scene_frame: {
     type: "scene_frame",
@@ -192,6 +228,10 @@ export function canvasNodeHasCapability(
 
 export const PHASE_3_CANVAS_NODE_TYPES = [
   "novel",
+  "source_text",
+  "source_image",
+  "source_video",
+  "source_audio",
   "scene_frame",
   "scene",
   "shot",
@@ -407,6 +447,23 @@ export interface LocationAssetNodeData {
   assetKey?: string;
 }
 
+export const SOURCE_MEDIA_IMPORT_METHODS = ["drag_drop", "asset_library", "manual"] as const;
+export type SourceMediaImportMethod = (typeof SOURCE_MEDIA_IMPORT_METHODS)[number];
+
+export interface SourceMediaNodeData {
+  assetId?: string;
+  mimeType?: string;
+  originalFilename?: string;
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+  durationMs?: number;
+  source?: "asset";
+  importMethod?: SourceMediaImportMethod;
+  previewKind?: AssetListItem["previewKind"];
+  previewUrl?: string;
+}
+
 export interface GeneratedMediaNodeData {
   generationJobId?: string;
   generationOperation?: "shot_to_image" | "image_refinement" | "image_to_video" | "workflow_run";
@@ -457,6 +514,10 @@ export interface EditorPackageNodeData {
 
 export interface Phase3CanvasNodeDataByType {
   novel: NovelNodeData;
+  source_text: SourceMediaNodeData;
+  source_image: SourceMediaNodeData;
+  source_video: SourceMediaNodeData;
+  source_audio: SourceMediaNodeData;
   scene_frame: SceneFrameNodeData;
   scene: SceneNodeData;
   shot: ShotNodeData;

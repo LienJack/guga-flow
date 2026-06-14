@@ -1,4 +1,5 @@
 import type {
+  AssetListItem,
   CanvasNodeCapability,
   CanvasNodeFamily,
   CanvasNodeRecord,
@@ -6,6 +7,8 @@ import type {
   NodeStatus,
   Phase3CanvasNodeData,
   Phase3CanvasNodeType,
+  SourceMediaImportMethod,
+  SourceMediaNodeData,
 } from "@guga-flow/shared-types";
 import { getCanvasNodeRegistryItem, PHASE_3_CANVAS_NODE_TYPES } from "@guga-flow/shared-types";
 
@@ -15,7 +18,7 @@ export interface BusinessNodeDefinition {
   defaultTitle: string;
   summaryFallback: string;
   detailFallback: string;
-  tone: "story" | "scene" | "shot" | "asset" | "media" | "export";
+  tone: "story" | "source" | "scene" | "shot" | "asset" | "media" | "export";
   family: CanvasNodeFamily;
   familyLabel: string;
   capabilities: readonly CanvasNodeCapability[];
@@ -59,6 +62,38 @@ export const BUSINESS_NODE_DEFINITIONS = {
     summaryFallback: "Source manuscript",
     detailFallback: "Full text and synopsis",
     tone: "story",
+  }),
+  source_text: defineBusinessNode("source_text", {
+    label: "Source Text",
+    shortLabel: "Text",
+    defaultTitle: "Source Text",
+    summaryFallback: "Uploaded text source",
+    detailFallback: "Asset-backed text reference",
+    tone: "source",
+  }),
+  source_image: defineBusinessNode("source_image", {
+    label: "Source Image",
+    shortLabel: "Image Src",
+    defaultTitle: "Source Image",
+    summaryFallback: "Uploaded image source",
+    detailFallback: "Asset-backed image reference",
+    tone: "source",
+  }),
+  source_video: defineBusinessNode("source_video", {
+    label: "Source Video",
+    shortLabel: "Video Src",
+    defaultTitle: "Source Video",
+    summaryFallback: "Uploaded video source",
+    detailFallback: "Asset-backed video reference",
+    tone: "source",
+  }),
+  source_audio: defineBusinessNode("source_audio", {
+    label: "Source Audio",
+    shortLabel: "Audio Src",
+    defaultTitle: "Source Audio",
+    summaryFallback: "Uploaded audio source",
+    detailFallback: "Asset-backed audio reference",
+    tone: "source",
   }),
   scene_frame: defineBusinessNode("scene_frame", {
     label: "Scene Frame",
@@ -145,6 +180,14 @@ export function createDefaultBusinessNodeData<TType extends Phase3CanvasNodeType
         sourceText: "",
         synopsis: "",
         language: "zh-CN",
+      } as Phase3CanvasNodeData<TType>;
+    case "source_text":
+    case "source_image":
+    case "source_video":
+    case "source_audio":
+      return {
+        source: "asset",
+        importMethod: "manual",
       } as Phase3CanvasNodeData<TType>;
     case "scene_frame":
       return {
@@ -242,6 +285,25 @@ export function createBusinessCanvasNodeInput<TType extends Phase3CanvasNodeType
   };
 }
 
+export function createSourceMediaNodeData(
+  asset: AssetListItem,
+  importMethod: SourceMediaImportMethod = "drag_drop",
+): SourceMediaNodeData {
+  return compactJsonObject({
+    assetId: asset.id,
+    mimeType: asset.mimeType,
+    originalFilename: asset.originalFilename,
+    sizeBytes: asset.sizeBytes,
+    width: asset.width,
+    height: asset.height,
+    durationMs: asset.durationMs,
+    source: "asset",
+    importMethod,
+    previewKind: asset.previewKind,
+    previewUrl: asset.previewUrl,
+  }) as SourceMediaNodeData;
+}
+
 export function buildBusinessNodeCardModel(node: CanvasNodeRecord): BusinessNodeCardModel {
   if (!isPhase3CanvasNodeType(node.type)) {
     throw new Error(`Unsupported business node type: ${node.type}`);
@@ -297,6 +359,12 @@ function numberText(data: Record<string, unknown>, key: string, suffix = ""): st
 function stringArray(data: Record<string, unknown>, key: string): string[] {
   const value = data[key];
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function compactJsonObject(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, fieldValue]) => fieldValue !== undefined && fieldValue !== ""),
+  );
 }
 
 function objectArray(value: unknown): Array<Record<string, unknown>> {
@@ -376,8 +444,46 @@ function referenceAssetText(data: Record<string, unknown>): string {
   return `${referenceCount} reference image${referenceCount === 1 ? "" : "s"}`;
 }
 
+function assetSizeText(data: Record<string, unknown>): string {
+  const value = data.sizeBytes;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return "";
+  }
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  if (value < 1024 * 1024) {
+    return `${Math.round(value / 102.4) / 10} KB`;
+  }
+  return `${Math.round(value / 1024 / 102.4) / 10} MB`;
+}
+
+function mediaDimensionText(data: Record<string, unknown>): string {
+  const width = data.width;
+  const height = data.height;
+  return typeof width === "number" &&
+    Number.isFinite(width) &&
+    typeof height === "number" &&
+    Number.isFinite(height)
+    ? `${width}x${height}`
+    : "";
+}
+
+function mediaDurationText(data: Record<string, unknown>): string {
+  const durationMs = data.durationMs;
+  if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs <= 0) {
+    return "";
+  }
+  return `${Math.round(durationMs / 100) / 10}s`;
+}
+
 function titleFromData(type: Phase3CanvasNodeType, data: Record<string, unknown>): string {
   switch (type) {
+    case "source_text":
+    case "source_image":
+    case "source_video":
+    case "source_audio":
+      return text(data, "originalFilename");
     case "character_asset":
     case "location_asset":
       return text(data, "name");
@@ -398,6 +504,11 @@ function summaryForNode(
   switch (type) {
     case "novel":
       return firstText(text(data, "synopsis"), text(data, "sourceText"), fallback);
+    case "source_text":
+    case "source_image":
+    case "source_video":
+    case "source_audio":
+      return firstText(text(data, "originalFilename"), text(data, "mimeType"), fallback);
     case "scene_frame":
       return firstText(storyEventTraceText(data), text(data, "description"), fallback);
     case "scene":
@@ -431,6 +542,20 @@ function detailForNode(
   switch (type) {
     case "novel":
       return firstText(text(data, "language"), fallback);
+    case "source_text":
+    case "source_image":
+    case "source_video":
+    case "source_audio":
+      return compact(
+        [
+          text(data, "mimeType"),
+          mediaDimensionText(data),
+          mediaDurationText(data),
+          assetSizeText(data),
+          text(data, "assetId"),
+        ],
+        fallback,
+      );
     case "scene_frame":
       return compact(
         [storyEventTraceText(data), numberText(data, "order", ""), text(data, "locationAssetId") ? "Location ref" : ""],

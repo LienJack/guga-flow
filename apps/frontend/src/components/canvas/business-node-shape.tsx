@@ -5,6 +5,10 @@ import { buildBusinessNodeCardModel, type BusinessNodeCardModel } from "./busine
 
 export const BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE = {
   novel: "business_novel",
+  source_text: "business_source_text",
+  source_image: "business_source_image",
+  source_video: "business_source_video",
+  source_audio: "business_source_audio",
   scene_frame: "business_scene_frame",
   scene: "business_scene",
   shot: "business_shot",
@@ -25,6 +29,10 @@ export interface BusinessNodeShapeProps extends Omit<BusinessNodeCardModel, "col
 declare module "tldraw" {
   export interface TLGlobalShapePropsMap {
     business_novel: BusinessNodeShapeProps;
+    business_source_text: BusinessNodeShapeProps;
+    business_source_image: BusinessNodeShapeProps;
+    business_source_video: BusinessNodeShapeProps;
+    business_source_audio: BusinessNodeShapeProps;
     business_scene_frame: BusinessNodeShapeProps;
     business_scene: BusinessNodeShapeProps;
     business_shot: BusinessNodeShapeProps;

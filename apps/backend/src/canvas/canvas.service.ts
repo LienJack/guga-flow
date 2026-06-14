@@ -181,6 +181,32 @@ function isPhase3CanvasNodeType(value: unknown): value is CanvasNodeType {
   return typeof value === "string" && PHASE_3_CANVAS_NODE_TYPES.includes(value as never);
 }
 
+function isSourceMediaNodeType(value: string): boolean {
+  return value === "source_text" || value === "source_image" || value === "source_video" || value === "source_audio";
+}
+
+function canSourceMediaFeedTarget(sourceType: string, targetType: string): boolean {
+  if (!isSourceMediaNodeType(sourceType)) {
+    return false;
+  }
+  if (targetType === "shot") {
+    return true;
+  }
+  if (targetType === "character_asset") {
+    return sourceType === "source_image" || sourceType === "source_audio";
+  }
+  if (targetType === "location_asset") {
+    return sourceType === "source_image" || sourceType === "source_video";
+  }
+  if (targetType === "image") {
+    return sourceType === "source_text" || sourceType === "source_image";
+  }
+  if (targetType === "video") {
+    return sourceType === "source_image" || sourceType === "source_video" || sourceType === "source_audio";
+  }
+  return false;
+}
+
 function isNodeStatus(value: unknown): value is NodeStatus {
   return typeof value === "string" && NODE_STATUSES.includes(value as never);
 }
@@ -1091,7 +1117,7 @@ export class CanvasService {
       if (sourceNode.id === targetNode.id) {
         throw new BadRequestException("Variant edges cannot reference the same node");
       }
-      if (sourceNode.type !== targetNode.type) {
+      if (sourceNode.type !== targetNode.type && !canSourceMediaFeedTarget(sourceNode.type, targetNode.type)) {
         throw new BadRequestException("Variant edges must connect nodes of the same type");
       }
       return;

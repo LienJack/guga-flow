@@ -19,6 +19,7 @@ import {
   getProjectCanvas,
   saveCanvasSnapshot,
   updateCanvasNodeGeometry,
+  uploadAsset,
 } from "../../lib/api";
 import { mergeCanvasEdgeCreateResult, mergeCanvasEdgeDeleteResult } from "./canvas-edge-data";
 import {
@@ -54,6 +55,11 @@ import {
   BUSINESS_NODE_DEFAULT_WIDTH,
   businessNodeShapeUtils,
 } from "./business-node-shape-utils";
+import {
+  sourceMediaCreateInput,
+  sourceMediaImportSuccessLabel,
+  validateSourceMediaDropFiles,
+} from "./source-media-drop";
 import { createBusinessNodeGeometryScheduler } from "./use-business-node-sync";
 import { useCanvasAutosave } from "./use-canvas-autosave";
 import {
@@ -121,6 +127,10 @@ function scheduleCanvasFrame(callback: () => void) {
   }
 
   callback();
+}
+
+function hasFileTransfer(dataTransfer: DataTransfer | null): boolean {
+  return Boolean(dataTransfer && Array.from(dataTransfer.types).includes("Files"));
 }
 
 function scheduleCanvasFocusRestore(callback: () => void) {
@@ -244,6 +254,7 @@ export function CanvasEditor({
   const [loading, setLoading] = useState(true);
   const [nodeActionError, setNodeActionError] = useState<string | null>(null);
   const [creatingNodeType, setCreatingNodeType] = useState<Phase3CanvasNodeType | null>(null);
+  const [sourceDropBusy, setSourceDropBusy] = useState(false);
   const [selectionState, setSelectionState] =
     useState<CanvasSelectionState>(EMPTY_CANVAS_SELECTION);
   const [semanticBindSourceId, setSemanticBindSourceId] = useState<string | null>(null);
@@ -863,6 +874,103 @@ export function CanvasEditor({
     [emitSelection, projectId, publishCanvasNodes],
   );
 
+  const handleSourceMediaDragOver = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (!hasFileTransfer(event.dataTransfer)) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = sourceDropBusy ? "none" : "copy";
+    },
+    [sourceDropBusy],
+  );
+
+  const handleSourceMediaDrop = useCallback(
+    async (event: React.DragEvent<HTMLDivElement>) => {
+      if (!hasFileTransfer(event.dataTransfer)) {
+        return;
+      }
+      event.preventDefault();
+
+      const editor = editorRef.current;
+      if (!editor) {
+        setNodeActionError("Canvas is not ready for file import.");
+        return;
+      }
+
+      const validation = validateSourceMediaDropFiles(Array.from(event.dataTransfer.files));
+      if (validation.accepted.length === 0) {
+        setNodeActionError(validation.errors.join(" "));
+        return;
+      }
+
+      const pagePoint = editor.screenToPage({ x: event.clientX, y: event.clientY });
+      const failures = [...validation.errors];
+      let importedCount = 0;
+
+      setSourceDropBusy(true);
+      setNodeActionError(null);
+      try {
+        for (const [index, candidate] of validation.accepted.entries()) {
+          try {
+            const asset = await uploadAsset(projectId, {
+              file: candidate.file,
+              purpose: "uploaded",
+            });
+            createNodeSequenceRef.current += 1;
+            const shapeId = createShapeId(
+              [
+                "source",
+                candidate.nodeType,
+                Date.now().toString(36),
+                createNodeSequenceRef.current.toString(36),
+                Math.random().toString(36).slice(2, 8),
+              ].join("-"),
+            );
+            const input = sourceMediaCreateInput({
+              asset,
+              nodeType: candidate.nodeType,
+              tldrawShapeId: shapeId,
+              x: pagePoint.x + index * 28,
+              y: pagePoint.y + index * 28,
+              width: BUSINESS_NODE_DEFAULT_WIDTH,
+              height: BUSINESS_NODE_DEFAULT_HEIGHT,
+              zIndex: nodesRef.current.length,
+            });
+            const result = await createCanvasNode(projectId, input);
+            publishCanvasNodes([...nodesRef.current, result.node]);
+            editor.createShape({
+              id: shapeId,
+              type: getBusinessNodeShapeType(candidate.nodeType),
+              x: result.node.x,
+              y: result.node.y,
+              props: buildBusinessNodeShapeProps(result.node),
+            });
+            editor.setSelectedShapes([shapeId]);
+            importedCount += 1;
+          } catch (error) {
+            const label = candidate.file.name || sourceMediaImportSuccessLabel(candidate.nodeType);
+            failures.push(`${label}: ${errorMessage(error)}`);
+          }
+        }
+
+        if (importedCount > 0) {
+          emitSelection(editor);
+          focusCanvasSelection(editor);
+          scheduleSave(editorSnapshotToJson(editor));
+        }
+      } finally {
+        setSourceDropBusy(false);
+      }
+
+      if (failures.length > 0) {
+        const prefix = importedCount > 0 ? `Imported ${importedCount} source file${importedCount === 1 ? "" : "s"}. ` : "";
+        setNodeActionError(`${prefix}${failures.join(" ")}`);
+      }
+    },
+    [emitSelection, projectId, publishCanvasNodes, scheduleSave],
+  );
+
   const selectedBusinessNode =
     selectionState.kind === "business-node"
       ? canvasNodes.find((node) => node.id === selectionState.nodeId)
@@ -923,10 +1031,14 @@ export function CanvasEditor({
   }
 
   return (
-    <div className="canvas-editor-shell">
+    <div
+      className="canvas-editor-shell"
+      onDragOver={handleSourceMediaDragOver}
+      onDrop={(event) => void handleSourceMediaDrop(event)}
+    >
       <Tldraw onMount={handleMount} shapeUtils={businessNodeShapeUtils} autoFocus />
       <BusinessNodeToolbar
-        busy={creatingNodeType !== null}
+        busy={creatingNodeType !== null || sourceDropBusy}
         onCreate={(type) => void handleCreateBusinessNode(type)}
       />
       <SemanticBindToolbar

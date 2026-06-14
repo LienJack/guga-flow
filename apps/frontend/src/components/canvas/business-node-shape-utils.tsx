@@ -94,6 +94,26 @@ export class NovelBusinessNodeShapeUtil extends BaseBusinessNodeShapeUtil {
   protected override readonly nodeType = "novel" as const;
 }
 
+export class SourceTextBusinessNodeShapeUtil extends BaseBusinessNodeShapeUtil {
+  static override type = BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE.source_text;
+  protected override readonly nodeType = "source_text" as const;
+}
+
+export class SourceImageBusinessNodeShapeUtil extends BaseBusinessNodeShapeUtil {
+  static override type = BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE.source_image;
+  protected override readonly nodeType = "source_image" as const;
+}
+
+export class SourceVideoBusinessNodeShapeUtil extends BaseBusinessNodeShapeUtil {
+  static override type = BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE.source_video;
+  protected override readonly nodeType = "source_video" as const;
+}
+
+export class SourceAudioBusinessNodeShapeUtil extends BaseBusinessNodeShapeUtil {
+  static override type = BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE.source_audio;
+  protected override readonly nodeType = "source_audio" as const;
+}
+
 export class SceneFrameBusinessNodeShapeUtil extends BaseBusinessNodeShapeUtil {
   static override type = BUSINESS_NODE_SHAPE_TYPE_BY_NODE_TYPE.scene_frame;
   protected override readonly nodeType = "scene_frame" as const;
@@ -136,6 +156,10 @@ export class EditorPackageBusinessNodeShapeUtil extends BaseBusinessNodeShapeUti
 
 export const businessNodeShapeUtils = [
   NovelBusinessNodeShapeUtil,
+  SourceTextBusinessNodeShapeUtil,
+  SourceImageBusinessNodeShapeUtil,
+  SourceVideoBusinessNodeShapeUtil,
+  SourceAudioBusinessNodeShapeUtil,
   SceneFrameBusinessNodeShapeUtil,
   SceneBusinessNodeShapeUtil,
   ShotBusinessNodeShapeUtil,

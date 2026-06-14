@@ -51,6 +51,7 @@ import {
   SETTINGS_CENTER_MODULE_STATUSES,
   SKILL_TEMPLATE_KINDS,
   SKILL_TEMPLATE_VERSION_STATUSES,
+  SOURCE_MEDIA_IMPORT_METHODS,
   STORYBOARD_IMPORT_DUPLICATE_POLICIES,
   STORYBOARD_DRAFT_STATUSES,
   UPLOADABLE_ASSET_MIME_TYPES,
@@ -143,6 +144,7 @@ import {
   type ShotToImageJobInput,
   type ShotNodeData,
   type ScriptDraftRecord,
+  type SourceMediaNodeData,
   type SkillTemplatePromptContext,
   type StoryboardDraftRecord,
   type StoryboardResult,
@@ -224,7 +226,15 @@ describe("shared domain constants", () => {
     expect(canvasNodeTypesByFamily("business")).toEqual(
       expect.arrayContaining(["novel", "shot", "character_asset"]),
     );
+    expect(canvasNodeTypesByFamily("source_media")).toEqual([
+      "source_text",
+      "source_image",
+      "source_video",
+      "source_audio",
+    ]);
     expect(canvasNodeTypesByFamily("ai_generation")).toEqual(["image", "video"]);
+    expect(canvasNodeHasCapability("source_image", "accepts_image")).toBe(true);
+    expect(canvasNodeHasCapability("source_audio", "accepts_audio")).toBe(true);
     expect(canvasNodeHasCapability("video", "accepts_audio")).toBe(true);
     expect(canvasNodeHasCapability("note", "has_task")).toBe(false);
     expect(CANVAS_EDGE_RELATIONS).toContain("generated_image");
@@ -855,6 +865,10 @@ describe("shared domain constants", () => {
   it("exports Phase 3 business canvas node contracts", () => {
     expect(PHASE_3_CANVAS_NODE_TYPES).toEqual([
       "novel",
+      "source_text",
+      "source_image",
+      "source_video",
+      "source_audio",
       "scene_frame",
       "scene",
       "shot",
@@ -865,6 +879,21 @@ describe("shared domain constants", () => {
       "editor_package",
     ]);
     expect(CANVAS_NODE_TYPES).toEqual(expect.arrayContaining([...PHASE_3_CANVAS_NODE_TYPES]));
+    expect(SOURCE_MEDIA_IMPORT_METHODS).toEqual(["drag_drop", "asset_library", "manual"]);
+
+    const sourceImageData: SourceMediaNodeData = {
+      assetId: "asset_image_1",
+      mimeType: "image/png",
+      originalFilename: "reference.png",
+      sizeBytes: 2048,
+      width: 1080,
+      height: 1920,
+      source: "asset",
+      importMethod: "drag_drop",
+      previewKind: "image",
+      previewUrl: "/api/v1/projects/project_1/assets/asset_image_1/preview",
+    };
+    expect(sourceImageData.importMethod).toBe("drag_drop");
 
     const shotData: ShotNodeData = {
       visualDescription: "Wide shot of the launch platform at sunrise.",

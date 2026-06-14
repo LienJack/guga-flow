@@ -6,6 +6,7 @@ import {
   buildBusinessNodeCardModel,
   createBusinessCanvasNodeInput,
   createDefaultBusinessNodeData,
+  createSourceMediaNodeData,
   getBusinessNodeDefinition,
   isPhase3CanvasNodeType,
 } from "./business-node-data";
@@ -217,5 +218,41 @@ describe("business node data helpers", () => {
     expect(model.title).toBe("Video Node");
     expect(model.summary).toBe("Generated or uploaded clip");
     expect(model.detail).toBe("Prompt, duration, and asset link");
+  });
+
+  it("builds source media node data from Asset records", () => {
+    const data = createSourceMediaNodeData({
+      id: "asset_image_1",
+      projectId: "project_1",
+      type: "image",
+      purpose: "uploaded",
+      storageKey: "project_1/reference.png",
+      mimeType: "image/png",
+      originalFilename: "reference.png",
+      sizeBytes: 2048,
+      width: 1080,
+      height: 1920,
+      createdAt: "2026-06-14T00:00:00.000Z",
+      previewKind: "image",
+      previewUrl: "/api/v1/projects/project_1/assets/asset_image_1/preview",
+    });
+    const model = buildBusinessNodeCardModel({
+      ...baseNode,
+      type: "source_image",
+      title: undefined,
+      dataJson: data,
+    });
+
+    expect(data).toMatchObject({
+      assetId: "asset_image_1",
+      mimeType: "image/png",
+      originalFilename: "reference.png",
+      source: "asset",
+      importMethod: "drag_drop",
+    });
+    expect(model.title).toBe("reference.png");
+    expect(model.summary).toBe("reference.png");
+    expect(model.detail).toContain("image/png");
+    expect(model.detail).toContain("1080x1920");
   });
 });

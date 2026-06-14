@@ -9,6 +9,10 @@ import {
   Boxes,
   Clapperboard,
   Film,
+  FileAudio,
+  FileImage,
+  FileText,
+  FileVideo,
   Image as ImageIcon,
   MapPin,
   PackageCheck,
@@ -27,6 +31,10 @@ interface BusinessNodeToolbarProps {
 
 const ICONS: Record<Phase3CanvasNodeType, React.ComponentType<{ size?: number }>> = {
   novel: BookOpen,
+  source_text: FileText,
+  source_image: FileImage,
+  source_video: FileVideo,
+  source_audio: FileAudio,
   scene_frame: PanelTop,
   scene: Boxes,
   shot: Clapperboard,
@@ -39,6 +47,10 @@ const ICONS: Record<Phase3CanvasNodeType, React.ComponentType<{ size?: number }>
 
 const ACTION_LABELS: Record<Phase3CanvasNodeType, string> = {
   novel: "添加文本节点",
+  source_text: "添加文本素材",
+  source_image: "添加图片素材",
+  source_video: "添加视频素材",
+  source_audio: "添加音频素材",
   scene_frame: "添加分镜框",
   scene: "添加场景节点",
   shot: "添加镜头节点",
@@ -51,6 +63,7 @@ const ACTION_LABELS: Record<Phase3CanvasNodeType, string> = {
 
 const TOOLBAR_FAMILY_ORDER: CanvasNodeFamily[] = [
   "business",
+  "source_media",
   "ai_generation",
   "media_operation",
   "layout_helper",

@@ -46,7 +46,7 @@ function edge(overrides: Partial<CanvasEdgeRecord> = {}) {
 }
 
 describe("semantic bind interactions", () => {
-  it("exposes bind targets for Character and Location sources only", () => {
+  it("exposes bind targets for Character and Location sources", () => {
     const character = node({ id: "character_1", type: "character_asset" });
     const location = node({ id: "location_1", type: "location_asset" });
     const shot = node({ id: "shot_1", type: "shot", title: "Shot 001" });
@@ -68,6 +68,34 @@ describe("semantic bind interactions", () => {
     const shot = node({ id: "shot_1", type: "shot" });
 
     expect(getAvailableSemanticBindTargets(character, [character, shot], [edge()])).toEqual([]);
+  });
+
+  it("exposes compatible source media upstream targets", () => {
+    const sourceImage = node({ id: "source_image_1", type: "source_image" });
+    const sourceAudio = node({ id: "source_audio_1", type: "source_audio" });
+    const image = node({ id: "image_1", type: "image", title: "Image Node" });
+    const shot = node({ id: "shot_1", type: "shot", title: "Shot 001" });
+
+    expect(canStartSemanticBind(sourceImage)).toBe(true);
+    expect(getAvailableSemanticBindTargets(sourceImage, [sourceImage, sourceAudio, image, shot], [])).toEqual([
+      expect.objectContaining({ node: image, label: "Image Node" }),
+      expect.objectContaining({ node: shot, label: "Shot 001" }),
+    ]);
+    expect(getAvailableSemanticBindTargets(sourceAudio, [sourceImage, sourceAudio, image, shot], [])).toEqual([
+      expect.objectContaining({ node: shot, label: "Shot 001" }),
+    ]);
+
+    const [target] = getAvailableSemanticBindTargets(sourceImage, [sourceImage, image], []);
+    expect(
+      buildSemanticBindCreateInput({
+        sourceNode: sourceImage,
+        target: target!,
+      }),
+    ).toMatchObject({
+      sourceNodeId: "source_image_1",
+      targetNodeId: "image_1",
+      relation: "derived_from",
+    });
   });
 
   it("prefers Shot targets over containing SceneFrame targets for direct drop", () => {

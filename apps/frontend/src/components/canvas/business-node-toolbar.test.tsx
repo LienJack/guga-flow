@@ -9,12 +9,16 @@ describe("BusinessNodeToolbar", () => {
     const html = renderToStaticMarkup(<BusinessNodeToolbar onCreate={() => undefined} />);
 
     expect(html).toContain("Business");
+    expect(html).toContain("Source Media");
     expect(html).toContain("AI Generation");
     expect(html).toContain("Media Operation");
     expect(html).toContain("Layout / Helper");
-    expect(html.indexOf("Business")).toBeLessThan(html.indexOf("AI Generation"));
+    expect(html.indexOf("Business")).toBeLessThan(html.indexOf("Source Media"));
+    expect(html.indexOf("Source Media")).toBeLessThan(html.indexOf("AI Generation"));
     expect(html.indexOf("AI Generation")).toBeLessThan(html.indexOf("Media Operation"));
     expect(html).toContain("添加文本节点");
+    expect(html).toContain("添加图片素材");
+    expect(html).toContain("添加音频素材");
     expect(html).toContain("添加图片节点");
     expect(html).toContain("添加导出包");
     expect(html).toContain("添加分镜框");

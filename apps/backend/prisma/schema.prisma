@@ -11,6 +11,10 @@ datasource db {
 
 enum CanvasNodeType {
   novel
+  source_text
+  source_image
+  source_video
+  source_audio
   scene_frame
   scene
   shot
