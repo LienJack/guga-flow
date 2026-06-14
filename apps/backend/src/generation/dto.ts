@@ -4,6 +4,7 @@ import type {
   AnyLlmProviderId,
   CreateGenerationJobInput,
   CreateAssetAnalysisJobInput,
+  CreateMediaMetadataJobInput,
   CreateBatchImagesToVideosJobInput,
   CreateBatchShotsToImagesJobInput,
   AnyImageProviderId,
@@ -12,6 +13,7 @@ import type {
   CanvasSnapshotJson,
   EditorExportPackageOutput,
   GeneratedMediaProviderOutput,
+  MediaMetadataJobOutput,
   Phase8GenerationOperation,
   ProjectAspectRatio,
   ProviderFailure,
@@ -203,6 +205,31 @@ export class CreateAssetAnalysisJobDto implements CreateAssetAnalysisJobInput {
   forceFailure?: boolean;
 }
 
+export class CreateMediaMetadataJobDto implements CreateMediaMetadataJobInput {
+  @IsIn(["media_metadata"])
+  operation!: "media_metadata";
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  @MaxLength(160, { each: true })
+  assetIds!: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  createThumbnail?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  overwrite?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  forceFailure?: boolean;
+}
+
 export class CreateBatchImagesToVideosJobDto implements CreateBatchImagesToVideosJobInput {
   @IsIn(["batch_images_to_videos"])
   operation!: "batch_images_to_videos";
@@ -337,6 +364,10 @@ export class WorkerGenerationJobSucceedDto implements WorkerGenerationJobSucceed
   @IsOptional()
   @IsObject()
   assetAnalysisOutput?: AssetAnalysisJobOutput;
+
+  @IsOptional()
+  @IsObject()
+  mediaMetadataOutput?: MediaMetadataJobOutput;
 
   @IsOptional()
   @IsObject()

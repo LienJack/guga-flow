@@ -216,6 +216,7 @@ function createAssetsServiceMock() {
       createdAt: createdAt.toISOString(),
     })),
     applyAssetAnalysis: vi.fn(async () => []),
+    applyMediaMetadata: vi.fn(async () => []),
   };
 }
 
@@ -932,6 +933,48 @@ describe("GenerationService", () => {
     });
   });
 
+  it("creates a queued media metadata job under the worker asset classification operation", async () => {
+    const result = await service.createMediaMetadataJob("project_1", {
+      operation: "media_metadata",
+      assetIds: ["asset_video_1", "asset_video_1"],
+      createThumbnail: true,
+    });
+
+    expect(assetsService.getAsset).toHaveBeenCalledTimes(1);
+    expect(assetsService.getAsset).toHaveBeenCalledWith("project_1", "asset_video_1");
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        operation: "asset_classification",
+        status: "queued",
+        provider: "mock-media",
+        model: "metadata-v1",
+        inputJson: expect.objectContaining({
+          operation: "media_metadata",
+          assetIds: ["asset_video_1"],
+          createThumbnail: true,
+          overwrite: false,
+        }),
+      }),
+    });
+    expect(result.job.operation).toBe("asset_classification");
+    expect(result.job.inputJson).toMatchObject({
+      operation: "media_metadata",
+      assetIds: ["asset_video_1"],
+    });
+  });
+
+  it("rejects media metadata jobs for non-media assets", async () => {
+    await expect(
+      service.createMediaMetadataJob("project_1", {
+        operation: "media_metadata",
+        assetIds: ["asset_1"],
+      }),
+    ).rejects.toThrow("Media metadata jobs support only video or audio assets");
+
+    expect(prisma.generationJob.create).not.toHaveBeenCalled();
+  });
+
   it("creates an image refinement job from an ImageNode asset and prompt", async () => {
     const result = await service.createJob("project_1", {
       operation: "image_refinement",
@@ -1559,6 +1602,86 @@ describe("GenerationService", () => {
     expect(result.outputJson).toEqual(output);
   });
 
+  it("completes media metadata jobs by applying derivative metadata to selected assets", async () => {
+    const input = {
+      operation: "media_metadata" as const,
+      projectId: "project_1",
+      assetIds: ["asset_video_1"],
+      provider: "mock-media",
+      model: "metadata-v1",
+      createThumbnail: true,
+      overwrite: false,
+    };
+    const output = {
+      operation: "media_metadata" as const,
+      provider: "mock-media",
+      model: "metadata-v1",
+      overwrite: false,
+      createThumbnail: true,
+      results: [
+        {
+          assetId: "asset_video_1",
+          mediaInfo: {
+            container: "mp4",
+            durationMs: 4200,
+            width: 1280,
+            height: 720,
+            hasVideo: true,
+            hasAudio: false,
+          },
+          thumbnail: {
+            kind: "thumbnail" as const,
+            status: "ready" as const,
+            mimeType: "image/png",
+            width: 480,
+            height: 270,
+            sourceAssetId: "asset_video_1",
+            rebuildStrategy: "mock_media_metadata" as const,
+          },
+          strategy: ["no_audio_stream_marked_hasAudio_false"],
+        },
+      ],
+      completedAt: "2026-06-14T00:00:00.000Z",
+    };
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "asset_classification",
+        status: "running",
+        provider: "mock-media",
+        model: "metadata-v1",
+        sourceNodeId: null,
+        inputJson: input,
+      }),
+    );
+    prisma.generationJob.update.mockResolvedValue(
+      generationJob({
+        operation: "asset_classification",
+        status: "succeeded",
+        provider: "mock-media",
+        model: "metadata-v1",
+        sourceNodeId: null,
+        inputJson: input,
+        outputJson: { ...output, generationJobId: "job_1" },
+      }),
+    );
+
+    const result = await service.succeedJob("job_1", undefined, undefined, undefined, undefined, output);
+
+    expect(assetsService.applyMediaMetadata).toHaveBeenCalledWith("project_1", {
+      ...output,
+      generationJobId: "job_1",
+    });
+    expect(prisma.generationJob.update).toHaveBeenCalledWith({
+      where: { id: "job_1" },
+      data: {
+        status: "succeeded",
+        outputJson: { ...output, generationJobId: "job_1" },
+        errorMessage: null,
+      },
+    });
+    expect(result.outputJson).toEqual({ ...output, generationJobId: "job_1" });
+  });
+
   it("completes AI text jobs by writing output back to the target node", async () => {
     const input = aiTextInput();
     const output = aiTextOutput();
@@ -1590,7 +1713,7 @@ describe("GenerationService", () => {
       }),
     );
 
-    const result = await service.succeedJob("job_1", undefined, undefined, undefined, undefined, output);
+    const result = await service.succeedJob("job_1", undefined, undefined, undefined, undefined, undefined, output);
 
     expect(assetsService.createGeneratedAsset).not.toHaveBeenCalled();
     expect(prisma.canvasNode.create).not.toHaveBeenCalled();

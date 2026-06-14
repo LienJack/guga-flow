@@ -36,6 +36,87 @@ export type UploadableAssetMimeType = (typeof UPLOADABLE_ASSET_MIME_TYPES)[numbe
 export const ASSET_PREVIEW_KINDS = ["image", "video", "audio", "text", "metadata"] as const;
 export type AssetPreviewKind = (typeof ASSET_PREVIEW_KINDS)[number];
 
+export const ASSET_DERIVATIVE_KINDS = [
+  "original",
+  "display",
+  "thumbnail",
+  "waveform",
+] as const;
+export type AssetDerivativeKind = (typeof ASSET_DERIVATIVE_KINDS)[number];
+
+export const ASSET_DERIVATIVE_STATUSES = [
+  "ready",
+  "pending",
+  "failed",
+  "skipped",
+] as const;
+export type AssetDerivativeStatus = (typeof ASSET_DERIVATIVE_STATUSES)[number];
+
+export const ASSET_DERIVATIVE_REBUILD_STRATEGIES = [
+  "source_asset",
+  "mock_media_metadata",
+  "external_provider",
+  "manual",
+] as const;
+export type AssetDerivativeRebuildStrategy = (typeof ASSET_DERIVATIVE_REBUILD_STRATEGIES)[number];
+
+export interface AssetDerivativeMetadata {
+  kind: AssetDerivativeKind;
+  status: AssetDerivativeStatus;
+  assetId?: string;
+  storageKey?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  durationMs?: number;
+  sizeBytes?: number;
+  sourceAssetId?: string;
+  derivedFromAssetId?: string;
+  generationJobId?: string;
+  createdAt?: string;
+  rebuildStrategy?: AssetDerivativeRebuildStrategy;
+  errorMessage?: string;
+}
+
+export interface AssetMediaStreamMetadata {
+  kind: "video" | "audio";
+  codec?: string;
+  width?: number;
+  height?: number;
+  durationMs?: number;
+  frameRate?: number;
+  sampleRate?: number;
+  channelCount?: number;
+  bitrate?: number;
+}
+
+export interface AssetMediaInfo {
+  container?: string;
+  durationMs?: number;
+  width?: number;
+  height?: number;
+  frameRate?: number;
+  bitrate?: number;
+  hasVideo?: boolean;
+  hasAudio?: boolean;
+  streamCount?: number;
+  streams?: AssetMediaStreamMetadata[];
+}
+
+export interface AssetMediaMetadata {
+  previewKind?: AssetPreviewKind;
+  original?: AssetDerivativeMetadata;
+  display?: AssetDerivativeMetadata;
+  thumbnail?: AssetDerivativeMetadata;
+  derivatives?: AssetDerivativeMetadata[];
+  mediaInfo?: AssetMediaInfo;
+  mediaMetadataProvider?: string;
+  mediaMetadataModel?: string;
+  mediaMetadataAnalyzedAt?: string;
+  mediaMetadataStrategy?: string[];
+  mediaMetadataError?: string;
+}
+
 export const EDITOR_PACKAGE_MIME_TYPE = "application/zip" as const;
 export type EditorPackageMimeType = typeof EDITOR_PACKAGE_MIME_TYPE;
 

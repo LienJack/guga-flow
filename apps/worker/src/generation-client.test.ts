@@ -102,6 +102,45 @@ describe("generation worker client configuration", () => {
     );
   });
 
+  it("posts media metadata success payloads", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ id: "job_media_1" })));
+    const client = new HttpGenerationWorkerClient(
+      "http://localhost:3002/api/v1",
+      fetchImpl as unknown as typeof fetch,
+      "worker-secret",
+    );
+
+    await client.succeedMediaMetadataJob("job_media_1", {
+      operation: "media_metadata",
+      provider: "mock-media",
+      model: "metadata-v1",
+      overwrite: false,
+      createThumbnail: true,
+      generationJobId: "job_media_1",
+      results: [
+        {
+          assetId: "asset_video_1",
+          mediaInfo: { durationMs: 4200, hasVideo: true, hasAudio: false },
+          thumbnail: {
+            kind: "thumbnail",
+            status: "ready",
+            mimeType: "image/png",
+            rebuildStrategy: "mock_media_metadata",
+          },
+        },
+      ],
+      completedAt: "2026-06-14T00:00:00.000Z",
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:3002/api/v1/worker/generation/jobs/job_media_1/succeed",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("mediaMetadataOutput"),
+      }),
+    );
+  });
+
   it("posts provider runtime config requests without putting credentials in job payloads", async () => {
     const fetchImpl = vi.fn(async () =>
       new Response(

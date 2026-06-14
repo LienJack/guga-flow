@@ -669,6 +669,132 @@ describe("AssetsService", () => {
     expect(result[0]).toMatchObject({ id: "asset_1", previewKind: "image" });
   });
 
+  it("applies media metadata with stable original, display, and thumbnail derivatives", async () => {
+    const videoAsset = asset({
+      id: "asset_video_1",
+      type: "video",
+      storageKey: "project_1/source-video.mp4",
+      mimeType: "video/mp4",
+      originalFilename: "source-video.mp4",
+      metadataJson: { previewKind: "video", caption: "Existing caption" },
+    });
+    prisma.asset.findMany
+      .mockResolvedValueOnce([{ id: "asset_video_1" }])
+      .mockResolvedValueOnce([
+        asset({
+          id: "asset_video_1",
+          type: "video",
+          storageKey: "project_1/source-video.mp4",
+          mimeType: "video/mp4",
+          metadataJson: { previewKind: "video" },
+          width: 1280,
+          height: 720,
+          durationMs: 4200,
+        }),
+      ]);
+    prisma.asset.findFirst.mockResolvedValue(videoAsset);
+    prisma.asset.create.mockResolvedValue(
+      asset({
+        id: "asset_thumb_1",
+        type: "image",
+        storageKey: "project_1/asset-derivatives/asset_video_1-thumbnail.png",
+        mimeType: "image/png",
+        width: 480,
+        height: 270,
+        sizeBytes: 68,
+        metadataJson: { previewKind: "image", derivativeKind: "thumbnail" },
+      }),
+    );
+
+    const result = await service.applyMediaMetadata("project_1", {
+      operation: "media_metadata",
+      provider: "mock-media",
+      model: "metadata-v1",
+      overwrite: false,
+      createThumbnail: true,
+      generationJobId: "job_media_1",
+      results: [
+        {
+          assetId: "asset_video_1",
+          mediaInfo: {
+            container: "mp4",
+            durationMs: 4200,
+            width: 1280,
+            height: 720,
+            hasVideo: true,
+            hasAudio: false,
+          },
+          thumbnail: {
+            kind: "thumbnail",
+            status: "ready",
+            mimeType: "image/png",
+            width: 480,
+            height: 270,
+            sourceAssetId: "asset_video_1",
+            generationJobId: "job_media_1",
+            rebuildStrategy: "mock_media_metadata",
+          },
+          strategy: ["no_audio_stream_marked_hasAudio_false"],
+        },
+      ],
+      completedAt: "2026-06-14T00:00:00.000Z",
+    });
+
+    expect(storage.writeObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storageKey: expect.stringContaining("project_1/asset-derivatives/asset_video_1-thumbnail-"),
+      }),
+    );
+    expect(prisma.asset.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        type: "image",
+        purpose: "uploaded",
+        mimeType: "image/png",
+        metadataJson: expect.objectContaining({
+          derivativeKind: "thumbnail",
+          sourceAssetId: "asset_video_1",
+          generationJobId: "job_media_1",
+        }),
+      }),
+    });
+    expect(prisma.asset.update).toHaveBeenCalledWith({
+      where: { id: "asset_video_1" },
+      data: expect.objectContaining({
+        width: 1280,
+        height: 720,
+        durationMs: 4200,
+        metadataJson: expect.objectContaining({
+          caption: "Existing caption",
+          original: expect.objectContaining({
+            kind: "original",
+            storageKey: "project_1/source-video.mp4",
+            rebuildStrategy: "source_asset",
+          }),
+          display: expect.objectContaining({
+            kind: "display",
+            storageKey: "project_1/source-video.mp4",
+          }),
+          thumbnail: expect.objectContaining({
+            kind: "thumbnail",
+            assetId: "asset_thumb_1",
+            storageKey: "project_1/asset-derivatives/asset_video_1-thumbnail.png",
+          }),
+          mediaInfo: expect.objectContaining({
+            durationMs: 4200,
+            hasAudio: false,
+          }),
+          mediaMetadataProvider: "mock-media",
+          mediaMetadataModel: "metadata-v1",
+          mediaMetadataStrategy: ["no_audio_stream_marked_hasAudio_false"],
+        }),
+      }),
+    });
+    const updateCall = prisma.asset.update.mock.calls[prisma.asset.update.mock.calls.length - 1];
+    expect(JSON.stringify(updateCall)).not.toContain("/tmp/");
+    expect(result[0]).toMatchObject({ id: "asset_video_1", previewKind: "video" });
+  });
+
   it("creates derived image assets for crop edits with lineage metadata", async () => {
     prisma.asset.findFirst.mockResolvedValue(asset({ width: 100, height: 80 }));
     prisma.asset.create.mockResolvedValue(

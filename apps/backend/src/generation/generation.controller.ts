@@ -5,6 +5,7 @@ import {
   CreateBatchShotsToImagesJobDto,
   CreateAssetAnalysisJobDto,
   CreateGenerationJobDto,
+  CreateMediaMetadataJobDto,
 } from "./dto";
 import { GenerationService } from "./generation.service";
 
@@ -23,6 +24,14 @@ export class GenerationController {
     @Body() body: CreateAssetAnalysisJobDto,
   ) {
     return this.generationService.createAssetAnalysisJob(projectId, body);
+  }
+
+  @Post("media-metadata")
+  createMediaMetadataJob(
+    @Param("projectId") projectId: string,
+    @Body() body: CreateMediaMetadataJobDto,
+  ) {
+    return this.generationService.createMediaMetadataJob(projectId, body);
   }
 
   @Post("batch-images-to-videos")

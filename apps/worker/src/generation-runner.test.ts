@@ -7,6 +7,7 @@ import type {
   GenerationJobRecord,
   ImageRefinementJobInput,
   ImageToVideoJobInput,
+  MediaMetadataJobInput,
   ShotToImageJobInput,
 } from "@guga-flow/shared-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +20,7 @@ type WorkerGenerationJobInput =
   | ShotToImageJobInput
   | CharacterToImageJobInput
   | AssetAnalysisJobInput
+  | MediaMetadataJobInput
   | ImageRefinementJobInput
   | ImageToVideoJobInput
   | AiTextGenerationJobInput
@@ -44,6 +46,7 @@ function createClientMock(): GenerationWorkerClient {
       provider: "mock-vision",
       model: "mock-vision-v1",
     })),
+    succeedMediaMetadataJob: vi.fn(async () => jobRecord("job_media_done", mediaMetadataInput())),
     succeedTextGenerationJob: vi.fn(async () => jobRecord("job_text_done", aiTextInput())),
     succeedEditorExportJob: vi.fn(async () => jobRecord("job_export_done", editorExportInput())),
     waitJob: vi.fn(async () => jobRecord("job_waiting", videoInput(), { status: "provider_waiting" })),
@@ -441,6 +444,43 @@ describe("generation worker runner", () => {
     expect(result).toEqual({ status: "succeeded", jobId: "job_caption" });
   });
 
+  it("executes claimed media metadata jobs and reports derivative output", async () => {
+    vi.mocked(client.claimNextJob).mockResolvedValue({
+      job: jobRecord("job_media", mediaMetadataInput(), {
+        operation: "asset_classification",
+        provider: "mock-media",
+      }),
+    });
+
+    const result = await runOneGenerationJob({ client, registry });
+
+    expect(client.succeedMediaMetadataJob).toHaveBeenCalledWith(
+      "job_media",
+      expect.objectContaining({
+        operation: "media_metadata",
+        provider: "mock-media",
+        createThumbnail: true,
+        results: [
+          expect.objectContaining({
+            assetId: "asset_video_silent",
+            mediaInfo: expect.objectContaining({
+              hasAudio: false,
+              hasVideo: true,
+            }),
+            thumbnail: expect.objectContaining({
+              kind: "thumbnail",
+              rebuildStrategy: "mock_media_metadata",
+            }),
+            strategy: expect.arrayContaining(["no_audio_stream_marked_hasAudio_false"]),
+          }),
+        ],
+      }),
+    );
+    expect(registry.imageProviders.get).not.toHaveBeenCalled();
+    expect(registry.videoProviders.get).not.toHaveBeenCalled();
+    expect(result).toEqual({ status: "succeeded", jobId: "job_media" });
+  });
+
   it("executes claimed AI text jobs and reports text output", async () => {
     vi.mocked(client.claimNextJob).mockResolvedValue({
       job: jobRecord("job_text", aiTextInput(), {
@@ -693,6 +733,18 @@ function assetCaptionInput(): AssetAnalysisJobInput {
   };
 }
 
+function mediaMetadataInput(): MediaMetadataJobInput {
+  return {
+    operation: "media_metadata",
+    projectId: "project_1",
+    assetIds: ["asset_video_silent"],
+    provider: "mock-media",
+    model: "metadata-v1",
+    createThumbnail: true,
+    overwrite: false,
+  };
+}
+
 function jobRecord(
   id: string,
   inputJson: WorkerGenerationJobInput,
@@ -701,7 +753,7 @@ function jobRecord(
   return {
     id,
     projectId: "project_1",
-    operation: inputJson.operation,
+    operation: inputJson.operation === "media_metadata" ? "asset_classification" : inputJson.operation,
     status: "running",
     provider: inputJson.operation === "editor_export" ? "mock-editor" : inputJson.provider,
     model: inputJson.operation === "editor_export" ? "zip-v1" : inputJson.model,

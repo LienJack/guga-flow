@@ -8,6 +8,7 @@ import type {
   Phase3CanvasNodeType,
 } from "./canvas";
 import type { AgentDeploymentRole } from "./agent";
+import type { AssetDerivativeMetadata, AssetMediaInfo } from "./assets";
 import type { PromptDebugPart, PromptMissingContext, ShotPromptSourceNodeIds } from "./prompt-composer";
 import { PROJECT_ASPECT_RATIOS, type ProjectAspectRatio } from "./project";
 
@@ -164,6 +165,9 @@ export type WorkflowOutputKind = (typeof WORKFLOW_OUTPUT_KINDS)[number];
 
 export const ASSET_ANALYSIS_OPERATIONS = ["asset_caption", "asset_classification"] as const;
 export type AssetAnalysisOperation = (typeof ASSET_ANALYSIS_OPERATIONS)[number];
+
+export const MEDIA_METADATA_OPERATIONS = ["media_metadata"] as const;
+export type MediaMetadataOperation = (typeof MEDIA_METADATA_OPERATIONS)[number];
 
 export const PROVIDER_KINDS = ["llm", "image", "video", "editor"] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
@@ -1283,7 +1287,10 @@ export interface GenerationJobListResult<
     | GeneratedMediaJobOutput
     | ReferenceAssetJobOutput
     | AiTextGenerationJobOutput
-    | AiAudioGenerationJobOutput,
+    | AiAudioGenerationJobOutput
+    | EditorExportJobOutput
+    | AssetAnalysisJobOutput
+    | MediaMetadataJobOutput,
 > {
   jobs: Array<GenerationJobRecord<TInput, TOutput>>;
   queueSummary: GenerationQueueSummary;
@@ -1304,6 +1311,7 @@ export interface WorkerGenerationJobSucceedInput {
   providerOutputs?: GeneratedMediaProviderOutput[];
   packageOutput?: EditorExportPackageOutput;
   assetAnalysisOutput?: AssetAnalysisJobOutput;
+  mediaMetadataOutput?: MediaMetadataJobOutput;
   textGenerationOutput?: AiTextGenerationJobOutput;
 }
 
@@ -1331,6 +1339,7 @@ export type GenerationJobInput =
   | NovelToStoryboardJobInput
   | AgentCanvasActionJobInput
   | AssetAnalysisJobInput
+  | MediaMetadataJobInput
   | ShotToImageJobInput
   | CharacterToImageJobInput
   | LocationToImageJobInput
@@ -1527,6 +1536,53 @@ export interface AssetAnalysisJobOutput {
   model?: string;
   overwrite: boolean;
   results: AssetAnalysisItemOutput[];
+  completedAt: string;
+}
+
+export interface MediaMetadataJobInput {
+  operation: MediaMetadataOperation;
+  projectId: string;
+  assetIds: string[];
+  provider: "mock-media" | string;
+  model?: string;
+  createThumbnail: boolean;
+  overwrite?: boolean;
+  forceFailure?: boolean;
+}
+
+export interface CreateMediaMetadataJobInput {
+  operation: MediaMetadataOperation;
+  assetIds: string[];
+  createThumbnail?: boolean;
+  overwrite?: boolean;
+  forceFailure?: boolean;
+}
+
+export interface CreateMediaMetadataJobResult {
+  job: GenerationJobRecord<MediaMetadataJobInput>;
+  queueSummary: GenerationQueueSummary;
+}
+
+export interface MediaMetadataItemOutput {
+  assetId: string;
+  mediaInfo?: AssetMediaInfo;
+  original?: AssetDerivativeMetadata;
+  display?: AssetDerivativeMetadata;
+  thumbnail?: AssetDerivativeMetadata;
+  derivatives?: AssetDerivativeMetadata[];
+  strategy?: string[];
+  skipped?: boolean;
+  errorMessage?: string;
+}
+
+export interface MediaMetadataJobOutput {
+  operation: MediaMetadataOperation;
+  provider: string;
+  model?: string;
+  overwrite: boolean;
+  createThumbnail: boolean;
+  generationJobId?: string;
+  results: MediaMetadataItemOutput[];
   completedAt: string;
 }
 

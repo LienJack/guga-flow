@@ -4,6 +4,9 @@ import {
   AUDIO_PROVIDER_IDS,
   AUDIO_PROVIDER_MODES,
   ASSET_PREVIEW_KINDS,
+  ASSET_DERIVATIVE_KINDS,
+  ASSET_DERIVATIVE_REBUILD_STRATEGIES,
+  ASSET_DERIVATIVE_STATUSES,
   ASSET_PURPOSES,
   ASSET_TYPES,
   AGENT_CANVAS_ACTION_KINDS,
@@ -30,6 +33,7 @@ import {
   GENERATION_CREATIVE_SETTING_KEYS,
   GENERATION_JOB_STATUSES,
   GENERATION_OPERATIONS,
+  MEDIA_METADATA_OPERATIONS,
   GENERATION_PACKAGING_REFERENCE_STATUSES,
   IMAGE_PROVIDER_IDS,
   IMAGE_PROVIDER_MODES,
@@ -90,6 +94,7 @@ import {
   skillTemplateMetadata,
   validateCanvasInputConnection,
   type AssetListItem,
+  type AssetMediaMetadata,
   type AgentCanvasActionJobInput,
   type AgentCanvasActionJobOutput,
   type AgentMemoryListResult,
@@ -143,6 +148,7 @@ import {
   type ImportNovelSourceInput,
   type LocationAssetNodeData,
   type LocationToImageJobInput,
+  type MediaMetadataJobInput,
   type NovelToStoryboardJobInput,
   type NovelEventGraphRecord,
   type NovelToStoryboardJobOutput,
@@ -205,6 +211,44 @@ describe("shared domain constants", () => {
 
     expect(currentSession.user?.id).toBe("default-user");
     expect(logout.ok).toBe(true);
+  });
+
+  it("exports media derivative metadata contracts", () => {
+    const metadata: AssetMediaMetadata = {
+      previewKind: "video",
+      original: {
+        kind: "original",
+        status: "ready",
+        assetId: "asset_video_1",
+        storageKey: "project_1/source.mp4",
+        rebuildStrategy: "source_asset",
+      },
+      thumbnail: {
+        kind: "thumbnail",
+        status: "pending",
+        sourceAssetId: "asset_video_1",
+        rebuildStrategy: "mock_media_metadata",
+      },
+      mediaInfo: {
+        durationMs: 4200,
+        hasVideo: true,
+        hasAudio: false,
+      },
+    };
+    const jobInput: MediaMetadataJobInput = {
+      operation: "media_metadata",
+      projectId: "project_1",
+      assetIds: ["asset_video_1"],
+      provider: "mock-media",
+      model: "metadata-v1",
+      createThumbnail: true,
+    };
+
+    expect(ASSET_DERIVATIVE_KINDS).toContain(metadata.thumbnail?.kind);
+    expect(ASSET_DERIVATIVE_STATUSES).toContain(metadata.thumbnail?.status);
+    expect(ASSET_DERIVATIVE_REBUILD_STRATEGIES).toContain(metadata.original?.rebuildStrategy);
+    expect(MEDIA_METADATA_OPERATIONS).toEqual(["media_metadata"]);
+    expect(jobInput.operation).toBe("media_metadata");
   });
 
   it("includes MVP canvas node and edge concepts", () => {

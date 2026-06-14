@@ -13,10 +13,14 @@ import {
   type AssetBatchResult,
   type AssetAnalysisJobOutput,
   type AssetCollectionKind,
+  type AssetDerivativeKind,
+  type AssetDerivativeMetadata,
   type AssetCollectionRecord,
   type AssetDetail,
   type AssetListFilters,
   type AssetListItem,
+  type AssetMediaInfo,
+  type AssetMediaMetadata,
   type AssetPreviewKind,
   type AssetPurpose,
   type AssetReferenceSummary,
@@ -26,6 +30,8 @@ import {
   type EditAssetResult,
   type EditorExportPackageOutput,
   type GeneratedMediaProviderOutput,
+  type MediaMetadataJobOutput,
+  type MediaMetadataItemOutput,
   type UploadableAssetMimeType,
 } from "@guga-flow/shared-types";
 import { EDITOR_PACKAGE_MIME_TYPE } from "@guga-flow/shared-types";
@@ -632,6 +638,147 @@ export class AssetsService {
     return this.listAssets(projectId);
   }
 
+  async applyMediaMetadata(
+    projectId: string,
+    output: MediaMetadataJobOutput,
+  ): Promise<AssetListItem[]> {
+    await this.ensureProjectExists(projectId);
+    const assetIds = output.results.map((result) => result.assetId);
+    await this.ensureAssetsBelongToProject(projectId, assetIds);
+
+    for (const result of output.results) {
+      const asset = await this.findAsset(projectId, result.assetId);
+      const metadata = dataObject(asset.metadataJson) as AssetMediaMetadata & Record<string, unknown>;
+
+      if (result.skipped || result.errorMessage) {
+        await this.prisma.asset.update({
+          where: { id: asset.id },
+          data: {
+            metadataJson: jsonValue({
+              ...metadata,
+              mediaMetadataProvider: output.provider,
+              mediaMetadataModel: output.model,
+              mediaMetadataAnalyzedAt: output.completedAt,
+              mediaMetadataStrategy: result.strategy ?? metadata.mediaMetadataStrategy,
+              mediaMetadataError: result.errorMessage ?? "Media metadata processing skipped",
+            }),
+          },
+        });
+        continue;
+      }
+
+      const original = result.original ?? derivativeFromAsset("original", asset, output);
+      const display = result.display ?? derivativeFromAsset("display", asset, output);
+      const thumbnail = await this.resolveThumbnailDerivative(projectId, asset, result, output);
+      const derivatives = mergeAssetDerivatives(
+        derivativeArray(metadata.derivatives),
+        [original, display],
+        result.derivatives ?? [],
+        thumbnail ? [thumbnail] : [],
+      );
+      const nextMetadata: AssetMediaMetadata & Record<string, unknown> = {
+        ...metadata,
+        previewKind: previewKindForMime(asset.mimeType),
+        original,
+        display,
+        thumbnail: thumbnail ?? metadata.thumbnail,
+        derivatives,
+        mediaInfo: result.mediaInfo ?? metadata.mediaInfo,
+        mediaMetadataProvider: output.provider,
+        mediaMetadataModel: output.model,
+        mediaMetadataAnalyzedAt: output.completedAt,
+        mediaMetadataStrategy: result.strategy ?? metadata.mediaMetadataStrategy,
+        mediaMetadataError: undefined,
+      };
+      const updateData: Prisma.AssetUpdateInput = {
+        metadataJson: jsonValue(nextMetadata),
+      };
+      const width = finiteNumber(result.mediaInfo?.width);
+      const height = finiteNumber(result.mediaInfo?.height);
+      const durationMs = finiteNumber(result.mediaInfo?.durationMs);
+      if (width !== undefined) {
+        updateData.width = width;
+      }
+      if (height !== undefined) {
+        updateData.height = height;
+      }
+      if (durationMs !== undefined) {
+        updateData.durationMs = durationMs;
+      }
+
+      await this.prisma.asset.update({
+        where: { id: asset.id },
+        data: updateData,
+      });
+    }
+
+    return this.listAssets(projectId);
+  }
+
+  private async resolveThumbnailDerivative(
+    projectId: string,
+    source: AssetModel,
+    result: MediaMetadataItemOutput,
+    output: MediaMetadataJobOutput,
+  ): Promise<AssetDerivativeMetadata | undefined> {
+    if (!output.createThumbnail) {
+      return result.thumbnail;
+    }
+    const requested = result.thumbnail;
+    if (requested?.assetId || requested?.storageKey) {
+      return requested;
+    }
+    if (!requested && !result.mediaInfo) {
+      return undefined;
+    }
+
+    const storageKey = `${projectId}/asset-derivatives/${source.id}-thumbnail-${randomUUID()}.png`;
+    const stored = await this.storage.writeObject({
+      storageKey,
+      buffer: TRANSPARENT_PNG,
+    });
+    const width = requested?.width ?? result.mediaInfo?.width ?? 320;
+    const height = requested?.height ?? result.mediaInfo?.height ?? 180;
+    const thumbnailAsset = await this.prisma.asset.create({
+      data: {
+        projectId,
+        type: "image",
+        purpose: "uploaded",
+        storageKey: stored.storageKey,
+        mimeType: "image/png",
+        originalFilename: originalFilenameFromStorageKey(stored.storageKey),
+        sizeBytes: stored.sizeBytes,
+        width,
+        height,
+        metadataJson: jsonValue({
+          previewKind: "image",
+          derivativeKind: "thumbnail",
+          sourceAssetId: source.id,
+          derivedFromAssetId: source.id,
+          generationJobId: output.generationJobId,
+          mediaMetadataProvider: output.provider,
+          mediaMetadataModel: output.model,
+        }),
+      },
+    }) as AssetModel;
+
+    return {
+      kind: "thumbnail",
+      status: "ready",
+      assetId: thumbnailAsset.id,
+      storageKey: thumbnailAsset.storageKey,
+      mimeType: thumbnailAsset.mimeType,
+      width: thumbnailAsset.width ?? width,
+      height: thumbnailAsset.height ?? height,
+      sizeBytes: thumbnailAsset.sizeBytes ?? stored.sizeBytes,
+      sourceAssetId: source.id,
+      derivedFromAssetId: source.id,
+      generationJobId: output.generationJobId,
+      createdAt: toIsoString(thumbnailAsset.createdAt),
+      rebuildStrategy: requested?.rebuildStrategy ?? "mock_media_metadata",
+    };
+  }
+
   private libraryPrisma(): AssetLibraryPrismaClient {
     return this.prisma as AssetLibraryPrismaClient;
   }
@@ -818,6 +965,57 @@ function metadataSearchText(value: unknown): string {
     return Object.values(value).map(metadataSearchText).join(" ");
   }
   return "";
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function derivativeFromAsset(
+  kind: AssetDerivativeKind,
+  asset: AssetModel,
+  output: MediaMetadataJobOutput,
+): AssetDerivativeMetadata {
+  return {
+    kind,
+    status: "ready",
+    assetId: asset.id,
+    storageKey: asset.storageKey,
+    mimeType: asset.mimeType,
+    width: asset.width ?? undefined,
+    height: asset.height ?? undefined,
+    durationMs: asset.durationMs ?? undefined,
+    sizeBytes: asset.sizeBytes ?? undefined,
+    sourceAssetId: asset.id,
+    generationJobId: output.generationJobId,
+    rebuildStrategy: "source_asset",
+  };
+}
+
+function derivativeArray(value: unknown): AssetDerivativeMetadata[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is AssetDerivativeMetadata => {
+    const raw = dataObject(item);
+    return typeof raw.kind === "string" && typeof raw.status === "string";
+  });
+}
+
+function mergeAssetDerivatives(
+  ...groups: readonly AssetDerivativeMetadata[][]
+): AssetDerivativeMetadata[] {
+  const byKey = new Map<string, AssetDerivativeMetadata>();
+  for (const derivative of groups.flat()) {
+    const key = [
+      derivative.kind,
+      derivative.assetId ?? "",
+      derivative.storageKey ?? "",
+      derivative.sourceAssetId ?? "",
+    ].join(":");
+    byKey.set(key, derivative);
+  }
+  return Array.from(byKey.values());
 }
 
 function jsonContainsString(value: unknown, needle: string): boolean {

@@ -8,6 +8,7 @@ import type {
   GenerationJobRecord,
   ManagedProviderId,
   ManagedProviderKind,
+  MediaMetadataJobOutput,
   ProviderFailure,
   ProviderRuntimeConfig,
   WorkerGenerationJobWaitInput,
@@ -33,6 +34,10 @@ export interface GenerationWorkerClient {
   succeedAssetAnalysisJob(
     jobId: string,
     assetAnalysisOutput: AssetAnalysisJobOutput,
+  ): Promise<GenerationJobRecord>;
+  succeedMediaMetadataJob(
+    jobId: string,
+    mediaMetadataOutput: MediaMetadataJobOutput,
   ): Promise<GenerationJobRecord>;
   succeedTextGenerationJob(
     jobId: string,
@@ -112,6 +117,15 @@ export class HttpGenerationWorkerClient implements GenerationWorkerClient {
   ): Promise<GenerationJobRecord> {
     return this.post(`/worker/generation/jobs/${encodeURIComponent(jobId)}/succeed`, {
       assetAnalysisOutput,
+    });
+  }
+
+  succeedMediaMetadataJob(
+    jobId: string,
+    mediaMetadataOutput: MediaMetadataJobOutput,
+  ): Promise<GenerationJobRecord> {
+    return this.post(`/worker/generation/jobs/${encodeURIComponent(jobId)}/succeed`, {
+      mediaMetadataOutput,
     });
   }
 

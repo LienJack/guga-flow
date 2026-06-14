@@ -17,6 +17,7 @@ import type {
   GenerationJobInput,
   GenerationJobRecord,
   AssetAnalysisJobOutput,
+  MediaMetadataJobOutput,
   ProgrammableProviderRuntimeConfig,
   ProviderConfigParams,
   ProviderFailure,
@@ -52,6 +53,10 @@ export type GenerationExecutorResult =
   | {
       status: "succeeded";
       assetAnalysisOutput: AssetAnalysisJobOutput;
+    }
+  | {
+      status: "succeeded";
+      mediaMetadataOutput: MediaMetadataJobOutput;
     }
   | {
       status: "succeeded";
@@ -108,6 +113,21 @@ export async function executeGenerationJob(
   registry: GenerationExecutorRegistry = createMockGenerationExecutorRegistry(),
 ): Promise<GenerationExecutorResult> {
   const input = job.inputJson;
+
+  if (input.operation === "media_metadata") {
+    if (input.forceFailure) {
+      throw new ProviderError({
+        provider: input.provider,
+        code: "MOCK_MEDIA_METADATA_FAILED",
+        message: "Mock media metadata failure requested.",
+        retryable: true,
+      });
+    }
+    return {
+      status: "succeeded",
+      mediaMetadataOutput: mockMediaMetadataOutput(job.id, input),
+    };
+  }
 
   if (input.operation === "asset_caption" || input.operation === "asset_classification") {
     if (input.forceFailure) {
@@ -455,6 +475,90 @@ function mockAiAudioOutput(
       contextCount: input.context.length,
       skillTemplateIds: input.skillTemplateIds ?? [],
     },
+  };
+}
+
+function mockMediaMetadataOutput(
+  jobId: string,
+  input: Extract<GenerationJobInput, { operation: "media_metadata" }>,
+): MediaMetadataJobOutput {
+  return {
+    operation: "media_metadata",
+    provider: input.provider,
+    model: input.model,
+    overwrite: input.overwrite === true,
+    createThumbnail: input.createThumbnail,
+    generationJobId: jobId,
+    results: input.assetIds.map((assetId) => {
+      const normalized = assetId.toLowerCase();
+      const audioOnly = normalized.includes("audio") && !normalized.includes("video");
+      const shortVideo = normalized.includes("short") || normalized.includes("tiny");
+      const silentVideo = normalized.includes("silent") || normalized.includes("no-audio");
+      const durationMs = shortVideo ? 240 : audioOnly ? 6100 : 4200;
+      const width = audioOnly ? undefined : 1280;
+      const height = audioOnly ? undefined : 720;
+      const strategy = [
+        "mock executor writes metadata only; real ffmpeg adapter remains replaceable",
+        shortVideo ? "short_video_keep_original_no_cut" : undefined,
+        silentVideo ? "no_audio_stream_marked_hasAudio_false" : undefined,
+      ].filter((item): item is string => Boolean(item));
+
+      return {
+        assetId,
+        mediaInfo: {
+          container: audioOnly ? "mpeg-audio" : "mp4",
+          durationMs,
+          width,
+          height,
+          frameRate: audioOnly ? undefined : 24,
+          hasVideo: !audioOnly,
+          hasAudio: audioOnly || !silentVideo,
+          streamCount: audioOnly ? 1 : silentVideo ? 1 : 2,
+          streams: [
+            audioOnly
+              ? {
+                  kind: "audio" as const,
+                  codec: "mock-aac",
+                  durationMs,
+                  sampleRate: 48000,
+                  channelCount: 2,
+                }
+              : {
+                  kind: "video" as const,
+                  codec: "mock-h264",
+                  width,
+                  height,
+                  durationMs,
+                  frameRate: 24,
+                },
+            ...(!audioOnly && !silentVideo
+              ? [{
+                  kind: "audio" as const,
+                  codec: "mock-aac",
+                  durationMs,
+                  sampleRate: 48000,
+                  channelCount: 2,
+                }]
+              : []),
+          ],
+        },
+        thumbnail: input.createThumbnail
+          ? {
+              kind: "thumbnail" as const,
+              status: "ready" as const,
+              mimeType: "image/png",
+              width: audioOnly ? 320 : 480,
+              height: audioOnly ? 80 : 270,
+              sourceAssetId: assetId,
+              generationJobId: jobId,
+              rebuildStrategy: "mock_media_metadata" as const,
+            }
+          : undefined,
+        derivatives: [],
+        strategy,
+      };
+    }),
+    completedAt: new Date().toISOString(),
   };
 }
 

@@ -73,6 +73,11 @@ export async function runOneGenerationJob(
       options.logger?.info(`Asset analysis job ${job.id} succeeded.`);
       return { status: "succeeded", jobId: job.id };
     }
+    if ("mediaMetadataOutput" in result) {
+      await options.client.succeedMediaMetadataJob(job.id, result.mediaMetadataOutput);
+      options.logger?.info(`Media metadata job ${job.id} succeeded.`);
+      return { status: "succeeded", jobId: job.id };
+    }
     if ("textGenerationOutput" in result) {
       await options.client.succeedTextGenerationJob(job.id, result.textGenerationOutput);
       options.logger?.info(`AI text generation job ${job.id} succeeded.`);

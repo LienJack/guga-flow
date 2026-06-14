@@ -30,6 +30,8 @@ import type {
   CreateGenerationJobResult,
   CreateAssetAnalysisJobInput,
   CreateAssetAnalysisJobResult,
+  CreateMediaMetadataJobInput,
+  CreateMediaMetadataJobResult,
   CreateWorkflowDefinitionInput,
   CreateWorkflowVersionInput,
   CreateWorkflowRunInput,
@@ -414,6 +416,16 @@ export function createAssetAnalysisJob(
   input: CreateAssetAnalysisJobInput,
 ): Promise<CreateAssetAnalysisJobResult> {
   return requestJson<CreateAssetAnalysisJobResult>(`/projects/${projectId}/generation/jobs/asset-analysis`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function createMediaMetadataJob(
+  projectId: string,
+  input: CreateMediaMetadataJobInput,
+): Promise<CreateMediaMetadataJobResult> {
+  return requestJson<CreateMediaMetadataJobResult>(`/projects/${projectId}/generation/jobs/media-metadata`, {
     method: "POST",
     body: JSON.stringify(input),
   });

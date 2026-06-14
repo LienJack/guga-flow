@@ -24,6 +24,8 @@ import type {
   CreateBatchShotsToImagesJobResult,
   CreateAssetAnalysisJobInput,
   CreateAssetAnalysisJobResult,
+  CreateMediaMetadataJobInput,
+  CreateMediaMetadataJobResult,
   CreateGenerationJobInput,
   EditorExportJobInput,
   EditorExportJobOutput,
@@ -45,6 +47,8 @@ import type {
   LlmProviderCatalogItem,
   LocationAssetNodeData,
   LocationToImageJobInput,
+  MediaMetadataJobInput,
+  MediaMetadataJobOutput,
   NodeStatus,
   Phase8GenerationOperation,
   ProviderFailure,
@@ -77,7 +81,7 @@ import {
 import type { GenerationOperation as PrismaGenerationOperation } from "../generated/prisma/client";
 import { Prisma } from "../generated/prisma/client";
 
-import { AssetsService } from "../assets/assets.service";
+import { AssetsService, MAX_UPLOAD_BYTES } from "../assets/assets.service";
 import { CanvasService } from "../canvas/canvas.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PromptService } from "../prompt/prompt.service";
@@ -152,6 +156,7 @@ type DirectGenerationJobInput =
 type WorkerGenerationJobInput =
   | DirectGenerationJobInput
   | AssetAnalysisJobInput
+  | MediaMetadataJobInput
   | WorkflowRunJobInput
   | EditorExportJobInput;
 type GeneratedMediaJobInput = ShotToImageJobInput | ImageRefinementJobInput | ImageToVideoJobInput | WorkflowRunJobInput;
@@ -296,6 +301,9 @@ function assertJobInput(value: unknown): WorkerGenerationJobInput {
   if (input.operation === "asset_caption" || input.operation === "asset_classification") {
     return value as WorkerGenerationJobInput;
   }
+  if (input.operation === "media_metadata") {
+    return value as WorkerGenerationJobInput;
+  }
   if (input.operation === "workflow_run") {
     return value as WorkerGenerationJobInput;
   }
@@ -406,6 +414,55 @@ export class GenerationService {
 
     return {
       job: this.toGenerationJobRecord<AssetAnalysisJobInput>(job),
+      queueSummary: await this.getQueueSummary(projectId),
+    };
+  }
+
+  async createMediaMetadataJob(
+    projectId: string,
+    input: CreateMediaMetadataJobInput,
+  ): Promise<CreateMediaMetadataJobResult> {
+    if (input.operation !== "media_metadata") {
+      throw new BadRequestException("Media metadata operation is not supported");
+    }
+    const assetIds = Array.from(new Set((input.assetIds ?? []).filter(Boolean)));
+    if (!assetIds.length) {
+      throw new BadRequestException("Media metadata requires assetIds");
+    }
+
+    for (const assetId of assetIds) {
+      const asset = await this.assetsService.getAsset(projectId, assetId);
+      if (asset.type !== "video" && asset.type !== "audio") {
+        throw new BadRequestException("Media metadata jobs support only video or audio assets");
+      }
+      if (asset.sizeBytes && asset.sizeBytes > MAX_UPLOAD_BYTES) {
+        throw new BadRequestException("Media metadata asset is too large");
+      }
+    }
+
+    const jobInput: MediaMetadataJobInput = {
+      operation: "media_metadata",
+      projectId,
+      assetIds,
+      provider: "mock-media",
+      model: "metadata-v1",
+      createThumbnail: input.createThumbnail !== false,
+      overwrite: input.overwrite === true,
+      forceFailure: input.forceFailure,
+    };
+    const job = await this.prisma.generationJob.create({
+      data: {
+        projectId,
+        operation: "asset_classification",
+        status: "queued",
+        provider: jobInput.provider,
+        model: jobInput.model,
+        inputJson: jsonValue(jobInput),
+      },
+    }) as GenerationJobModel;
+
+    return {
+      job: this.toGenerationJobRecord<MediaMetadataJobInput>(job),
       queueSummary: await this.getQueueSummary(projectId),
     };
   }
@@ -812,6 +869,7 @@ export class GenerationService {
     providerOutputs?: GeneratedMediaProviderOutput[],
     packageOutput?: EditorExportPackageOutput,
     assetAnalysisOutput?: AssetAnalysisJobOutput,
+    mediaMetadataOutput?: MediaMetadataJobOutput,
     textGenerationOutput?: AiTextGenerationJobOutput,
   ): Promise<
     GenerationJobRecord<
@@ -820,6 +878,7 @@ export class GenerationService {
       | ReferenceAssetJobOutput
       | EditorExportJobOutput
       | AssetAnalysisJobOutput
+      | MediaMetadataJobOutput
       | AiTextGenerationJobOutput
       | AiAudioGenerationJobOutput
     >
@@ -835,6 +894,12 @@ export class GenerationService {
     }
 
     const input = assertJobInput(existing.inputJson);
+    if (input.operation === "media_metadata") {
+      if (!mediaMetadataOutput) {
+        throw new BadRequestException("Media metadata completion requires metadata output");
+      }
+      return this.succeedMediaMetadataJob(existing, input, mediaMetadataOutput);
+    }
     if (input.operation === "asset_caption" || input.operation === "asset_classification") {
       if (!assetAnalysisOutput) {
         throw new BadRequestException("Asset analysis completion requires analysis output");
@@ -1008,6 +1073,43 @@ export class GenerationService {
     })) as GenerationJobModel;
 
     return this.toGenerationJobRecord<AssetAnalysisJobInput, AssetAnalysisJobOutput>(completed);
+  }
+
+  private async succeedMediaMetadataJob(
+    existing: GenerationJobModel,
+    input: MediaMetadataJobInput,
+    output: MediaMetadataJobOutput,
+  ): Promise<GenerationJobRecord<MediaMetadataJobInput, MediaMetadataJobOutput>> {
+    if (output.operation !== "media_metadata") {
+      throw new BadRequestException("Media metadata output operation does not match the claimed job");
+    }
+    const expectedAssetIds = new Set(input.assetIds);
+    if (!output.results.every((result) => expectedAssetIds.has(result.assetId))) {
+      throw new BadRequestException("Media metadata output contains unexpected assets");
+    }
+
+    const claimed = await this.prisma.generationJob.updateMany({
+      where: { id: existing.id, status: { in: WORKER_ACTIVE_JOB_STATUSES } },
+      data: { errorMessage: null },
+    });
+    if (claimed.count !== 1) {
+      throw new BadRequestException("Only active generation jobs can succeed");
+    }
+    const completedOutput: MediaMetadataJobOutput = {
+      ...output,
+      generationJobId: output.generationJobId ?? existing.id,
+    };
+    await this.assetsService.applyMediaMetadata(existing.projectId, completedOutput);
+    const completed = (await this.prisma.generationJob.update({
+      where: { id: existing.id },
+      data: {
+        status: "succeeded",
+        outputJson: jsonValue(completedOutput),
+        errorMessage: null,
+      },
+    })) as GenerationJobModel;
+
+    return this.toGenerationJobRecord<MediaMetadataJobInput, MediaMetadataJobOutput>(completed);
   }
 
   private async succeedAiTextGenerationJob(

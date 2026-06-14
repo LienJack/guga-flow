@@ -3,6 +3,7 @@ import type {
   AiTextGenerationJobInput,
   GenerationJobRecord,
   ImageToVideoJobInput,
+  MediaMetadataJobInput,
   ProgrammableProviderManifest,
   ShotToImageJobInput,
 } from "@guga-flow/shared-types";
@@ -117,6 +118,40 @@ describe("generation executors", () => {
           contextCount: 1,
           skillTemplateIds: ["preset_audio_1"],
         },
+      },
+    });
+  });
+
+  it("executes media metadata jobs with deterministic derivative metadata", async () => {
+    const input = mediaMetadataInput();
+    const result = await executeGenerationJob(jobRecord(input));
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      mediaMetadataOutput: {
+        operation: "media_metadata",
+        provider: "mock-media",
+        model: "metadata-v1",
+        createThumbnail: true,
+        results: [
+          {
+            assetId: "asset_video_short_no-audio",
+            mediaInfo: {
+              durationMs: 240,
+              hasVideo: true,
+              hasAudio: false,
+            },
+            thumbnail: {
+              kind: "thumbnail",
+              status: "ready",
+              rebuildStrategy: "mock_media_metadata",
+            },
+            strategy: expect.arrayContaining([
+              "short_video_keep_original_no_cut",
+              "no_audio_stream_marked_hasAudio_false",
+            ]),
+          },
+        ],
       },
     });
   });
@@ -246,23 +281,36 @@ function videoInput(): ImageToVideoJobInput {
   };
 }
 
+function mediaMetadataInput(): MediaMetadataJobInput {
+  return {
+    operation: "media_metadata",
+    projectId: "project_1",
+    assetIds: ["asset_video_short_no-audio"],
+    provider: "mock-media",
+    model: "metadata-v1",
+    createThumbnail: true,
+    overwrite: false,
+  };
+}
+
 function jobRecord<
   TInput extends
     | ShotToImageJobInput
     | ImageToVideoJobInput
     | AiTextGenerationJobInput
-    | AiAudioGenerationJobInput,
+    | AiAudioGenerationJobInput
+    | MediaMetadataJobInput,
 >(
   input: TInput,
 ): GenerationJobRecord<TInput> {
   return {
     id: "job_1",
     projectId: input.projectId,
-    operation: input.operation,
+    operation: input.operation === "media_metadata" ? "asset_classification" : input.operation,
     status: "running",
     provider: input.provider,
     model: input.model,
-    sourceNodeId: input.sourceNodeId,
+    sourceNodeId: "sourceNodeId" in input ? input.sourceNodeId : undefined,
     targetNodeId: undefined,
     providerTaskId: undefined,
     inputJson: input,
