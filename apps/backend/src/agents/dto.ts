@@ -1,6 +1,7 @@
 import type {
   ClearAgentMemoriesInput,
   CreateAgentCanvasActionInput,
+  CreateAgentSessionInput,
   CreateAgentMemoryInput,
   CreateProductionAgentActionInput,
   LlmProviderId,
@@ -16,6 +17,7 @@ import {
   AGENT_MEMORY_SOURCES,
   LLM_PROVIDER_IDS,
   PRODUCTION_AGENT_ACTION_KINDS,
+  STREAMING_AGENT_ROLES,
 } from "@guga-flow/shared-types";
 import {
   ArrayUnique,
@@ -130,6 +132,31 @@ export class CreateProductionAgentActionDto implements CreateProductionAgentActi
   @Min(1)
   @Max(6)
   columns?: number;
+}
+
+export class CreateAgentSessionDto implements CreateAgentSessionInput {
+  @IsIn(STREAMING_AGENT_ROLES)
+  role!: CreateAgentSessionInput["role"];
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(1000)
+  message!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  selectedNodeId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  sourceNodeId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  targetNodeId?: string;
 }
 
 export class UpdateAgentDeploymentDto implements UpdateAgentDeploymentInput {

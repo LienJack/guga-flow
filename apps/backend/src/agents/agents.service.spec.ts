@@ -455,6 +455,36 @@ describe("AgentsService", () => {
     });
   });
 
+  it("starts cancellable script agent sessions as running audit jobs", async () => {
+    const result = await service.createSession("project_1", {
+      role: "script",
+      message: "outline the next scene",
+      selectedNodeId: "shot_1",
+    });
+
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        operation: "agent_canvas_action",
+        status: "running",
+        provider: "mock-llm",
+        model: "mock-storyboard",
+        inputJson: expect.objectContaining({
+          role: "script",
+          message: "outline the next scene",
+          sessionMode: "stream",
+          selectedNodeId: "shot_1",
+        }),
+      }),
+    });
+    expect(result.job.status).toBe("running");
+    expect(result.events[0]).toMatchObject({
+      kind: "agent_session",
+      role: "script",
+      phase: "thinking",
+      status: "running",
+    });
+  });
+
   it("creates a shot node and records a succeeded agent action job", async () => {
     prisma.agentMemory.findMany.mockResolvedValue([
       agentMemory({

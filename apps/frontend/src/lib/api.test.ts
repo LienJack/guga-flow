@@ -8,6 +8,7 @@ import {
   createBatchImagesToVideosJobs,
   createBatchShotsToImagesJobs,
   createAgentCanvasAction,
+  createAgentSession,
   createAgentMemory,
   createAssetAnalysisJob,
   createAssetImageGenerationJob,
@@ -650,6 +651,11 @@ describe("frontend api client", () => {
       sourceNodeId: "character_1",
       targetNodeId: "shot_selected",
     });
+    await createAgentSession("project_1", {
+      role: "script",
+      message: "outline the next beat",
+      selectedNodeId: "shot_selected",
+    });
     await undoAgentCanvasAction("project_1", "job_1");
     await getAgentDeployment("project_1");
     await updateAgentDeployment("project_1", {
@@ -687,16 +693,28 @@ describe("frontend api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
+      "http://localhost:3002/api/v1/projects/project_1/agents/sessions",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          role: "script",
+          message: "outline the next beat",
+          selectedNodeId: "shot_selected",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
       "http://localhost:3002/api/v1/projects/project_1/agents/canvas-actions/job_1/undo",
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
+      4,
       "http://localhost:3002/api/v1/projects/project_1/agents/deployment",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      5,
       "http://localhost:3002/api/v1/projects/project_1/agents/deployment",
       expect.objectContaining({
         method: "PATCH",
@@ -712,7 +730,7 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      5,
+      6,
       "http://localhost:3002/api/v1/projects/project_1/agents/deployment/resolve",
       expect.objectContaining({
         method: "POST",
@@ -720,12 +738,12 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      6,
+      7,
       "http://localhost:3002/api/v1/projects/project_1/agents/memories",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      7,
+      8,
       "http://localhost:3002/api/v1/projects/project_1/agents/memories",
       expect.objectContaining({
         method: "POST",
@@ -737,12 +755,12 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      8,
+      9,
       "http://localhost:3002/api/v1/projects/project_1/agents/memories/memory_1/disable",
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      9,
+      10,
       "http://localhost:3002/api/v1/projects/project_1/agents/memories/clear",
       expect.objectContaining({
         method: "POST",
@@ -750,7 +768,7 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      10,
+      11,
       "http://localhost:3002/api/v1/projects/project_1/agents/memories/recall",
       expect.objectContaining({
         method: "POST",

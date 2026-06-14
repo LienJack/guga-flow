@@ -28,6 +28,10 @@ describe("AgentCanvasActionsPanel", () => {
     expect(html).toContain("Rain reveal");
     expect(html).toContain("Run");
     expect(html).toContain("Board");
+    expect(html).toContain("Script");
+    expect(html).toContain("Production");
+    expect(html).toContain("Start");
+    expect(html).toContain("Stop");
     expect(html).toContain("Memory");
     expect(html).toContain("Content");
     expect(html).toContain("Tags");

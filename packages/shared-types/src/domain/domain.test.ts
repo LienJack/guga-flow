@@ -47,6 +47,7 @@ import {
   PHASE_3_CANVAS_NODE_TYPES,
   PRODUCTION_WORKSPACE_ITEM_TYPES,
   PRODUCTION_AGENT_ACTION_KINDS,
+  AGENT_STREAM_EVENT_PHASES,
   PROVIDER_CREDENTIAL_UPDATE_ACTIONS,
   PROVIDER_ERROR_CATEGORIES,
   PROVIDER_KINDS,
@@ -69,6 +70,7 @@ import {
   SOURCE_MEDIA_IMPORT_METHODS,
   STORYBOARD_IMPORT_DUPLICATE_POLICIES,
   STORYBOARD_DRAFT_STATUSES,
+  STREAMING_AGENT_ROLES,
   UPLOADABLE_ASSET_MIME_TYPES,
   VIDEO_PROVIDER_IDS,
   VIDEO_PROVIDER_MODES,
@@ -104,6 +106,7 @@ import {
   type AgentCanvasActionJobOutput,
   type AgentMemoryListResult,
   type AgentMemoryRecord,
+  type AgentStreamEventPayload,
   type BatchImagesToVideosJobInput,
   type BatchShotsToImagesJobInput,
   type CharacterToImageJobInput,
@@ -119,6 +122,8 @@ import {
   type CreateBatchShotsToImagesJobResult,
   type CreateAgentCanvasActionInput,
   type CreateAgentCanvasActionResult,
+  type CreateAgentSessionInput,
+  type CreateAgentSessionResult,
   type CreateCanvasEdgeInput,
   type CreateCanvasEdgeResult,
   type CreateCreativeStoryboardInput,
@@ -418,6 +423,15 @@ describe("shared domain constants", () => {
       "update_node",
       "create_edge",
       "create_storyboard_board",
+    ]);
+    expect(STREAMING_AGENT_ROLES).toEqual(["script", "production"]);
+    expect(AGENT_STREAM_EVENT_PHASES).toEqual([
+      "queued",
+      "thinking",
+      "tool_result",
+      "completed",
+      "failed",
+      "stopped",
     ]);
     expect(AGENT_DEPLOYMENT_MODES).toEqual(["simple", "advanced"]);
     expect(AGENT_DEPLOYMENT_ROLES).toEqual([
@@ -1550,6 +1564,35 @@ describe("shared domain constants", () => {
       },
       workspace: {} as CreateProductionAgentActionResult["workspace"],
     };
+    const sessionInput: CreateAgentSessionInput = {
+      role: "script",
+      message: "outline the next beat",
+      selectedNodeId: createdNode.id,
+    };
+    const streamEvent: AgentStreamEventPayload = {
+      kind: "agent_session",
+      role: sessionInput.role,
+      message: sessionInput.message,
+      phase: "thinking",
+      status: "running",
+      summary: "script agent session started",
+      fallback: "polling",
+    };
+    const sessionResult: CreateAgentSessionResult = {
+      job: {
+        ...result.job,
+        status: "running",
+        inputJson: {
+          ...jobInput,
+          role: sessionInput.role,
+          message: sessionInput.message,
+          selectedNodeId: sessionInput.selectedNodeId,
+          sessionMode: "stream",
+        },
+        outputJson: undefined,
+      },
+      events: [streamEvent],
+    };
 
     expect(result.job.inputJson.role).toBe("universal");
     expect(result.job.inputJson.provider).toBe("mock-llm");
@@ -1560,6 +1603,8 @@ describe("shared domain constants", () => {
     expect(productionResult.job.inputJson.productionAction).toBe("create_storyboard_board");
     expect(productionResult.job.inputJson.itemIds).toEqual(["shot_agent_1"]);
     expect(productionResult.job.outputJson?.actionKind).toBe("create_storyboard_board");
+    expect(sessionResult.job.inputJson.sessionMode).toBe("stream");
+    expect(sessionResult.events[0]?.phase).toBe("thinking");
   });
 
   it("exports TF-12 visible agent memory contracts", () => {

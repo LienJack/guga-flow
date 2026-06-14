@@ -26,6 +26,7 @@ import type {
   AgentMemoryRecord,
   AgentMemoryScope,
   AgentMemorySource,
+  AgentStreamEventPayload,
   CanvasEdgeRecord,
   CanvasEdgeRelation,
   CanvasNodeRecord,
@@ -35,6 +36,8 @@ import type {
   ClearAgentMemoriesResult,
   CreateAgentCanvasActionInput,
   CreateAgentCanvasActionResult,
+  CreateAgentSessionInput,
+  CreateAgentSessionResult,
   CreateAgentMemoryInput,
   CreateProductionAgentActionInput,
   CreateProductionAgentActionResult,
@@ -61,6 +64,7 @@ import {
   LLM_PROVIDER_IDS,
   PHASE_3_CANVAS_NODE_TYPES,
   SKILL_TEMPLATE_KINDS,
+  STREAMING_AGENT_ROLES,
 } from "@guga-flow/shared-types";
 import { Prisma, type CanvasEdgeRelation as PrismaCanvasEdgeRelation } from "../generated/prisma/client";
 
@@ -398,6 +402,58 @@ export class AgentsService {
       }
       throw new BadRequestException(errorMessage(error));
     }
+  }
+
+  async createSession(
+    projectId: string,
+    input: CreateAgentSessionInput,
+  ): Promise<CreateAgentSessionResult> {
+    const role = this.requireAgentRole(input.role);
+    if (!STREAMING_AGENT_ROLES.includes(role as CreateAgentSessionInput["role"])) {
+      throw new BadRequestException("Agent streaming sessions support script and production roles");
+    }
+    const message = this.normalizeMessage(input.message);
+    const runtime = await this.resolveRole(projectId, { role });
+    await this.ensureProjectExists(projectId);
+    const selectedNodeId = optionalString(input.selectedNodeId);
+    const sourceNodeId = optionalString(input.sourceNodeId);
+    const targetNodeId = optionalString(input.targetNodeId);
+
+    const jobInput: AgentCanvasActionJobInput = {
+      operation: "agent_canvas_action",
+      projectId,
+      role: runtime.config.role,
+      provider: runtime.config.provider,
+      model: runtime.config.model,
+      message,
+      sessionMode: "stream",
+      ...(selectedNodeId ? { selectedNodeId } : {}),
+      ...(sourceNodeId ? { sourceNodeId } : {}),
+      ...(targetNodeId ? { targetNodeId } : {}),
+    };
+
+    const job = (await this.prisma.generationJob.create({
+      data: {
+        projectId,
+        operation: "agent_canvas_action",
+        status: "running",
+        provider: runtime.config.provider,
+        model: runtime.config.model,
+        inputJson: jsonValue(jobInput),
+      },
+    })) as GenerationJobModel;
+
+    return {
+      job: this.toGenerationJobRecord<AgentCanvasActionJobInput, AgentCanvasActionJobOutput>(job),
+      events: [
+        this.agentStreamEventPayload(
+          jobInput,
+          "thinking",
+          "running",
+          `${role} agent session started`,
+        ),
+      ],
+    };
   }
 
   async createProductionAction(
@@ -1167,6 +1223,22 @@ export class AgentsService {
 
   private normalizeActionItemIds(value: readonly string[] | undefined): string[] {
     return [...new Set((value ?? []).map((itemId) => itemId.trim()).filter(Boolean))];
+  }
+
+  private agentStreamEventPayload(
+    input: AgentCanvasActionJobInput,
+    phase: AgentStreamEventPayload["phase"],
+    status: AgentStreamEventPayload["status"],
+    summary: string,
+  ): AgentStreamEventPayload {
+    return {
+      kind: "agent_session",
+      role: input.role,
+      message: input.message,
+      phase,
+      status,
+      summary,
+    };
   }
 
   private async tagAgentCreatedNode(

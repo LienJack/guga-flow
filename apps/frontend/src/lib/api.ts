@@ -19,6 +19,8 @@ import type {
   CreateBatchShotsToImagesJobResult,
   CreateAgentCanvasActionInput,
   CreateAgentCanvasActionResult,
+  CreateAgentSessionInput,
+  CreateAgentSessionResult,
   CreateProductionAgentActionInput,
   CreateProductionAgentActionResult,
   CreateAgentMemoryInput,
@@ -778,6 +780,16 @@ export function createAgentCanvasAction(
       body: JSON.stringify(input),
     },
   );
+}
+
+export function createAgentSession(
+  projectId: string,
+  input: CreateAgentSessionInput,
+): Promise<CreateAgentSessionResult> {
+  return requestJson<CreateAgentSessionResult>(`/projects/${projectId}/agents/sessions`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function undoAgentCanvasAction(

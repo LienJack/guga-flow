@@ -1439,6 +1439,19 @@ export type AgentCanvasActionKind = (typeof AGENT_CANVAS_ACTION_KINDS)[number];
 export const PRODUCTION_AGENT_ACTION_KINDS = ["create_storyboard_board"] as const;
 export type ProductionAgentActionKind = (typeof PRODUCTION_AGENT_ACTION_KINDS)[number];
 
+export const STREAMING_AGENT_ROLES = ["script", "production"] as const;
+export type StreamingAgentRole = (typeof STREAMING_AGENT_ROLES)[number];
+
+export const AGENT_STREAM_EVENT_PHASES = [
+  "queued",
+  "thinking",
+  "tool_result",
+  "completed",
+  "failed",
+  "stopped",
+] as const;
+export type AgentStreamEventPhase = (typeof AGENT_STREAM_EVENT_PHASES)[number];
+
 export interface CreateAgentCanvasActionInput {
   message: string;
   role?: AgentDeploymentRole;
@@ -1455,6 +1468,7 @@ export interface AgentCanvasActionJobInput extends CreateAgentCanvasActionInput 
   role: AgentDeploymentRole;
   provider: string;
   model: string;
+  sessionMode?: "stream";
   productionAction?: ProductionAgentActionKind;
   title?: string;
   itemIds?: string[];
@@ -1524,6 +1538,25 @@ export interface CreateProductionAgentActionInput {
   title?: string;
   itemIds?: string[];
   columns?: number;
+}
+
+export interface CreateAgentSessionInput {
+  role: StreamingAgentRole;
+  message: string;
+  selectedNodeId?: string;
+  sourceNodeId?: string;
+  targetNodeId?: string;
+}
+
+export interface AgentStreamEventPayload {
+  kind: "agent_session";
+  role?: AgentDeploymentRole;
+  message?: string;
+  phase: AgentStreamEventPhase;
+  status: GenerationJobStatus;
+  summary?: string;
+  actionKind?: AgentCanvasActionKind;
+  fallback?: "polling";
 }
 
 export interface AssetAnalysisJobInput {
@@ -1716,6 +1749,11 @@ export interface CreateAgentCanvasActionResult {
   nodes: CanvasNodeRecord[];
   edges: CanvasEdgeRecord[];
   focusNodeId?: string;
+}
+
+export interface CreateAgentSessionResult {
+  job: GenerationJobRecord<AgentCanvasActionJobInput, AgentCanvasActionJobOutput>;
+  events: AgentStreamEventPayload[];
 }
 
 export interface CreateProductionAgentActionResult extends CreateAgentCanvasActionResult {
@@ -2152,7 +2190,7 @@ export interface GenerationEvent {
   canvasDocumentId?: string;
   status?: GenerationJobStatus;
   updatedAt: string;
-  payload?: CanvasSnapshotJson;
+  payload?: CanvasSnapshotJson | AgentStreamEventPayload;
 }
 
 export interface ReferenceAssetJobOutput {

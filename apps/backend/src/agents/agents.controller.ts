@@ -5,6 +5,7 @@ import { AgentsService } from "./agents.service";
 import {
   ClearAgentMemoriesDto,
   CreateAgentCanvasActionDto,
+  CreateAgentSessionDto,
   CreateAgentMemoryDto,
   CreateProductionAgentActionDto,
   RecallAgentMemoriesDto,
@@ -23,6 +24,11 @@ export class AgentsController {
     @Body() body: CreateAgentCanvasActionDto,
   ) {
     return this.agentsService.createCanvasAction(projectId, body);
+  }
+
+  @Post("sessions")
+  createSession(@Param("projectId") projectId: string, @Body() body: CreateAgentSessionDto) {
+    return this.agentsService.createSession(projectId, body);
   }
 
   @Post("production-actions")
