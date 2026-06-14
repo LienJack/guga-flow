@@ -1604,6 +1604,81 @@ select {
   font-weight: 600;
 }
 
+.login-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  background: #f2f4f1;
+  color: var(--ink);
+  padding: 24px;
+}
+
+.login-shell {
+  display: grid;
+  width: min(420px, 100%);
+  gap: 18px;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.login-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: #111;
+  color: #fff;
+}
+
+.login-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 20px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.08);
+}
+
+.login-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.login-heading h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.login-panel label {
+  display: grid;
+  gap: 6px;
+}
+
+.login-panel label span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.login-panel input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 9px 10px;
+  font-size: 14px;
+}
+
 .panel-heading {
   display: flex;
   align-items: center;
@@ -2463,6 +2538,17 @@ select:focus-visible {
   align-items: center;
   gap: 8px;
   margin-left: 4px;
+}
+
+.dashboard-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dashboard-actions .ghost-action {
+  gap: 7px;
+  background: #fff;
 }
 
 .window-dots span {

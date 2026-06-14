@@ -1,5 +1,6 @@
 export * from "./domain/assets";
 export * from "./domain/agent";
+export * from "./domain/auth";
 export * from "./domain/canvas";
 export * from "./domain/canvas-fragments";
 export * from "./domain/generation";

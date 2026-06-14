@@ -3,6 +3,7 @@ import "reflect-metadata";
 import type { CanvasEdgeRecord, CanvasNodeRecord, StoryboardResult } from "@guga-flow/shared-types";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import type { NextFunction, Request, Response } from "express";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -68,6 +69,7 @@ function createPrismaE2eMock() {
   const generationJobs = new Map<string, Record<string, unknown>>();
   const skillTemplates = new Map<string, Record<string, unknown>>();
   const skillTemplateVersions = new Map<string, Record<string, unknown>>();
+  const users = new Map<string, Record<string, unknown>>();
   let projectSequence = 1;
   let assetSequence = 1;
   let canvasSequence = 1;
@@ -108,7 +110,55 @@ function createPrismaE2eMock() {
     onModuleInit: async () => undefined,
     onModuleDestroy: async () => undefined,
     user: {
-      upsert: vi.fn(async ({ create }) => create),
+      findUnique: vi.fn(async ({ where }) => {
+        if (where.id) {
+          return users.get(where.id) ?? null;
+        }
+        if (where.email) {
+          return Array.from(users.values()).find((user) => user.email === where.email) ?? null;
+        }
+        return null;
+      }),
+      findFirst: vi.fn(async ({ where }) =>
+        Array.from(users.values()).find((user) => !where.email || user.email === where.email) ?? null,
+      ),
+      create: vi.fn(async ({ data }) => {
+        const row = {
+          email: null,
+          name: null,
+          passwordHash: null,
+          lastLoginAt: null,
+          ...data,
+        };
+        users.set(row.id as string, row);
+        return row;
+      }),
+      update: vi.fn(async ({ where, data }) => {
+        const existing = users.get(where.id);
+        if (!existing) {
+          throw new Error("User not found");
+        }
+        const updated = { ...existing, ...data };
+        users.set(where.id, updated);
+        return updated;
+      }),
+      upsert: vi.fn(async ({ where, update, create }) => {
+        const existing = users.get(where.id);
+        if (existing) {
+          const updated = { ...existing, ...update };
+          users.set(where.id, updated);
+          return updated;
+        }
+        const row = {
+          email: null,
+          name: null,
+          passwordHash: null,
+          lastLoginAt: null,
+          ...create,
+        };
+        users.set(row.id as string, row);
+        return row;
+      }),
     },
     project: {
       findMany: vi.fn(async () =>
@@ -974,6 +1024,7 @@ function createProvidersE2eMock() {
 describe("project api e2e", () => {
   let app: INestApplication;
   let fetchMock: ReturnType<typeof vi.fn>;
+  let authToken = "";
 
   beforeAll(async () => {
     fetchMock = vi.fn(async () =>
@@ -997,8 +1048,25 @@ describe("project api e2e", () => {
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix("api/v1");
+    app.use((request: Request, _response: Response, next: NextFunction) => {
+      const path = String(request.path || request.url || "").split("?")[0] ?? "";
+      if (
+        path.startsWith("/api/v1/projects") &&
+        request.headers["x-e2e-unauthenticated"] !== "true" &&
+        authToken
+      ) {
+        request.headers.authorization = `Bearer ${authToken}`;
+      }
+      next();
+    });
     app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
     await app.init();
+
+    const loginResponse = await request(app.getHttpServer())
+      .post("/api/v1/auth/login")
+      .send({ email: "admin@guga-flow.local", password: "guga-flow-dev" })
+      .expect(201);
+    authToken = loginResponse.body.token;
   });
 
   afterAll(async () => {
@@ -1024,6 +1092,28 @@ describe("project api e2e", () => {
     });
     expect(JSON.stringify(videoResponse.body)).not.toContain("secret");
     expect(JSON.stringify(videoResponse.body)).not.toContain("API_KEY");
+  });
+
+  it("rejects project API requests without a browser session", async () => {
+    const response = await request(app.getHttpServer())
+      .get("/api/v1/projects")
+      .set("x-e2e-unauthenticated", "true")
+      .expect(401);
+
+    expect(response.body.message).toBe("Authentication required");
+  });
+
+  it("keeps the current session readable from a bearer token", async () => {
+    const response = await request(app.getHttpServer())
+      .get("/api/v1/auth/session")
+      .set("Authorization", `Bearer ${authToken}`)
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      authenticated: true,
+      user: { id: "default-user", email: "admin@guga-flow.local" },
+    });
+    expect(response.body.expiresAt).toEqual(expect.any(String));
   });
 
   it("creates, lists, updates, duplicates, and deletes projects", async () => {

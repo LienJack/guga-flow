@@ -1,5 +1,6 @@
-import { Body, Controller, Headers, Inject, Param, Post } from "@nestjs/common";
+import { Body, Controller, Headers, Inject, Param, Post, UseGuards } from "@nestjs/common";
 
+import { WorkerAuthGuard } from "../auth/worker-auth.guard";
 import {
   WorkerGenerationJobFailDto,
   WorkerGenerationJobSucceedDto,
@@ -9,6 +10,7 @@ import {
 import { GenerationService } from "./generation.service";
 
 @Controller("worker/generation")
+@UseGuards(WorkerAuthGuard)
 export class WorkerGenerationController {
   constructor(@Inject(GenerationService) private readonly generationService: GenerationService) {}
 

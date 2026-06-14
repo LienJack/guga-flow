@@ -1,8 +1,18 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import React from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { WorkbenchShell } from "./workbench-shell";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+  }),
+}));
+
+vi.mock("../lib/api", () => ({
+  logout: vi.fn(async () => ({ ok: true })),
+}));
 
 describe("WorkbenchShell", () => {
   it("renders the canvas-first workbench regions", () => {
@@ -14,6 +24,7 @@ describe("WorkbenchShell", () => {
     expect(html).toContain("Queue");
     expect(html).toContain("EN");
     expect(html).toContain("中文");
+    expect(html).toContain("Logout");
     expect(html).toContain('aria-label="Storyboard"');
   });
 

@@ -10,11 +10,11 @@ import {
   normalizeGenerationCreativeSettings,
 } from "@guga-flow/shared-types";
 
+import { AuthService, DEFAULT_ADMIN_USER_ID } from "../auth/auth.service";
 import { Prisma } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { LocalStorageService } from "../storage/local-storage.service";
 
-const DEFAULT_USER_ID = "default-user";
 const DEFAULT_PROJECT_ASPECT_RATIO: ProjectAspectRatio = "9:16";
 
 type ProjectModel = {
@@ -84,6 +84,7 @@ export class ProjectsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LocalStorageService) private readonly storage: LocalStorageService,
+    @Inject(AuthService) private readonly authService: AuthService,
   ) {}
 
   async listProjects(): Promise<ProjectListItem[]> {
@@ -105,7 +106,7 @@ export class ProjectsService {
 
     const project = await this.prisma.project.create({
       data: {
-        ownerUserId: DEFAULT_USER_ID,
+        ownerUserId: DEFAULT_ADMIN_USER_ID,
         title,
         description: normalizeDescription(input.description),
         defaultAspectRatio: input.defaultAspectRatio ?? DEFAULT_PROJECT_ASPECT_RATIO,
@@ -176,7 +177,7 @@ export class ProjectsService {
 
     const duplicate = await this.prisma.project.create({
       data: {
-        ownerUserId: DEFAULT_USER_ID,
+        ownerUserId: DEFAULT_ADMIN_USER_ID,
         title: `${source.title} Copy`,
         description: source.description ?? null,
         defaultAspectRatio: source.defaultAspectRatio,
@@ -205,15 +206,7 @@ export class ProjectsService {
   }
 
   private async ensureDefaultUser(): Promise<void> {
-    await this.prisma.user.upsert({
-      where: { id: DEFAULT_USER_ID },
-      update: {},
-      create: {
-        id: DEFAULT_USER_ID,
-        email: "default@guga-flow.local",
-        name: "Default User",
-      },
-    });
+    await this.authService.ensureDefaultAdmin();
   }
 
   private toProjectRecord(project: ProjectModel): ProjectDetail {

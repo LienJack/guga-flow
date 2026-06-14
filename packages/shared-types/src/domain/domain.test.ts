@@ -154,9 +154,34 @@ import {
   type WorkerGenerationJobCancelInput,
   type WorkerGenerationJobWaitInput,
   validateStoryboardResult,
+  type AuthSessionRecord,
+  type CurrentSessionResult,
+  type LoginInput,
+  type LogoutResult,
 } from "../index";
 
 describe("shared domain constants", () => {
+  it("exports auth session contracts for browser login", () => {
+    const loginInput: LoginInput = {
+      email: "admin@guga-flow.local",
+      password: "guga-flow-dev",
+    };
+    const session: AuthSessionRecord = {
+      token: "session-token",
+      user: { id: "default-user", email: loginInput.email, name: "Admin" },
+      expiresAt: "2026-06-21T00:00:00.000Z",
+    };
+    const currentSession: CurrentSessionResult = {
+      authenticated: true,
+      user: session.user,
+      expiresAt: session.expiresAt,
+    };
+    const logout: LogoutResult = { ok: true };
+
+    expect(currentSession.user?.id).toBe("default-user");
+    expect(logout.ok).toBe(true);
+  });
+
   it("includes MVP canvas node and edge concepts", () => {
     expect(CANVAS_NODE_TYPES).toContain("shot");
     expect(CANVAS_NODE_TYPES).toContain("editor_package");

@@ -14,6 +14,10 @@ export interface AppConfig {
   workerConcurrency: number;
   providerConfigEncryptionKey?: string;
   workerApiToken?: string;
+  sessionSecret: string;
+  sessionTtlSeconds: number;
+  defaultAdminEmail: string;
+  defaultAdminPassword: string;
   realProviderKeysConfigured: {
     llm: boolean;
     image: boolean;
@@ -94,6 +98,10 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     workerConcurrency: readNumber("WORKER_CONCURRENCY", env.WORKER_CONCURRENCY, 2),
     providerConfigEncryptionKey: env.PROVIDER_CONFIG_ENCRYPTION_KEY || undefined,
     workerApiToken: env.WORKER_API_TOKEN || undefined,
+    sessionSecret: env.AUTH_SESSION_SECRET || env.SESSION_SECRET || "guga-flow-dev-session-secret",
+    sessionTtlSeconds: readNumber("AUTH_SESSION_TTL_SECONDS", env.AUTH_SESSION_TTL_SECONDS, 60 * 60 * 24 * 7),
+    defaultAdminEmail: env.DEFAULT_ADMIN_EMAIL || "admin@guga-flow.local",
+    defaultAdminPassword: env.DEFAULT_ADMIN_PASSWORD || "guga-flow-dev",
     realProviderKeysConfigured: {
       llm: genericLlmKeyConfigured || geminiLlmKeyConfigured || anthropicLlmKeyConfigured || arkLlmKeyConfigured,
       image: Boolean(env.IMAGE_API_KEY || image2KeyConfigured || bananaKeyConfigured),

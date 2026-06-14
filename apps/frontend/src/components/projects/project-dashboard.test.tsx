@@ -14,7 +14,9 @@ vi.mock("../../lib/api", () => ({
   createProject: vi.fn(),
   deleteProject: vi.fn(),
   duplicateProject: vi.fn(),
+  isUnauthorizedError: vi.fn(() => false),
   listProjects: vi.fn(async () => []),
+  logout: vi.fn(async () => ({ ok: true })),
   updateProject: vi.fn(),
 }));
 
@@ -47,6 +49,7 @@ describe("ProjectDashboard", () => {
     expect(html).toContain('aria-label="Delete Pilot Project"');
     expect(html).toContain('aria-label="Scripts"');
     expect(html).toContain('aria-label="Settings"');
+    expect(html).toContain("Log out");
     expect(html).toContain('disabled=""');
   });
 

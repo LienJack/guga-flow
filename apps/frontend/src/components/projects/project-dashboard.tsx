@@ -6,6 +6,7 @@ import {
   Copy,
   FolderOpen,
   LayoutList,
+  LogOut,
   PenLine,
   Plus,
   Settings,
@@ -19,7 +20,9 @@ import {
   createProject,
   deleteProject,
   duplicateProject,
+  isUnauthorizedError,
   listProjects,
+  logout,
   updateProject,
 } from "../../lib/api";
 
@@ -51,7 +54,7 @@ export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectD
       })
       .catch((loadError: unknown) => {
         if (!ignore) {
-          setError(loadError instanceof Error ? loadError.message : "Unable to load projects");
+          handleRequestError(loadError, "Unable to load projects");
         }
       });
 
@@ -70,6 +73,28 @@ export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectD
     setDescription("");
     setDefaultAspectRatio("9:16");
     setEditingProjectId(null);
+  }
+
+  function redirectToLogin() {
+    const next = typeof window === "undefined" ? "/" : window.location.pathname || "/";
+    router.push(`/login?next=${encodeURIComponent(next)}`);
+  }
+
+  function handleRequestError(error: unknown, fallback: string) {
+    if (isUnauthorizedError(error)) {
+      redirectToLogin();
+      return;
+    }
+    setError(error instanceof Error ? error.message : fallback);
+  }
+
+  async function handleLogout() {
+    setBusy(true);
+    try {
+      await logout();
+    } finally {
+      router.push("/login");
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -100,7 +125,7 @@ export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectD
       }
       resetForm();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Unable to save project");
+      handleRequestError(submitError, "Unable to save project");
     } finally {
       setBusy(false);
     }
@@ -121,7 +146,7 @@ export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectD
       const duplicated = await duplicateProject(projectId);
       setProjects((current) => [duplicated, ...current]);
     } catch (duplicateError) {
-      setError(duplicateError instanceof Error ? duplicateError.message : "Unable to duplicate");
+      handleRequestError(duplicateError, "Unable to duplicate");
     } finally {
       setBusy(false);
     }
@@ -138,7 +163,7 @@ export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectD
       }
       setPendingDeleteProjectId(null);
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Unable to delete");
+      handleRequestError(deleteError, "Unable to delete");
     } finally {
       setBusy(false);
     }
@@ -156,10 +181,21 @@ export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectD
             <div className="project-title">AI short-drama factory</div>
           </div>
         </div>
-        <div className="window-dots" aria-hidden="true">
-          <span />
-          <span />
-          <span />
+        <div className="dashboard-actions">
+          <button
+            className="ghost-action compact"
+            type="button"
+            onClick={() => void handleLogout()}
+            disabled={busy}
+          >
+            <LogOut size={15} aria-hidden="true" />
+            Log out
+          </button>
+          <div className="window-dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
         </div>
       </header>
 

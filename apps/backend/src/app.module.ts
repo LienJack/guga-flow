@@ -3,6 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 
 import { AgentsModule } from "./agents/agents.module";
 import { AssetsModule } from "./assets/assets.module";
+import { AuthModule } from "./auth/auth.module";
 import { CanvasModule } from "./canvas/canvas.module";
 import { readAppConfig } from "./config/app-config";
 import { EditorExportsModule } from "./editor-exports/editor-exports.module";
@@ -24,6 +25,7 @@ import { WorkflowsModule } from "./workflows/workflows.module";
       load: [() => readAppConfig()],
     }),
     PrismaModule,
+    AuthModule,
     ProjectsModule,
     AssetsModule,
     CanvasModule,

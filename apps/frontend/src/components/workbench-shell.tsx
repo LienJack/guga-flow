@@ -12,6 +12,7 @@ import {
   FolderOpen,
   Globe2,
   Hand,
+  LogOut,
   Maximize2,
   MessageCircle,
   Minus,
@@ -25,9 +26,11 @@ import {
   Undo2,
   Users,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import React, { type ReactNode } from "react";
 
 import { I18nProvider, type Locale, useI18n } from "../lib/i18n";
+import { logout } from "../lib/api";
 
 const sidebarItems = [
   ["workbench.novel", 1],
@@ -85,6 +88,15 @@ function WorkbenchShellContent({
   storyboardEnabled = false,
 }: WorkbenchShellProps) {
   const { locale, setLocale, t } = useI18n();
+  const router = useRouter();
+
+  async function handleLogout() {
+    try {
+      await logout();
+    } finally {
+      router.push("/login");
+    }
+  }
 
   return (
     <main className="workbench" aria-label={t("workbench.aria")}>
@@ -112,6 +124,10 @@ function WorkbenchShellContent({
           </button>
         </nav>
         <LanguageSwitcher locale={locale} setLocale={setLocale} />
+        <button className="tool-button session-button" type="button" onClick={() => void handleLogout()}>
+          <LogOut size={15} aria-hidden="true" />
+          Logout
+        </button>
         {saveStateSlot ?? <div className="save-state">{t("save.saved")}</div>}
       </header>
 

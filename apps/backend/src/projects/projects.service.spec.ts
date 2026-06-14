@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { AuthService } from "../auth/auth.service";
 import { Prisma } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { LocalStorageService } from "../storage/local-storage.service";
@@ -26,9 +27,6 @@ function project(overrides: Record<string, unknown> = {}) {
 
 function createPrismaMock() {
   return {
-    user: {
-      upsert: vi.fn(async () => ({ id: "default-user" })),
-    },
     project: {
       findMany: vi.fn(),
       create: vi.fn(),
@@ -42,6 +40,17 @@ function createPrismaMock() {
   };
 }
 
+function createAuthMock() {
+  return {
+    ensureDefaultAdmin: vi.fn(async () => ({
+      id: "default-user",
+      email: "admin@guga-flow.local",
+      name: "Admin",
+      passwordHash: "hash",
+    })),
+  };
+}
+
 function createStorageMock() {
   return {
     deleteObject: vi.fn(async () => undefined),
@@ -51,14 +60,17 @@ function createStorageMock() {
 describe("ProjectsService", () => {
   let prisma: ReturnType<typeof createPrismaMock>;
   let storage: ReturnType<typeof createStorageMock>;
+  let auth: ReturnType<typeof createAuthMock>;
   let service: ProjectsService;
 
   beforeEach(() => {
     prisma = createPrismaMock();
     storage = createStorageMock();
+    auth = createAuthMock();
     service = new ProjectsService(
       prisma as unknown as PrismaService,
       storage as unknown as LocalStorageService,
+      auth as unknown as AuthService,
     );
   });
 
@@ -83,11 +95,7 @@ describe("ProjectsService", () => {
       },
     });
 
-    expect(prisma.user.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "default-user" },
-      }),
-    );
+    expect(auth.ensureDefaultAdmin).toHaveBeenCalled();
     expect(prisma.project.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

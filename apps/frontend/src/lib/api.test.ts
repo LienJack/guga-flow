@@ -29,6 +29,7 @@ import {
   generationEventsUrl,
   getActiveStoryboardDraft,
   getAgentDeployment,
+  getCurrentSession,
   getEditorExport,
   getImageProviderCatalog,
   getLlmProviderCatalog,
@@ -53,6 +54,7 @@ import {
   listEditorExports,
   listAgentMemories,
   listGenerationJobs,
+  listProjects,
   listWorkflows,
   listSkillTemplates,
   markStoryboardDraftReady,
@@ -76,11 +78,86 @@ import {
   createWorkflowDefinition,
   createWorkflowVersion,
   activateWorkflowVersion,
+  login,
+  logout,
 } from "./api";
+import { getAuthToken, setAuthToken } from "./session";
 
 describe("frontend api client", () => {
   afterEach(() => {
+    setAuthToken(null);
     vi.unstubAllGlobals();
+  });
+
+  it("persists bearer sessions and attaches them to protected API calls", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/login")) {
+        return Response.json({
+          token: "session_token",
+          user: { id: "default-user", email: "admin@guga-flow.local" },
+          expiresAt: "2026-06-21T00:00:00.000Z",
+        });
+      }
+      if (url.endsWith("/auth/session")) {
+        return Response.json({
+          authenticated: true,
+          user: { id: "default-user", email: "admin@guga-flow.local" },
+          expiresAt: "2026-06-21T00:00:00.000Z",
+        });
+      }
+      if (url.endsWith("/auth/logout")) {
+        return Response.json({ ok: true });
+      }
+      return Response.json([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await login({ email: "admin@guga-flow.local", password: "guga-flow-dev" });
+    await getCurrentSession();
+    await listProjects();
+    await logout();
+
+    expect(getAuthToken()).toBeUndefined();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:3002/api/v1/auth/login",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:3002/api/v1/auth/session",
+      expect.objectContaining({
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer session_token",
+        },
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:3002/api/v1/projects",
+      expect.objectContaining({
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer session_token",
+        },
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:3002/api/v1/auth/logout",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer session_token",
+        },
+      }),
+    );
   });
 
   it("posts semantic canvas edge payloads", async () => {

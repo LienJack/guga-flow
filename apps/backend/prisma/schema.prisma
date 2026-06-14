@@ -120,12 +120,14 @@ enum StoryboardDraftStatus {
 }
 
 model User {
-  id        String    @id @default(cuid())
-  email     String?   @unique
-  name      String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  projects  Project[]
+  id           String    @id @default(cuid())
+  email        String?   @unique
+  name         String?
+  passwordHash String?
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  projects     Project[]
 }
 
 model Project {

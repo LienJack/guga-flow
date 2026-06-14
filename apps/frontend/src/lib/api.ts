@@ -7,6 +7,7 @@ import type {
   AssetListItem,
   AssetPurpose,
   AssetTagRecord,
+  CurrentSessionResult,
   CanvasLoadResult,
   CreateCanvasEdgeInput,
   CreateCanvasEdgeResult,
@@ -64,6 +65,9 @@ import type {
   ClearAgentMemoriesResult,
   ImageProviderCatalogResult,
   LlmProviderCatalogResult,
+  LoginInput,
+  LoginResult,
+  LogoutResult,
   VideoProviderCatalogResult,
   ProviderConfigUpdateResult,
   ProviderConnectionTestInput,
@@ -115,6 +119,8 @@ import type {
   ActivateSkillTemplateVersionInput,
 } from "@guga-flow/shared-types";
 
+import { clearAuthToken, getAuthToken, setAuthToken } from "./session";
+
 export type ComposeShotPromptRequest = Pick<
   ComposeShotPromptInput,
   "globalStylePrompt" | "modelPromptSuffix"
@@ -129,13 +135,35 @@ export function apiUrl(path: string): string {
   return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly statusText: string,
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
+export function isUnauthorizedError(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.status === 401;
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = normalizeHeaders(init?.headers);
+  if (!(init?.body instanceof FormData) && !hasHeader(headers, "Content-Type")) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const token = path === "/auth/login" ? undefined : getAuthToken();
+  if (token && !hasHeader(headers, "Authorization")) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const response = await fetch(apiUrl(path), {
     ...init,
-    headers: {
-      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...init?.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
@@ -150,10 +178,57 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // Keep the status message when the response is not JSON.
     }
-    throw new Error(message);
+    if (response.status === 401) {
+      clearAuthToken();
+    }
+    throw new ApiRequestError(message, response.status, response.statusText);
   }
 
   return response.json() as Promise<T>;
+}
+
+function normalizeHeaders(headers: HeadersInit | undefined): Record<string, string> {
+  if (!headers) {
+    return {};
+  }
+  if (headers instanceof Headers) {
+    const result: Record<string, string> = {};
+    headers.forEach((value, key) => {
+      result[key] = value;
+    });
+    return result;
+  }
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers.map(([key, value]) => [key, value]));
+  }
+  return { ...headers };
+}
+
+function hasHeader(headers: Record<string, string>, name: string): boolean {
+  return Object.keys(headers).some((key) => key.toLocaleLowerCase() === name.toLocaleLowerCase());
+}
+
+export async function login(input: LoginInput): Promise<LoginResult> {
+  const session = await requestJson<LoginResult>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  setAuthToken(session.token);
+  return session;
+}
+
+export function getCurrentSession(): Promise<CurrentSessionResult> {
+  return requestJson<CurrentSessionResult>("/auth/session");
+}
+
+export async function logout(): Promise<LogoutResult> {
+  try {
+    return await requestJson<LogoutResult>("/auth/logout", {
+      method: "POST",
+    });
+  } finally {
+    clearAuthToken();
+  }
 }
 
 export function listProjects(): Promise<ProjectListItem[]> {
