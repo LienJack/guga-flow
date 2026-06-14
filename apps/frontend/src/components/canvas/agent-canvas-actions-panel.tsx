@@ -247,9 +247,12 @@ export function AgentCanvasActionsPanel({
         </p>
       ) : null}
 
-      <section className="agent-memory-panel" aria-label="Agent memory">
-        <div className="section-heading-row">
-          <h3 className="panel-title small">Memory</h3>
+      <details className="agent-memory-panel" aria-label="Agent memory">
+        <summary className="section-heading-row">
+          <span className="panel-title small">Memory</span>
+          <span className="status-chip">{memories.length}</span>
+        </summary>
+        <div className="agent-memory-tools">
           <button
             className="icon-action danger"
             type="button"
@@ -321,7 +324,7 @@ export function AgentCanvasActionsPanel({
             {memoryError}
           </p>
         ) : null}
-      </section>
+      </details>
     </section>
   );
 }

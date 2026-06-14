@@ -12,6 +12,7 @@ export const ASSET_PURPOSES = [
   "background_music",
   "shot_clip",
   "editor_package",
+  "canvas_fragment",
 ] as const;
 export type AssetPurpose = (typeof ASSET_PURPOSES)[number];
 
@@ -43,6 +44,7 @@ export interface AssetRecord {
   projectId: string;
   type: AssetType;
   purpose: AssetPurpose;
+  collectionId?: string;
   storageKey: string;
   mimeType: string;
   originalFilename?: string;
@@ -57,6 +59,9 @@ export interface AssetRecord {
 export interface AssetListItem extends AssetRecord {
   previewKind: AssetPreviewKind;
   previewUrl?: string;
+  collection?: AssetCollectionRecord;
+  tags?: AssetTagRecord[];
+  referenceCount?: number;
 }
 
 export interface AssetDetail extends AssetListItem {
@@ -65,4 +70,88 @@ export interface AssetDetail extends AssetListItem {
 
 export interface AssetUploadResult {
   asset: AssetDetail;
+}
+
+export const ASSET_COLLECTION_KINDS = ["manual", "character", "location", "style", "shot", "archive"] as const;
+export type AssetCollectionKind = (typeof ASSET_COLLECTION_KINDS)[number];
+
+export interface AssetCollectionRecord {
+  id: string;
+  projectId: string;
+  name: string;
+  parentId?: string;
+  kind: AssetCollectionKind;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssetTagRecord {
+  id: string;
+  projectId: string;
+  name: string;
+  color?: string;
+  createdAt: string;
+}
+
+export interface AssetReferenceSummary {
+  assetId: string;
+  nodeIds: string[];
+  jobIds: string[];
+}
+
+export interface AssetLibrarySummary {
+  assets: AssetListItem[];
+  collections: AssetCollectionRecord[];
+  tags: AssetTagRecord[];
+}
+
+export interface AssetListFilters {
+  query?: string;
+  type?: AssetType;
+  purpose?: AssetPurpose;
+  collectionId?: string;
+  tagIds?: string[];
+}
+
+export const ASSET_BATCH_ACTIONS = [
+  "move_collection",
+  "add_tags",
+  "remove_tags",
+  "delete",
+] as const;
+export type AssetBatchAction = (typeof ASSET_BATCH_ACTIONS)[number];
+
+export interface AssetBatchInput {
+  assetIds: string[];
+  action: AssetBatchAction;
+  collectionId?: string;
+  tagIds?: string[];
+}
+
+export interface AssetBatchResult {
+  assets: AssetListItem[];
+  deletedAssetIds?: string[];
+}
+
+export const ASSET_EDIT_ACTIONS = ["crop", "grid_split"] as const;
+export type AssetEditAction = (typeof ASSET_EDIT_ACTIONS)[number];
+
+export interface AssetCropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface EditAssetInput {
+  action: AssetEditAction;
+  crop?: AssetCropRect;
+  rows?: number;
+  columns?: number;
+  selectedCells?: number[];
+}
+
+export interface EditAssetResult {
+  assets: AssetListItem[];
 }

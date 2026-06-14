@@ -68,6 +68,10 @@ type TldrawCreateShapeInput = Parameters<Editor["createShape"]>[0];
 type TldrawUpdateShapeInput = Parameters<Editor["updateShape"]>[0];
 type TldrawCreateBindingsInput = Parameters<Editor["createBindings"]>[0];
 type TldrawDeleteBindingsInput = Parameters<Editor["deleteBindings"]>[0];
+type CanvasFocusScheduler = (callback: () => void) => void;
+type CanvasSelectionFocusEditor = Pick<Editor, "getContainer" | "zoomToSelectionIfOffscreen">;
+type CanvasContentFocusEditor = Pick<Editor, "getCurrentPageShapeIds" | "zoomToFit">;
+type CanvasFocusRestoreScheduler = (callback: () => void) => void;
 
 interface CanvasEditorProps {
   projectId: string;
@@ -108,6 +112,51 @@ function nodeDataForCreate(node: CanvasNodeRecord): CanvasSnapshotJson {
 
 function zIndexForNode(node: CanvasNodeRecord | undefined): number {
   return node?.zIndex ?? 0;
+}
+
+function scheduleCanvasFrame(callback: () => void) {
+  if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(callback);
+    return;
+  }
+
+  callback();
+}
+
+function scheduleCanvasFocusRestore(callback: () => void) {
+  if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
+    window.setTimeout(callback, 100);
+    return;
+  }
+
+  callback();
+}
+
+export function focusCanvasSelection(
+  editor: CanvasSelectionFocusEditor,
+  scheduleFrame: CanvasFocusScheduler = scheduleCanvasFrame,
+  scheduleFocusRestore: CanvasFocusRestoreScheduler = scheduleCanvasFocusRestore,
+) {
+  scheduleFrame(() => {
+    const focusContainer = () => editor.getContainer().focus();
+
+    editor.zoomToSelectionIfOffscreen(256, { inset: 0 });
+    focusContainer();
+    scheduleFocusRestore(focusContainer);
+  });
+}
+
+export function focusCanvasContent(
+  editor: CanvasContentFocusEditor,
+  scheduleFrame: CanvasFocusScheduler = scheduleCanvasFrame,
+) {
+  if (editor.getCurrentPageShapeIds().size === 0) {
+    return;
+  }
+
+  scheduleFrame(() => {
+    editor.zoomToFit();
+  });
 }
 
 function mergeCanvasNode(nodes: CanvasNodeRecord[], nextNode: CanvasNodeRecord): CanvasNodeRecord[] {
@@ -391,9 +440,7 @@ export function CanvasEditor({
     }
     editor.setSelectedShapes([shapeId]);
     publishSelection({ kind: "business-node", nodeId: node.id });
-    window.requestAnimationFrame(() => {
-      editor.zoomToFit();
-    });
+    focusCanvasSelection(editor);
   }, [canvasNodes, focusRequest, loading, publishSelection]);
 
   const loadCanvas = useCallback(() => {
@@ -712,6 +759,7 @@ export function CanvasEditor({
         scheduleSave(editorSnapshotToJson(editor));
       }
       emitSelection(editor);
+      focusCanvasContent(editor);
 
       const removeListener = editor.store.listen(
         (entry) => {
@@ -805,6 +853,7 @@ export function CanvasEditor({
         });
         editor.setSelectedShapes([shapeId]);
         emitSelection(editor);
+        focusCanvasSelection(editor);
       } catch (error) {
         setNodeActionError(errorMessage(error));
       } finally {

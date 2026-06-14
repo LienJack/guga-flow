@@ -2,6 +2,8 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from "@nes
 import { ProviderError, createVideoProviderRegistry } from "@guga-flow/provider-contracts";
 import type {
   AssetDetail,
+  AssetAnalysisJobInput,
+  AssetAnalysisJobOutput,
   CanvasSnapshotJson,
   CanvasLoadResult,
   CanvasNodeRecord,
@@ -12,6 +14,8 @@ import type {
   CreateBatchImagesToVideosJobResult,
   CreateBatchShotsToImagesJobInput,
   CreateBatchShotsToImagesJobResult,
+  CreateAssetAnalysisJobInput,
+  CreateAssetAnalysisJobResult,
   CreateGenerationJobInput,
   EditorExportJobInput,
   EditorExportJobOutput,
@@ -43,9 +47,11 @@ import type {
   ShotNodeData,
   ShotToImageJobInput,
   VideoProviderCatalogItem,
+  VideoReferenceMediaInput,
   VideoProviderResolution,
   WorkerGenerationJobWaitInput,
   WorkerProviderRuntimeConfigInput,
+  WorkflowRunJobInput,
 } from "@guga-flow/shared-types";
 import {
   EDITOR_EXPORT_PRESETS,
@@ -127,14 +133,21 @@ type DirectGenerationJobInput =
   | LocationToImageJobInput
   | ImageRefinementJobInput
   | ImageToVideoJobInput;
-type WorkerGenerationJobInput = DirectGenerationJobInput | EditorExportJobInput;
-type GeneratedMediaJobInput = ShotToImageJobInput | ImageRefinementJobInput | ImageToVideoJobInput;
+type WorkerGenerationJobInput =
+  | DirectGenerationJobInput
+  | AssetAnalysisJobInput
+  | WorkflowRunJobInput
+  | EditorExportJobInput;
+type GeneratedMediaJobInput = ShotToImageJobInput | ImageRefinementJobInput | ImageToVideoJobInput | WorkflowRunJobInput;
 type ReferenceImageJobInput = CharacterToImageJobInput | LocationToImageJobInput;
 
 const CANCELLABLE_JOB_STATUSES: GenerationJobStatus[] = ["queued", "running", "provider_waiting"];
 const WORKER_ACTIVE_JOB_STATUSES: GenerationJobStatus[] = ["running", "provider_waiting"];
 const WORKER_GENERATION_OPERATIONS = [
   ...PHASE_8_GENERATION_OPERATIONS,
+  "asset_caption",
+  "asset_classification",
+  "workflow_run",
   "editor_export",
 ] as const;
 
@@ -232,6 +245,12 @@ function assertJobInput(value: unknown): WorkerGenerationJobInput {
   ) {
     return value as WorkerGenerationJobInput;
   }
+  if (input.operation === "asset_caption" || input.operation === "asset_classification") {
+    return value as WorkerGenerationJobInput;
+  }
+  if (input.operation === "workflow_run") {
+    return value as WorkerGenerationJobInput;
+  }
   if (input.operation === "editor_export") {
     return {
       ...input,
@@ -245,6 +264,15 @@ function assertJobInput(value: unknown): WorkerGenerationJobInput {
 
 function isReferenceImageJobInput(input: WorkerGenerationJobInput): input is ReferenceImageJobInput {
   return input.operation === "character_to_image" || input.operation === "location_to_image";
+}
+
+function isGeneratedMediaJobInput(input: WorkerGenerationJobInput): input is GeneratedMediaJobInput {
+  return (
+    input.operation === "shot_to_image" ||
+    input.operation === "image_refinement" ||
+    input.operation === "image_to_video" ||
+    input.operation === "workflow_run"
+  );
 }
 
 @Injectable()
@@ -292,6 +320,48 @@ export class GenerationService {
     };
   }
 
+  async createAssetAnalysisJob(
+    projectId: string,
+    input: CreateAssetAnalysisJobInput,
+  ): Promise<CreateAssetAnalysisJobResult> {
+    if (input.operation !== "asset_caption" && input.operation !== "asset_classification") {
+      throw new BadRequestException("Asset analysis operation is not supported");
+    }
+    const assetIds = Array.from(new Set((input.assetIds ?? []).filter(Boolean)));
+    if (!assetIds.length) {
+      throw new BadRequestException("Asset analysis requires assetIds");
+    }
+    for (const assetId of assetIds) {
+      await this.assetsService.getAsset(projectId, assetId);
+    }
+
+    const jobInput: AssetAnalysisJobInput = {
+      operation: input.operation,
+      projectId,
+      assetIds,
+      provider: input.provider ?? "mock-vision",
+      model: input.model ?? "mock-vision-v1",
+      overwrite: input.overwrite === true,
+      prompt: input.prompt,
+      forceFailure: input.forceFailure,
+    };
+    const job = await this.prisma.generationJob.create({
+      data: {
+        projectId,
+        operation: jobInput.operation,
+        status: "queued",
+        provider: jobInput.provider,
+        model: jobInput.model,
+        inputJson: jsonValue(jobInput),
+      },
+    }) as GenerationJobModel;
+
+    return {
+      job: this.toGenerationJobRecord<AssetAnalysisJobInput>(job),
+      queueSummary: await this.getQueueSummary(projectId),
+    };
+  }
+
   async createBatchImagesToVideosJobs(
     projectId: string,
     input: CreateBatchImagesToVideosJobInput,
@@ -313,6 +383,7 @@ export class GenerationService {
             videoAspectRatio: input.videoAspectRatio,
             durationSeconds: input.durationSeconds,
             resolution: input.resolution,
+            referenceMedia: input.referenceMedia,
             videoProviderParams: input.videoProviderParams,
             forceFailure: input.forceFailure,
           }),
@@ -692,10 +763,11 @@ export class GenerationService {
     providerOutput?: GeneratedMediaProviderOutput,
     providerOutputs?: GeneratedMediaProviderOutput[],
     packageOutput?: EditorExportPackageOutput,
+    assetAnalysisOutput?: AssetAnalysisJobOutput,
   ): Promise<
     GenerationJobRecord<
       GenerationJobInput,
-      GeneratedMediaJobOutput | ReferenceAssetJobOutput | EditorExportJobOutput
+      GeneratedMediaJobOutput | ReferenceAssetJobOutput | EditorExportJobOutput | AssetAnalysisJobOutput
     >
   > {
     const existing = (await this.prisma.generationJob.findUnique({
@@ -709,6 +781,12 @@ export class GenerationService {
     }
 
     const input = assertJobInput(existing.inputJson);
+    if (input.operation === "asset_caption" || input.operation === "asset_classification") {
+      if (!assetAnalysisOutput) {
+        throw new BadRequestException("Asset analysis completion requires analysis output");
+      }
+      return this.succeedAssetAnalysisJob(existing, input, assetAnalysisOutput);
+    }
     if (input.operation === "editor_export") {
       if (!packageOutput) {
         throw new BadRequestException("Editor export completion requires package output");
@@ -721,8 +799,12 @@ export class GenerationService {
     if (isReferenceImageJobInput(input)) {
       return this.succeedReferenceImageJob(existing, input, providerOutput, providerOutputs);
     }
-    const completionOutputs = this.normalizeCompletionOutputs(input, providerOutput, providerOutputs);
-    completionOutputs.forEach((output) => this.validateProviderOutput(existing, input, output));
+    if (!isGeneratedMediaJobInput(input)) {
+      throw new BadRequestException("Generation job input is invalid for generated media completion");
+    }
+    const mediaInput = input;
+    const completionOutputs = this.normalizeCompletionOutputs(mediaInput, providerOutput, providerOutputs);
+    completionOutputs.forEach((output) => this.validateProviderOutput(existing, mediaInput, output));
 
     const completed = await this.runTransaction(async (tx) => {
       const claimed = await tx.generationJob.updateMany({
@@ -745,11 +827,11 @@ export class GenerationService {
         const asset = await this.assetsService.createGeneratedAsset(
           existing.projectId,
           {
-            purpose: input.operation === "image_to_video" ? "shot_clip" : "shot_keyframe",
+            purpose: this.generatedAssetPurpose(mediaInput),
             providerOutput: output,
             metadataJson: {
               generationJobId: existing.id,
-              operation: input.operation,
+              operation: mediaInput.operation,
               sourceNodeId: sourceNode.id,
               outputIndex,
             },
@@ -759,13 +841,13 @@ export class GenerationService {
         const targetNode = await this.createGeneratedNode(
           tx,
           existing,
-          input,
+          mediaInput,
           output,
           asset,
           sourceNode,
           outputIndex,
         );
-        const edge = await this.createGeneratedEdge(tx, existing, input, sourceNode, targetNode, asset);
+        const edge = await this.createGeneratedEdge(tx, existing, mediaInput, sourceNode, targetNode, asset);
         targets.push({ asset, edge, node: targetNode, providerOutput: output });
       }
 
@@ -780,7 +862,7 @@ export class GenerationService {
         providerOutput: target.providerOutput,
       }));
       const output: GeneratedMediaJobOutput = {
-        operation: input.operation,
+        operation: mediaInput.operation,
         sourceNodeId: sourceNode.id,
         targetNodeId: firstTarget.node.id,
         assetId: firstTarget.asset.id,
@@ -789,7 +871,7 @@ export class GenerationService {
         model: firstTarget.providerOutput.model,
         prompt: firstTarget.providerOutput.prompt,
         referenceAssetIds: firstTarget.providerOutput.referenceAssetIds,
-        generationSettings: input.generationSettings,
+        generationSettings: this.generationSettingsForInput(mediaInput),
         providerOutput: firstTarget.providerOutput,
         targets: targetOutputs.length > 1 ? targetOutputs : undefined,
         completedAt: new Date().toISOString(),
@@ -803,7 +885,7 @@ export class GenerationService {
             dataJson: jsonValue(
               this.generatedNodeData(
                 existing.id,
-                input,
+                mediaInput,
                 target.providerOutput,
                 target.asset,
                 output,
@@ -827,6 +909,39 @@ export class GenerationService {
     });
 
     return this.toGenerationJobRecord(completed);
+  }
+
+  private async succeedAssetAnalysisJob(
+    existing: GenerationJobModel,
+    input: AssetAnalysisJobInput,
+    output: AssetAnalysisJobOutput,
+  ): Promise<GenerationJobRecord<AssetAnalysisJobInput, AssetAnalysisJobOutput>> {
+    if (output.operation !== input.operation) {
+      throw new BadRequestException("Asset analysis output operation does not match the claimed job");
+    }
+    const expectedAssetIds = new Set(input.assetIds);
+    if (!output.results.every((result) => expectedAssetIds.has(result.assetId))) {
+      throw new BadRequestException("Asset analysis output contains unexpected assets");
+    }
+
+    const claimed = await this.prisma.generationJob.updateMany({
+      where: { id: existing.id, status: { in: WORKER_ACTIVE_JOB_STATUSES } },
+      data: { errorMessage: null },
+    });
+    if (claimed.count !== 1) {
+      throw new BadRequestException("Only active generation jobs can succeed");
+    }
+    await this.assetsService.applyAssetAnalysis(existing.projectId, output);
+    const completed = (await this.prisma.generationJob.update({
+      where: { id: existing.id },
+      data: {
+        status: "succeeded",
+        outputJson: jsonValue(output),
+        errorMessage: null,
+      },
+    })) as GenerationJobModel;
+
+    return this.toGenerationJobRecord<AssetAnalysisJobInput, AssetAnalysisJobOutput>(completed);
   }
 
   private async succeedReferenceImageJob(
@@ -1315,6 +1430,14 @@ export class GenerationService {
       ? providerSettings.provider.maxReferenceImages
       : 0;
     const referenceAssetIds = rawReferenceAssetIds.slice(0, referenceLimit);
+    const referenceMedia = await this.videoReferenceMedia(
+      projectId,
+      input,
+      providerSettings.provider,
+      sourceImageAssetId,
+      imageNode.id,
+      referenceAssetIds,
+    );
     const sourceNodeIds = uniqueStrings([
       imageNode.id,
       parentShot?.id,
@@ -1336,6 +1459,7 @@ export class GenerationService {
       parentShotNodeId: parentShot?.id,
       parentShotTitle: parentShot?.title,
       referenceAssetIds,
+      referenceMedia,
       sourceNodeIds,
       provider: providerSettings.provider.id,
       providerVersionId: providerSettings.provider.providerVersionId,
@@ -1356,6 +1480,57 @@ export class GenerationService {
     }
 
     return resolveGenerationSettings({ projectSettings: project.generationSettingsJson });
+  }
+
+  private async videoReferenceMedia(
+    projectId: string,
+    input: Pick<CreateGenerationJobInput, "referenceMedia">,
+    provider: VideoProviderCatalogItem,
+    sourceImageAssetId: string,
+    sourceNodeId: string,
+    referenceAssetIds: string[],
+  ): Promise<VideoReferenceMediaInput[]> {
+    const media: VideoReferenceMediaInput[] = [
+      { assetId: sourceImageAssetId, role: "first_frame", sourceNodeId },
+      ...referenceAssetIds.map((assetId) => ({
+        assetId,
+        role: "reference_image" as const,
+      })),
+      ...(input.referenceMedia ?? []),
+    ];
+    const deduped = Array.from(
+      new Map(media.map((item) => [`${item.role}:${item.assetId}:${item.sourceNodeId ?? ""}`, item])).values(),
+    );
+
+    const roleCounts = deduped.reduce((counts, item) => {
+      counts[item.role] = (counts[item.role] ?? 0) + 1;
+      return counts;
+    }, {} as Partial<Record<VideoReferenceMediaInput["role"], number>>);
+    if (roleCounts.first_frame && !provider.supportsFirstFrame) {
+      throw new BadRequestException(`${provider.displayName} does not support first frame input`);
+    }
+    if (roleCounts.last_frame && !provider.supportsLastFrame) {
+      throw new BadRequestException(`${provider.displayName} does not support last frame input`);
+    }
+    if ((roleCounts.reference_image ?? 0) > provider.maxReferenceImages || (!provider.supportsReferenceImages && roleCounts.reference_image)) {
+      throw new BadRequestException(`${provider.displayName} does not support that many reference images`);
+    }
+    if (roleCounts.reference_video && !provider.supportsReferenceVideo) {
+      throw new BadRequestException(`${provider.displayName} does not support reference video input`);
+    }
+    if ((roleCounts.reference_video ?? 0) > (provider.maxReferenceVideos ?? 0)) {
+      throw new BadRequestException(`${provider.displayName} reference video limit exceeded`);
+    }
+    if (roleCounts.reference_audio && !provider.supportsReferenceAudio) {
+      throw new BadRequestException(`${provider.displayName} does not support reference audio input`);
+    }
+    if ((roleCounts.reference_audio ?? 0) > (provider.maxReferenceAudios ?? 0)) {
+      throw new BadRequestException(`${provider.displayName} reference audio limit exceeded`);
+    }
+    for (const item of deduped) {
+      await this.assetsService.getAsset(projectId, item.assetId);
+    }
+    return deduped;
   }
 
   private characterReferencePrompt(
@@ -1436,6 +1611,14 @@ export class GenerationService {
     if (input.operation === "image_to_video" && !output.mimeType.startsWith("video/")) {
       throw new BadRequestException("Image video generation must produce a video asset");
     }
+    if (input.operation === "workflow_run") {
+      if (input.outputKind === "image" && !output.mimeType.startsWith("image/")) {
+        throw new BadRequestException("Workflow image output must produce an image asset");
+      }
+      if (input.outputKind === "video" && !output.mimeType.startsWith("video/")) {
+        throw new BadRequestException("Workflow video output must produce a video asset");
+      }
+    }
   }
 
   private validateReferenceImageProviderOutput(
@@ -1478,6 +1661,12 @@ export class GenerationService {
     if (input.operation === "image_refinement") {
       if (providerOutputs && providerOutputs.length > 1) {
         throw new BadRequestException("Image refinement supports only one provider output");
+      }
+      return [providerOutput];
+    }
+    if (input.operation === "workflow_run") {
+      if (providerOutputs && providerOutputs.length > 1) {
+        throw new BadRequestException("Workflow run supports one output in the MVP adapter");
       }
       return [providerOutput];
     }
@@ -1674,7 +1863,9 @@ export class GenerationService {
     outputIndex = 0,
   ): Promise<CanvasNodeModel> {
     const targetType: Extract<CanvasNodeType, "image" | "video"> =
-      input.operation === "image_to_video" ? "video" : "image";
+      input.operation === "image_to_video" || (input.operation === "workflow_run" && input.outputKind === "video")
+        ? "video"
+        : "image";
     if (input.operation === "shot_to_image" && sourceNode.type !== "shot") {
       throw new BadRequestException("Shot image completion requires a Shot source node");
     }
@@ -1713,7 +1904,7 @@ export class GenerationService {
           sourceNodeIds: this.sourceNodeIdsForInput(input),
           referenceAssetIds: providerOutput.referenceAssetIds,
           outputIndex,
-          generationSettings: input.generationSettings,
+          generationSettings: this.generationSettingsForInput(input),
           inputJson: input,
         }),
       },
@@ -1822,7 +2013,7 @@ export class GenerationService {
       generatedFromNodeId: sourceNode.id,
       sourceNodeIds: this.sourceNodeIdsForInput(input),
       referenceAssetIds: providerOutput.referenceAssetIds,
-      generationSettings: input.generationSettings,
+      generationSettings: this.generationSettingsForInput(input),
       inputJson: input,
       outputJson: output,
     };
@@ -1835,7 +2026,11 @@ export class GenerationService {
     operation?: GeneratedMediaJobInput["operation"],
   ): string {
     const sourceTitle = sourceNode.title?.trim() || sourceNode.type;
-    const suffix = operation === "image_refinement" ? "Refined Image" : targetType === "image" ? "Image" : "Video";
+    const suffix = operation === "image_refinement"
+      ? "Refined Image"
+      : operation === "workflow_run"
+        ? targetType === "image" ? "Workflow Image" : "Workflow Video"
+        : targetType === "image" ? "Image" : "Video";
     return outputOrdinal === 1 ? `${sourceTitle} ${suffix}` : `${sourceTitle} ${suffix} ${outputOrdinal}`;
   }
 
@@ -1849,7 +2044,21 @@ export class GenerationService {
         input.sourceNodeIds.locationNodeId,
       ]);
     }
+    if (input.operation === "workflow_run") {
+      return uniqueStrings([input.sourceNodeId]);
+    }
     return uniqueStrings(input.sourceNodeIds);
+  }
+
+  private generationSettingsForInput(input: GeneratedMediaJobInput): ResolvedGenerationSettings | undefined {
+    return input.operation === "workflow_run" ? undefined : input.generationSettings;
+  }
+
+  private generatedAssetPurpose(input: GeneratedMediaJobInput): "shot_keyframe" | "shot_clip" {
+    return input.operation === "image_to_video" ||
+      (input.operation === "workflow_run" && input.outputKind === "video")
+      ? "shot_clip"
+      : "shot_keyframe";
   }
 
   private async getQueueSummary(projectId: string): Promise<GenerationQueueSummary> {

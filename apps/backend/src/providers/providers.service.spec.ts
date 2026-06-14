@@ -216,6 +216,7 @@ function createPrismaMock() {
 
 describe("ProvidersService", () => {
   beforeEach(() => {
+    vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.stubEnv("OPENAI_API_KEY", "");
     vi.stubEnv("IMAGE2_API_KEY", "");
@@ -241,6 +242,7 @@ describe("ProvidersService", () => {
       "mock-image",
       "image2",
       "banana",
+      "generic-image",
     ]);
     expect(catalog.providers.find((provider) => provider.id === "mock-image")).toMatchObject({
       enabled: true,
@@ -255,6 +257,11 @@ describe("ProvidersService", () => {
       enabled: false,
       requiresApiKey: true,
       disabledReason: "Nano Banana server-side key is not configured",
+    });
+    expect(catalog.providers.find((provider) => provider.id === "generic-image")).toMatchObject({
+      enabled: false,
+      requiresApiKey: true,
+      defaultModel: "gpt-image-1",
     });
     expect(JSON.stringify(catalog)).not.toContain("API_KEY");
     expect(JSON.stringify(catalog)).not.toContain("sk-test");
@@ -291,6 +298,7 @@ describe("ProvidersService", () => {
       "mock-video",
       "seedance",
       "happyhorse",
+      "generic-video",
     ]);
     expect(catalog.providers.find((provider) => provider.id === "mock-video")).toMatchObject({
       enabled: true,
@@ -306,6 +314,11 @@ describe("ProvidersService", () => {
       enabled: false,
       requiresApiKey: true,
       disabledReason: "Happy Horse server-side key is not configured",
+    });
+    expect(catalog.providers.find((provider) => provider.id === "generic-video")).toMatchObject({
+      enabled: false,
+      requiresApiKey: true,
+      defaultModel: "video-model",
     });
     expect(JSON.stringify(catalog)).not.toContain("API_KEY");
     expect(JSON.stringify(catalog)).not.toContain("sk-test");
@@ -352,6 +365,14 @@ describe("ProvidersService", () => {
     const updated = await service.updateProviderConfig("project_1", "image", "image2", {
       enabled: true,
       defaultModel: "gpt-image-2",
+      params: {
+        protocol: "openai_compatible",
+        baseUrl: "https://api.example.test",
+        safeParams: {
+          quality: "medium",
+          apiKey: "should-be-trimmed-by-shared-normalizer",
+        },
+      },
       credential: { action: "set", value: "sk-secret-provider-key" },
     });
 
@@ -362,6 +383,13 @@ describe("ProvidersService", () => {
       credentialConfigured: true,
       credentialSource: "stored",
       defaultModel: "gpt-image-2",
+      params: {
+        protocol: "openai_compatible",
+        baseUrl: "https://api.example.test",
+        safeParams: {
+          quality: "medium",
+        },
+      },
     });
     expect(JSON.stringify(updated)).not.toContain("sk-secret-provider-key");
 
@@ -436,6 +464,80 @@ describe("ProvidersService", () => {
       model: "seedance-1-0-lite",
       message: "Missing provider credential for Seedance",
     });
+  });
+
+  it("discovers temporary OpenAI-compatible models without persisting secrets", async () => {
+    const prisma = createPrismaMock();
+    const service = new ProvidersService(prisma as unknown as PrismaService);
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            { id: "gpt-image-1" },
+            { id: "seedance-1-0-pro" },
+            { id: "gpt-4.1-mini" },
+          ],
+        }),
+        { headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await service.discoverModels("project_1", {
+      kind: "image",
+      provider: "generic-image",
+      protocol: "openai_compatible",
+      baseUrl: "https://api.example.test",
+      credential: { source: "temporary", value: "sk-temporary-key" },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.test/v1/models",
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: "Bearer sk-temporary-key" }),
+        redirect: "manual",
+      }),
+    );
+    expect(result).toEqual({
+      ok: true,
+      detectedProtocol: "openai_compatible",
+      message: "Model endpoint reachable",
+      modelGroups: {
+        image: ["gpt-image-1"],
+        video: ["seedance-1-0-pro"],
+        chat: ["gpt-4.1-mini"],
+      },
+      rawCount: 3,
+    });
+    expect(JSON.stringify(result)).not.toContain("sk-temporary-key");
+    expect(prisma.providerConfig.upsert).not.toHaveBeenCalled();
+  });
+
+  it("maps HTML model discovery responses to a safe API base URL error", async () => {
+    const prisma = createPrismaMock();
+    const service = new ProvidersService(prisma as unknown as PrismaService);
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response("<html>login</html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    ));
+
+    const result = await service.discoverModels("project_1", {
+      kind: "image",
+      protocol: "openai_compatible",
+      baseUrl: "https://example.test/login",
+      credential: { source: "temporary", value: "sk-temporary-key" },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      detectedProtocol: "openai_compatible",
+      message: "Base URL returned HTML; use an API endpoint",
+      rawCount: 0,
+    });
+    expect(JSON.stringify(result)).not.toContain("<html>");
+    expect(JSON.stringify(result)).not.toContain("sk-temporary-key");
   });
 
   it("allows mock provider tests without credentials", async () => {

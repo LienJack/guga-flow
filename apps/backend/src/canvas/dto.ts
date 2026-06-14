@@ -3,6 +3,8 @@ import type {
   CanvasSnapshotJson,
   CreateCanvasEdgeInput,
   CreateCanvasNodeInput,
+  ExportCanvasFragmentInput,
+  ImportCanvasFragmentInput,
   ImportStoryboardToCanvasInput,
   NodeStatus,
   Phase3CanvasNodeType,
@@ -178,4 +180,17 @@ export class ImportStoryboardToCanvasDto implements ImportStoryboardToCanvasInpu
   @IsOptional()
   @IsIn(STORYBOARD_IMPORT_DUPLICATE_POLICIES)
   duplicatePolicy?: StoryboardImportDuplicatePolicy;
+}
+
+export class ExportCanvasFragmentDto implements ExportCanvasFragmentInput {
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(160, { each: true })
+  nodeIds!: string[];
+}
+
+export class ImportCanvasFragmentDto implements ImportCanvasFragmentInput {
+  @IsDefined()
+  manifest!: ImportCanvasFragmentInput["manifest"];
 }

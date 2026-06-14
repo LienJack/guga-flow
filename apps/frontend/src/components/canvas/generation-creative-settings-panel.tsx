@@ -441,23 +441,27 @@ function GenerationCreativeSettingsForm({
       </div>
 
       <div className="generation-reference-list">
-        {PACKAGING_SETTINGS.map((field) => {
-          const reference = referenceValue(settings[field.key]);
-          return (
-            <div className="generation-reference-row" key={field.key}>
-              <strong>{field.label}</strong>
-              <PackagingReferenceFields
-                busy={busy}
-                idPrefix={`${idPrefix}-${field.key}`}
-                reference={reference}
-                onChange={(patch) => updateReference(field.key, patch)}
-              />
-            </div>
-          );
-        })}
+        <SettingsDetails
+          title="Packaging references"
+          meta={groupStatus(packagingReferenceCount(settings))}
+        >
+          {PACKAGING_SETTINGS.map((field) => {
+            const reference = referenceValue(settings[field.key]);
+            return (
+              <div className="generation-reference-row" key={field.key}>
+                <strong>{field.label}</strong>
+                <PackagingReferenceFields
+                  busy={busy}
+                  idPrefix={`${idPrefix}-${field.key}`}
+                  reference={reference}
+                  onChange={(patch) => updateReference(field.key, patch)}
+                />
+              </div>
+            );
+          })}
+        </SettingsDetails>
 
-        <div className="generation-reference-row">
-          <strong>Visual manual</strong>
+        <SettingsDetails title="Visual manual" meta={groupStatus(objectSettingCount(settings.visualManual))}>
           <div className="generation-field-grid creative-settings-grid">
             {VISUAL_MANUAL_FIELDS.map((field) => (
               <TextField
@@ -471,10 +475,9 @@ function GenerationCreativeSettingsForm({
               />
             ))}
           </div>
-        </div>
+        </SettingsDetails>
 
-        <div className="generation-reference-row">
-          <strong>Director manual</strong>
+        <SettingsDetails title="Director manual" meta={groupStatus(objectSettingCount(settings.directorManual))}>
           <div className="generation-field-grid creative-settings-grid">
             {DIRECTOR_MANUAL_FIELDS.map((field) => (
               <TextField
@@ -488,10 +491,12 @@ function GenerationCreativeSettingsForm({
               />
             ))}
           </div>
-        </div>
+        </SettingsDetails>
 
-        <div className="generation-reference-row">
-          <strong>Manual viral reference</strong>
+        <SettingsDetails
+          title="Manual viral reference"
+          meta={groupStatus(objectSettingCount(settings.viralReference))}
+        >
           <div className="generation-field-grid creative-settings-grid">
             {VIRAL_REFERENCE_FIELDS.map((field) => (
               <TextField
@@ -505,10 +510,12 @@ function GenerationCreativeSettingsForm({
               />
             ))}
           </div>
-        </div>
+        </SettingsDetails>
 
-        <div className="generation-reference-row">
-          <strong>Continuity strategy</strong>
+        <SettingsDetails
+          title="Continuity strategy"
+          meta={groupStatus(objectSettingCount(settings.continuity))}
+        >
           <div className="generation-field-grid creative-settings-grid">
             <div className="generation-field">
               <label htmlFor={`${idPrefix}-continuity-mode`}>Mode</label>
@@ -538,10 +545,12 @@ function GenerationCreativeSettingsForm({
               />
             ))}
           </div>
-        </div>
+        </SettingsDetails>
 
-        <div className="generation-reference-row">
-          <strong>Talking photo brief</strong>
+        <SettingsDetails
+          title="Talking photo brief"
+          meta={groupStatus(objectSettingCount(settings.talkingPhoto))}
+        >
           <div className="generation-field-grid creative-settings-grid">
             <label className="generation-checkbox" htmlFor={`${idPrefix}-talking-enabled`}>
               <input
@@ -575,10 +584,12 @@ function GenerationCreativeSettingsForm({
               />
             ))}
           </div>
-        </div>
+        </SettingsDetails>
 
-        <div className="generation-reference-row">
-          <strong>Marketing materials</strong>
+        <SettingsDetails
+          title="Marketing materials"
+          meta={groupStatus(objectSettingCount(settings.marketing))}
+        >
           <div className="generation-field-grid creative-settings-grid">
             {MARKETING_TEXT_FIELDS.map((field) => (
               <TextField
@@ -603,7 +614,7 @@ function GenerationCreativeSettingsForm({
               />
             </div>
           ))}
-        </div>
+        </SettingsDetails>
       </div>
 
       <div className="generation-actions">
@@ -612,6 +623,26 @@ function GenerationCreativeSettingsForm({
         </button>
       </div>
     </form>
+  );
+}
+
+function SettingsDetails({
+  children,
+  meta,
+  title,
+}: {
+  children: React.ReactNode;
+  meta: string;
+  title: string;
+}) {
+  return (
+    <details className="generation-settings-details">
+      <summary>
+        <strong>{title}</strong>
+        <span>{meta}</span>
+      </summary>
+      <div className="generation-settings-details-body">{children}</div>
+    </details>
   );
 }
 
@@ -739,6 +770,18 @@ function ResolvedGenerationSettingsSummary({ resolved }: { resolved: ResolvedGen
 
 function settingCount(settings: GenerationCreativeSettings): number {
   return Object.keys(normalizeGenerationCreativeSettings(settings)).length;
+}
+
+function groupStatus(count: number): string {
+  return count ? `${count} set` : "Not set";
+}
+
+function packagingReferenceCount(settings: GenerationCreativeSettings): number {
+  return PACKAGING_SETTINGS.filter((field) => hasSettingValue(settings[field.key])).length;
+}
+
+function objectSettingCount(value: unknown): number {
+  return Object.values(referenceObject(value)).filter(hasSettingValue).length;
 }
 
 function referenceValue(value: unknown): GenerationPackagingReference {

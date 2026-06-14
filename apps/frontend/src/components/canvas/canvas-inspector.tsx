@@ -100,107 +100,110 @@ export function CanvasInspector({
     selectedNode && selectedNode.type === "shot"
       ? (selectedNode as CanvasNodeRecord<ShotNodeData>)
       : undefined;
+  const hasActiveSelection = selection.kind !== "empty";
+  const selectionDetails = (
+    <section className="inspector-section" aria-label="Selection details">
+      {selection.kind === "empty" ? (
+        <InspectorState title="No selection" value="Canvas ready" />
+      ) : null}
+      {selection.kind === "multi" ? (
+        <InspectorState title="Multiple selection" value={`${selection.count} objects`} />
+      ) : null}
+      {selection.kind === "unsupported" ? (
+        <InspectorState title="Canvas object" value={selection.shapeType} />
+      ) : null}
+      {selection.kind === "business-edge" && !selectedEdge ? (
+        <InspectorState title="Edge unavailable" value={selection.edgeId} />
+      ) : null}
+      {selection.kind === "business-node" && !selectedNode ? (
+        <InspectorState title="Node unavailable" value={selection.nodeId} />
+      ) : null}
+      {selectedEdge ? (
+        <CanvasEdgeInspector
+          edge={selectedEdge}
+          edges={edges}
+          nodes={nodes}
+          projectId={projectId}
+          onGraphUpdated={onGraphUpdated}
+          onSelectionChange={onSelectionChange}
+        />
+      ) : null}
+      {selectedNode ? (
+        <BusinessNodeForm
+          node={selectedNode}
+          onSave={async (input) => {
+            const result = await saveNode(projectId, selectedNode.id, input);
+            onNodeUpdated(result);
+          }}
+        />
+      ) : null}
+      {selectedNode ? <NodeTracePanel node={selectedNode} nodes={nodes} /> : null}
+      {selectedNode ? (
+        <CanvasProductivityActions
+          edges={edges}
+          node={selectedNode}
+          nodes={nodes}
+          projectId={projectId}
+          onGraphUpdated={onGraphUpdated}
+          onNodeUpdated={onNodeUpdated}
+          onSelectionChange={onSelectionChange}
+        />
+      ) : null}
+      {selectedShotNode ? (
+        <ShotGenerationSettingsPanel
+          node={selectedShotNode}
+          projectGenerationSettings={project?.generationSettings}
+          projectId={projectId}
+          onNodeUpdated={onNodeUpdated}
+        />
+      ) : null}
+      {selectedNode ? (
+        <NodeReferenceAssets
+          projectId={projectId}
+          node={selectedNode}
+          onNodeUpdated={onNodeUpdated}
+        />
+      ) : null}
+      {selectedNode ? (
+        <NodeAudioAssets projectId={projectId} node={selectedNode} onNodeUpdated={onNodeUpdated} />
+      ) : null}
+      {selectedNode ? (
+        <GenerationActions
+          generationJobs={generationJobs}
+          projectId={projectId}
+          node={selectedNode}
+          onGenerationChanged={onGenerationChanged}
+        />
+      ) : null}
+      {selection.kind === "multi" ? (
+        <GenerationBatchActions
+          generationJobs={generationJobs}
+          imageNodes={selectedBatchImageNodes}
+          projectId={projectId}
+          shotNodes={selectedBatchShotNodes}
+          onGenerationChanged={onGenerationChanged}
+        />
+      ) : null}
+      {selection.kind === "multi" ? (
+        <EditorExportActions
+          generationJobs={generationJobs}
+          projectId={projectId}
+          videoNodes={selectedExportVideoNodes}
+          onGenerationChanged={onGenerationChanged}
+        />
+      ) : null}
+      {selectedNode ? (
+        <ShotPromptPreview projectId={projectId} node={selectedNode} refreshKey={promptRefreshKey} />
+      ) : null}
+    </section>
+  );
 
   return (
     <div className="canvas-inspector">
+      {hasActiveSelection ? selectionDetails : null}
       <ProjectGenerationSettingsPanel project={project} onProjectUpdated={onProjectUpdated} />
       <GenerationQueueInspectorPanel generationJobs={generationJobs} />
-
-      <section className="inspector-section" aria-label="Selection details">
-        {selection.kind === "empty" ? (
-          <InspectorState title="No selection" value="Canvas ready" />
-        ) : null}
-        {selection.kind === "multi" ? (
-          <InspectorState title="Multiple selection" value={`${selection.count} objects`} />
-        ) : null}
-        {selection.kind === "unsupported" ? (
-          <InspectorState title="Canvas object" value={selection.shapeType} />
-        ) : null}
-        {selection.kind === "business-edge" && !selectedEdge ? (
-          <InspectorState title="Edge unavailable" value={selection.edgeId} />
-        ) : null}
-        {selection.kind === "business-node" && !selectedNode ? (
-          <InspectorState title="Node unavailable" value={selection.nodeId} />
-        ) : null}
-        {selectedEdge ? (
-          <CanvasEdgeInspector
-            edge={selectedEdge}
-            edges={edges}
-            nodes={nodes}
-            projectId={projectId}
-            onGraphUpdated={onGraphUpdated}
-            onSelectionChange={onSelectionChange}
-          />
-        ) : null}
-        {selectedNode ? (
-          <BusinessNodeForm
-            node={selectedNode}
-            onSave={async (input) => {
-              const result = await saveNode(projectId, selectedNode.id, input);
-              onNodeUpdated(result);
-            }}
-          />
-        ) : null}
-        {selectedNode ? <NodeTracePanel node={selectedNode} nodes={nodes} /> : null}
-        {selectedNode ? (
-          <CanvasProductivityActions
-            edges={edges}
-            node={selectedNode}
-            nodes={nodes}
-            projectId={projectId}
-            onGraphUpdated={onGraphUpdated}
-            onNodeUpdated={onNodeUpdated}
-            onSelectionChange={onSelectionChange}
-          />
-        ) : null}
-        {selectedShotNode ? (
-          <ShotGenerationSettingsPanel
-            node={selectedShotNode}
-            projectGenerationSettings={project?.generationSettings}
-            projectId={projectId}
-            onNodeUpdated={onNodeUpdated}
-          />
-        ) : null}
-        {selectedNode ? (
-          <NodeReferenceAssets
-            projectId={projectId}
-            node={selectedNode}
-            onNodeUpdated={onNodeUpdated}
-          />
-        ) : null}
-        {selectedNode ? (
-          <NodeAudioAssets projectId={projectId} node={selectedNode} onNodeUpdated={onNodeUpdated} />
-        ) : null}
-        {selectedNode ? (
-          <GenerationActions
-            generationJobs={generationJobs}
-            projectId={projectId}
-            node={selectedNode}
-            onGenerationChanged={onGenerationChanged}
-          />
-        ) : null}
-        {selection.kind === "multi" ? (
-          <GenerationBatchActions
-            generationJobs={generationJobs}
-            imageNodes={selectedBatchImageNodes}
-            projectId={projectId}
-            shotNodes={selectedBatchShotNodes}
-            onGenerationChanged={onGenerationChanged}
-          />
-        ) : null}
-        {selection.kind === "multi" ? (
-          <EditorExportActions
-            generationJobs={generationJobs}
-            projectId={projectId}
-            videoNodes={selectedExportVideoNodes}
-            onGenerationChanged={onGenerationChanged}
-          />
-        ) : null}
-        {selectedNode ? (
-          <ShotPromptPreview projectId={projectId} node={selectedNode} refreshKey={promptRefreshKey} />
-        ) : null}
-      </section>
-
+      {hasActiveSelection ? null : selectionDetails}
       <AssetLibrary projectId={projectId} />
     </div>
   );

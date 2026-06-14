@@ -1,9 +1,12 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+
+import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import type {
   AssetListItem,
   AssetPreviewKind,
   AssetPurpose,
   AssetType,
+  CanvasFragmentManifest,
   CanvasDocumentRecord,
   CanvasEdgeData,
   CanvasEdgeRecord,
@@ -20,6 +23,10 @@ import type {
   DeleteCanvasNodeResult,
   ImportStoryboardToCanvasInput,
   ImportStoryboardToCanvasResult,
+  ExportCanvasFragmentInput,
+  ExportCanvasFragmentResult,
+  ImportCanvasFragmentInput,
+  ImportCanvasFragmentResult,
   NodeStatus,
   SaveCanvasSnapshotInput,
   SaveCanvasSnapshotResult,
@@ -33,6 +40,8 @@ import type {
   UpdateCanvasNodeResult,
 } from "@guga-flow/shared-types";
 import {
+  CANVAS_FRAGMENT_FORMAT,
+  CANVAS_FRAGMENT_SCHEMA_VERSION,
   CANVAS_EDGE_RELATIONS,
   NODE_STATUSES,
   PHASE_3_CANVAS_NODE_TYPES,
@@ -44,6 +53,7 @@ import {
 } from "@guga-flow/shared-types";
 
 import { PrismaService } from "../prisma/prisma.service";
+import { LocalStorageService } from "../storage/local-storage.service";
 
 type CanvasDocumentModel = {
   id: string;
@@ -197,6 +207,124 @@ function getOptionalString(value: CanvasSnapshotJson | undefined): string | unde
   return typeof value === "string" ? value : undefined;
 }
 
+function jsonContainsString(value: unknown, needle: string): boolean {
+  if (value === needle) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => jsonContainsString(item, needle));
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.values(value).some((item) => jsonContainsString(item, needle));
+  }
+  return false;
+}
+
+function rewriteFragmentJson(
+  value: unknown,
+  nodeIdMap: Map<string, string>,
+  edgeIdMap: Map<string, string>,
+  assetIdMap: Map<string, string>,
+): CanvasSnapshotJson {
+  if (typeof value === "string") {
+    return nodeIdMap.get(value) ?? edgeIdMap.get(value) ?? assetIdMap.get(value) ?? value;
+  }
+  if (typeof value === "number" || typeof value === "boolean" || value === null) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => rewriteFragmentJson(item, nodeIdMap, edgeIdMap, assetIdMap));
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        rewriteFragmentJson(item, nodeIdMap, edgeIdMap, assetIdMap),
+      ]),
+    );
+  }
+  return null;
+}
+
+function createStoredZip(entries: Array<{ name: string; data: Buffer }>): Buffer {
+  const localParts: Buffer[] = [];
+  const centralParts: Buffer[] = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const name = Buffer.from(normalizeZipPath(entry.name), "utf8");
+    const crc = crc32(entry.data);
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0, 6);
+    localHeader.writeUInt16LE(0, 8);
+    localHeader.writeUInt16LE(0, 10);
+    localHeader.writeUInt16LE(0, 12);
+    localHeader.writeUInt32LE(crc, 14);
+    localHeader.writeUInt32LE(entry.data.byteLength, 18);
+    localHeader.writeUInt32LE(entry.data.byteLength, 22);
+    localHeader.writeUInt16LE(name.byteLength, 26);
+    localHeader.writeUInt16LE(0, 28);
+    localParts.push(localHeader, name, entry.data);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(0, 8);
+    centralHeader.writeUInt16LE(0, 10);
+    centralHeader.writeUInt16LE(0, 12);
+    centralHeader.writeUInt16LE(0, 14);
+    centralHeader.writeUInt32LE(crc, 16);
+    centralHeader.writeUInt32LE(entry.data.byteLength, 20);
+    centralHeader.writeUInt32LE(entry.data.byteLength, 24);
+    centralHeader.writeUInt16LE(name.byteLength, 28);
+    centralHeader.writeUInt16LE(0, 30);
+    centralHeader.writeUInt16LE(0, 32);
+    centralHeader.writeUInt16LE(0, 34);
+    centralHeader.writeUInt16LE(0, 36);
+    centralHeader.writeUInt32LE(0, 38);
+    centralHeader.writeUInt32LE(offset, 42);
+    centralParts.push(centralHeader, name);
+    offset += localHeader.byteLength + name.byteLength + entry.data.byteLength;
+  }
+
+  const centralDirectory = Buffer.concat(centralParts);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralDirectory.byteLength, 12);
+  end.writeUInt32LE(offset, 16);
+  end.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...localParts, centralDirectory, end]);
+}
+
+function crc32(buffer: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function normalizeZipPath(value: string): string {
+  const normalized = value
+    .replace(/^\/+/g, "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter((part) => part && part !== "." && part !== "..")
+    .join("/");
+  return normalized || "entry";
+}
+
 function isStoryboardImportDuplicatePolicy(
   value: unknown,
 ): value is StoryboardImportDuplicatePolicy {
@@ -208,7 +336,10 @@ function isStoryboardImportDuplicatePolicy(
 
 @Injectable()
 export class CanvasService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional() @Inject(LocalStorageService) private readonly storage?: LocalStorageService,
+  ) {}
 
   async getCanvas(projectId: string): Promise<CanvasLoadResult> {
     await this.ensureProjectExists(projectId);
@@ -610,6 +741,185 @@ export class CanvasService {
     });
   }
 
+  async exportFragment(
+    projectId: string,
+    input: ExportCanvasFragmentInput,
+  ): Promise<ExportCanvasFragmentResult> {
+    if (!this.storage) {
+      throw new BadRequestException("Canvas fragment storage is not configured");
+    }
+    const nodeIds = uniqueStrings(input.nodeIds ?? []);
+    if (!nodeIds.length) {
+      throw new BadRequestException("Canvas fragment export requires nodeIds");
+    }
+    const canvas = await this.getCanvas(projectId);
+    const selectedNodes = canvas.nodes.filter((node) => nodeIds.includes(node.id));
+    if (selectedNodes.length !== nodeIds.length) {
+      throw new BadRequestException("Canvas fragment contains nodes outside this project");
+    }
+    const selectedNodeIds = new Set(selectedNodes.map((node) => node.id));
+    const selectedEdges = canvas.edges.filter(
+      (edge) => selectedNodeIds.has(edge.sourceNodeId) && selectedNodeIds.has(edge.targetNodeId),
+    );
+    const referencedAssets = canvas.assets.filter((asset) =>
+      [...selectedNodes, ...selectedEdges].some((item) => jsonContainsString(item, asset.id)),
+    );
+    const manifest: CanvasFragmentManifest = {
+      format: CANVAS_FRAGMENT_FORMAT,
+      schemaVersion: CANVAS_FRAGMENT_SCHEMA_VERSION,
+      sourceProjectId: projectId,
+      exportedAt: new Date().toISOString(),
+      nodes: selectedNodes,
+      edges: selectedEdges,
+      assets: referencedAssets,
+    };
+    const zip = createStoredZip([
+      { name: "manifest.json", data: Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, "utf8") },
+    ]);
+    const storageKey = `${projectId}/canvas-fragments/${Date.now()}-${randomUUID()}.zip`;
+    const stored = await this.storage.writeObject({ storageKey, buffer: zip });
+    const packageAsset = await this.prisma.asset.create({
+      data: {
+        projectId,
+        type: "package",
+        purpose: "canvas_fragment",
+        storageKey: stored.storageKey,
+        mimeType: "application/zip",
+        originalFilename: "canvas-fragment.zip",
+        sizeBytes: stored.sizeBytes,
+        metadataJson: {
+          previewKind: "metadata",
+          format: CANVAS_FRAGMENT_FORMAT,
+          schemaVersion: CANVAS_FRAGMENT_SCHEMA_VERSION,
+          nodeCount: selectedNodes.length,
+          edgeCount: selectedEdges.length,
+          assetCount: referencedAssets.length,
+        },
+      },
+    });
+
+    return {
+      manifest,
+      packageAssetId: packageAsset.id,
+      storageKey: stored.storageKey,
+    };
+  }
+
+  async importFragment(
+    projectId: string,
+    input: ImportCanvasFragmentInput,
+  ): Promise<ImportCanvasFragmentResult> {
+    await this.ensureProjectExists(projectId);
+    try {
+      await this.validateFragmentManifest(projectId, input.manifest);
+    } catch (error) {
+      const record = await this.prisma.canvasFragmentImport.create({
+        data: {
+          projectId,
+          schemaVersion: typeof input.manifest?.schemaVersion === "number" ? input.manifest.schemaVersion : 0,
+          status: "failed",
+          summaryJson: { nodeCount: input.manifest?.nodes?.length ?? 0 },
+          errorMessage: error instanceof Error ? error.message : "Canvas fragment import failed",
+        },
+      });
+      throw new BadRequestException(record.errorMessage ?? "Canvas fragment import failed");
+    }
+
+    const canvasDocument = await this.getOrCreateCanvasDocument(projectId);
+    const importedAt = new Date().toISOString();
+    const nodeIdMap = new Map(input.manifest.nodes.map((node) => [node.id, `fragment-node-${randomUUID()}`]));
+    const edgeIdMap = new Map(input.manifest.edges.map((edge) => [edge.id, `fragment-edge-${randomUUID()}`]));
+    const assetIdMap = new Map(input.manifest.assets.map((asset) => [asset.id, asset.id]));
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const nodes: CanvasNodeModel[] = [];
+      for (const node of input.manifest.nodes) {
+        const nextId = nodeIdMap.get(node.id);
+        if (!nextId) {
+          throw new BadRequestException("Canvas fragment node rewrite failed");
+        }
+        nodes.push(await tx.canvasNode.create({
+          data: {
+            id: nextId,
+            projectId,
+            canvasDocumentId: canvasDocument.id,
+            tldrawShapeId: `shape:fragment-${nextId}`,
+            type: node.type,
+            title: this.normalizeTitle(node.title),
+            x: node.x + 80,
+            y: node.y + 80,
+            width: node.width,
+            height: node.height,
+            zIndex: node.zIndex + 1,
+            status: "draft",
+            dataJson: this.normalizeNodeDataJson(
+              rewriteFragmentJson(node.dataJson, nodeIdMap, edgeIdMap, assetIdMap),
+            ),
+          },
+        }));
+      }
+      const edges: CanvasEdgeModel[] = [];
+      for (const edge of input.manifest.edges) {
+        const nextId = edgeIdMap.get(edge.id);
+        const sourceNodeId = nodeIdMap.get(edge.sourceNodeId);
+        const targetNodeId = nodeIdMap.get(edge.targetNodeId);
+        if (!nextId || !sourceNodeId || !targetNodeId) {
+          throw new BadRequestException("Canvas fragment edge rewrite failed");
+        }
+        const sourceNode = nodes.find((node) => node.id === sourceNodeId);
+        const targetNode = nodes.find((node) => node.id === targetNodeId);
+        if (!sourceNode || !targetNode) {
+          throw new BadRequestException("Canvas fragment edge references a missing node");
+        }
+        this.validateSemanticEdge(sourceNode, targetNode, edge.relation);
+        edges.push(await tx.canvasEdge.create({
+          data: {
+            id: nextId,
+            projectId,
+            canvasDocumentId: canvasDocument.id,
+            sourceNodeId,
+            targetNodeId,
+            sourceShapeId: sourceNode.tldrawShapeId,
+            targetShapeId: targetNode.tldrawShapeId,
+            visualArrowShapeId: `shape:fragment-arrow-${nextId}`,
+            relation: edge.relation,
+            dataJson: this.normalizeEdgeDataJson(
+              rewriteFragmentJson(edge.dataJson ?? {}, nodeIdMap, edgeIdMap, assetIdMap),
+            ),
+          },
+        }));
+      }
+      const record = await tx.canvasFragmentImport.create({
+        data: {
+          projectId,
+          schemaVersion: input.manifest.schemaVersion,
+          status: "succeeded",
+          summaryJson: {
+            sourceProjectId: input.manifest.sourceProjectId,
+            nodeCount: nodes.length,
+            edgeCount: edges.length,
+            assetCount: input.manifest.assets.length,
+            importedAt,
+          },
+        },
+      });
+      return { record, nodes, edges };
+    });
+
+    return {
+      import: {
+        id: result.record.id,
+        projectId: result.record.projectId,
+        schemaVersion: result.record.schemaVersion,
+        status: "succeeded",
+        summaryJson: result.record.summaryJson as CanvasSnapshotJson,
+        createdAt: toIsoString(result.record.createdAt),
+      },
+      nodes: result.nodes.map((node) => this.toCanvasNodeRecord(node)),
+      edges: result.edges.map((edge) => this.toCanvasEdgeRecord(edge)),
+    };
+  }
+
   async deleteEdge(projectId: string, edgeId: string): Promise<DeleteCanvasEdgeResult> {
     const edge = await this.findProjectEdge(projectId, edgeId);
     const [sourceNode, targetNode] = await Promise.all([
@@ -656,6 +966,51 @@ export class CanvasService {
         updatedNodes: updatedNodes.map((node) => this.toCanvasNodeRecord(node)),
       };
     });
+  }
+
+  private async validateFragmentManifest(
+    projectId: string,
+    manifest: CanvasFragmentManifest,
+  ): Promise<void> {
+    if (!manifest || manifest.format !== CANVAS_FRAGMENT_FORMAT) {
+      throw new BadRequestException("Canvas fragment format is not supported");
+    }
+    if (manifest.schemaVersion !== CANVAS_FRAGMENT_SCHEMA_VERSION) {
+      throw new BadRequestException("Canvas fragment schemaVersion is not supported");
+    }
+    if (!Array.isArray(manifest.nodes) || manifest.nodes.length === 0) {
+      throw new BadRequestException("Canvas fragment requires nodes");
+    }
+    if (!Array.isArray(manifest.edges) || !Array.isArray(manifest.assets)) {
+      throw new BadRequestException("Canvas fragment manifest is invalid");
+    }
+    const nodeIds = new Set(manifest.nodes.map((node) => node.id));
+    for (const node of manifest.nodes) {
+      if (!isPhase3CanvasNodeType(node.type)) {
+        throw new BadRequestException("Canvas fragment contains an unsupported node type");
+      }
+      if (!isCanvasNodeDataJson(node.dataJson)) {
+        throw new BadRequestException("Canvas fragment node data is invalid");
+      }
+    }
+    for (const edge of manifest.edges) {
+      if (!nodeIds.has(edge.sourceNodeId) || !nodeIds.has(edge.targetNodeId)) {
+        throw new BadRequestException("Canvas fragment edge references a missing node");
+      }
+      if (!CANVAS_EDGE_RELATIONS.includes(edge.relation)) {
+        throw new BadRequestException("Canvas fragment edge relation is invalid");
+      }
+    }
+    const assetIds = manifest.assets.map((asset) => asset.id);
+    if (assetIds.length) {
+      const existingAssets = await this.prisma.asset.findMany({
+        where: { projectId, id: { in: assetIds } },
+        select: { id: true },
+      });
+      if (existingAssets.length !== assetIds.length) {
+        throw new BadRequestException("Canvas fragment resources are missing from this project");
+      }
+    }
   }
 
   private async getOrCreateCanvasDocument(projectId: string): Promise<CanvasDocumentModel> {

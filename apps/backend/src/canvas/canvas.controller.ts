@@ -4,6 +4,8 @@ import { CanvasService } from "./canvas.service";
 import {
   CreateCanvasEdgeDto,
   CreateCanvasNodeDto,
+  ExportCanvasFragmentDto,
+  ImportCanvasFragmentDto,
   ImportStoryboardToCanvasDto,
   SaveCanvasSnapshotDto,
   UpdateCanvasNodeDto,
@@ -40,6 +42,16 @@ export class CanvasController {
     @Body() body: ImportStoryboardToCanvasDto,
   ) {
     return this.canvasService.importStoryboard(projectId, body);
+  }
+
+  @Post("fragments/export")
+  exportFragment(@Param("projectId") projectId: string, @Body() body: ExportCanvasFragmentDto) {
+    return this.canvasService.exportFragment(projectId, body);
+  }
+
+  @Post("fragments/import")
+  importFragment(@Param("projectId") projectId: string, @Body() body: ImportCanvasFragmentDto) {
+    return this.canvasService.importFragment(projectId, body);
   }
 
   @Patch("nodes/:nodeId")

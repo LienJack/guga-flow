@@ -1,7 +1,13 @@
 import type { ImageProvider } from "./contracts";
 import { ProviderError } from "./contracts";
 import { MockImageProvider } from "./mock-providers";
-import { BananaProvider, Image2Provider, type RealImageProviderOptions } from "./real-image-providers";
+import {
+  BananaProvider,
+  GenericImageProvider,
+  Image2Provider,
+  type GenericImageProviderOptions,
+  type RealImageProviderOptions,
+} from "./real-image-providers";
 
 export interface ImageProviderRegistry {
   get(providerId?: string): ImageProvider;
@@ -13,6 +19,8 @@ export interface ImageProviderRegistryOptions {
   fetchImpl?: RealImageProviderOptions["fetchImpl"];
   openAiBaseUrl?: string;
   geminiBaseUrl?: string;
+  genericBaseUrl?: string;
+  genericProtocol?: GenericImageProviderOptions["protocol"];
   additionalProviders?: ImageProvider[];
 }
 
@@ -57,6 +65,12 @@ export function createImageProviderRegistry(
     new BananaProvider({
       apiKey: env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY ?? env.BANANA_API_KEY,
       baseUrl: options.geminiBaseUrl,
+      fetchImpl: options.fetchImpl,
+    }),
+    new GenericImageProvider({
+      apiKey: env.GENERIC_IMAGE_API_KEY ?? env.OPENAI_API_KEY,
+      baseUrl: options.genericBaseUrl,
+      protocol: options.genericProtocol,
       fetchImpl: options.fetchImpl,
     }),
     ...(options.additionalProviders ?? []),

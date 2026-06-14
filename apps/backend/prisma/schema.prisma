@@ -69,6 +69,7 @@ enum AssetPurpose {
   background_music
   shot_clip
   editor_package
+  canvas_fragment
 }
 
 enum GenerationJobStatus {
@@ -82,12 +83,15 @@ enum GenerationJobStatus {
 
 enum GenerationOperation {
   novel_to_storyboard
+  asset_caption
+  asset_classification
   shot_to_image
   character_to_image
   location_to_image
   image_refinement
   image_to_video
   shot_to_video
+  workflow_run
   batch_shots_to_images
   batch_images_to_videos
   editor_export
@@ -140,9 +144,13 @@ model Project {
   nodes              CanvasNode[]
   edges              CanvasEdge[]
   assets             Asset[]
+  assetCollections   AssetCollection[]
+  assetTags          AssetTag[]
   generationJobs     GenerationJob[]
   editorExports      EditorExport[]
   providerConfigs    ProviderConfig[]
+  workflowDefinitions WorkflowDefinition[]
+  canvasFragmentImports CanvasFragmentImport[]
   programmableProviders ProgrammableProvider[]
   agentMemories      AgentMemory[]
   skillTemplates     SkillTemplate[]
@@ -291,6 +299,7 @@ model CanvasEdge {
 model Asset {
   id               String          @id @default(cuid())
   projectId        String
+  collectionId     String?
   type             AssetType
   purpose          AssetPurpose
   storageKey       String
@@ -303,10 +312,55 @@ model Asset {
   metadataJson     Json?
   createdAt        DateTime        @default(now())
   project          Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  collection       AssetCollection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  tagAssignments   AssetTagAssignment[]
   editorExports    EditorExport[]
 
   @@unique([projectId, storageKey])
   @@index([projectId, type])
+  @@index([projectId, collectionId])
+}
+
+model AssetCollection {
+  id        String            @id @default(cuid())
+  projectId String
+  name      String
+  parentId  String?
+  kind      String            @default("manual")
+  sortOrder Int               @default(0)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent    AssetCollection?  @relation("AssetCollectionTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  AssetCollection[] @relation("AssetCollectionTree")
+  assets    Asset[]
+
+  @@index([projectId, parentId])
+  @@unique([projectId, name])
+}
+
+model AssetTag {
+  id          String               @id @default(cuid())
+  projectId   String
+  name        String
+  color       String?
+  createdAt   DateTime             @default(now())
+  project     Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignments AssetTagAssignment[]
+
+  @@index([projectId])
+  @@unique([projectId, name])
+}
+
+model AssetTagAssignment {
+  assetId    String
+  tagId      String
+  assignedAt DateTime @default(now())
+  asset      Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  tag        AssetTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([assetId, tagId])
+  @@index([tagId])
 }
 
 model GenerationJob {
@@ -379,6 +433,54 @@ model ProviderConfig {
 
   @@unique([projectId, kind, provider])
   @@index([kind, provider])
+}
+
+model WorkflowDefinition {
+  id              String                      @id @default(cuid())
+  projectId       String
+  kind            String
+  provider        String
+  displayName     String
+  status          String                      @default("draft")
+  activeVersionId String?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  project         Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions        WorkflowDefinitionVersion[] @relation("WorkflowDefinitionVersions")
+  activeVersion   WorkflowDefinitionVersion?  @relation("ActiveWorkflowDefinitionVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, provider])
+  @@index([projectId, kind])
+  @@index([activeVersionId])
+}
+
+model WorkflowDefinitionVersion {
+  id                   String               @id @default(cuid())
+  workflowDefinitionId String
+  version              Int
+  sourceJson           Json
+  mappingJson          Json
+  diagnosticsJson      Json                 @default("[]")
+  createdAt            DateTime             @default(now())
+  workflowDefinition   WorkflowDefinition   @relation("WorkflowDefinitionVersions", fields: [workflowDefinitionId], references: [id], onDelete: Cascade)
+  activeFor            WorkflowDefinition[] @relation("ActiveWorkflowDefinitionVersion")
+
+  @@unique([workflowDefinitionId, version])
+  @@index([workflowDefinitionId])
+}
+
+model CanvasFragmentImport {
+  id            String   @id @default(cuid())
+  projectId     String
+  schemaVersion Int
+  status        String
+  summaryJson   Json     @default("{}")
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status])
+  @@index([projectId, createdAt])
 }
 
 model AgentMemory {

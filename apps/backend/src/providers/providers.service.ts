@@ -17,9 +17,12 @@ import type {
   ProviderConnectionTestResult,
   ProviderConnectionTestSummary,
   ProviderCredentialSource,
+  ProviderConfigParams,
   ProviderConfigUpdateResult,
   ProviderManagementItem,
   ProviderManagementResult,
+  ProviderModelDiscoveryResult,
+  ProviderProtocol,
   ProviderRuntimeConfig,
   UpdateProviderConfigInput,
   VideoProviderCatalogItem,
@@ -31,6 +34,7 @@ import {
   managedProviderId,
   managedProviderKind,
   normalizeProviderConnectionTestInput,
+  normalizeProviderModelDiscoveryInput,
   normalizeUpdateProviderConfigInput,
   programmableProviderId,
 } from "@guga-flow/shared-types";
@@ -199,6 +203,35 @@ function imageProviderCatalog(config: AppConfig): ImageProviderCatalogItem[] {
         },
       ],
     },
+    {
+      id: "generic-image",
+      displayName: "Generic Image Provider",
+      enabled: false,
+      disabledReason: disabledReason("Generic Image Provider"),
+      requiresApiKey: true,
+      defaultModel: "gpt-image-1",
+      models: [{ id: "gpt-image-1", displayName: "GPT Image compatible", default: true }],
+      supportedModes: ["text_to_image", "image_to_image", "multi_reference"],
+      supportsReferenceImages: true,
+      maxReferenceImages: 4,
+      supportsMultipleOutputs: true,
+      maxOutputs: 4,
+      defaultAspectRatio: "16:9",
+      supportedAspectRatios: ["9:16", "16:9", "1:1"],
+      parameters: [
+        {
+          id: "quality",
+          label: "Quality",
+          type: "select",
+          defaultValue: "medium",
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High" },
+          ],
+        },
+      ],
+    },
   ];
 }
 
@@ -300,6 +333,28 @@ function videoProviderCatalog(config: AppConfig): VideoProviderCatalogItem[] {
           ],
         },
       ],
+    },
+    {
+      id: "generic-video",
+      displayName: "Generic Video Provider",
+      enabled: false,
+      disabledReason: disabledReason("Generic Video Provider"),
+      requiresApiKey: true,
+      defaultModel: "video-model",
+      models: [{ id: "video-model", displayName: "Video model", default: true }],
+      supportedModes: ["text_to_video", "image_to_video", "reference_to_video"],
+      supportsFirstFrame: true,
+      supportsLastFrame: true,
+      supportsReferenceImages: true,
+      maxReferenceImages: 4,
+      supportsCancel: false,
+      defaultDurationSeconds: 5,
+      supportedDurationSeconds: [4, 5, 6, 8, 10],
+      defaultResolution: "720p",
+      supportedResolutions: ["720p", "1080p"],
+      defaultAspectRatio: "16:9",
+      supportedAspectRatios: ["9:16", "16:9", "1:1"],
+      parameters: [],
     },
   ];
 }
@@ -548,6 +603,59 @@ export class ProvidersService {
     };
   }
 
+  async discoverModels(projectId: string, input: unknown): Promise<ProviderModelDiscoveryResult> {
+    await this.ensureProject(projectId);
+    const normalized = normalizeProviderModelDiscoveryInput(input);
+    const protocol = normalized.protocol ?? "openai_compatible";
+    if (protocol === "mock") {
+      return mockDiscoveryResult(normalized.kind);
+    }
+
+    const saved = normalized.provider
+      ? await this.providerConfig(projectId, normalized.kind, normalized.provider)
+      : undefined;
+    const savedParams = providerConfigParams(saved?.paramsJson);
+    const baseUrl = normalized.baseUrl ?? savedParams?.baseUrl;
+    if (!baseUrl) {
+      throw new BadRequestException("Provider base URL is required for model discovery");
+    }
+    const safeBaseUrl = parseHttpBaseUrl(baseUrl);
+    const credential = normalized.credential?.value
+      ?? (saved?.secretJson ? unsealSecret(saved.secretJson, readAppConfig()) : undefined);
+    if (!credential) {
+      throw new BadRequestException("server-side key is not configured");
+    }
+
+    const response = await fetch(modelDiscoveryUrl(safeBaseUrl, protocol), {
+      headers: modelDiscoveryHeaders(credential, protocol),
+      redirect: "manual",
+    });
+    const text = await response.text();
+    if (isRedirectStatus(response.status)) {
+      return failedDiscovery(protocol, response.status, "Base URL appears to redirect; use an API base URL");
+    }
+    if (looksLikeHtml(text, response.headers.get("content-type"))) {
+      return failedDiscovery(protocol, response.status, "Base URL returned HTML; use an API endpoint");
+    }
+    if (response.status === 401 || response.status === 403) {
+      return failedDiscovery(protocol, response.status, "API key is invalid or unauthorized");
+    }
+    if (!response.ok) {
+      return failedDiscovery(protocol, response.status, `Model discovery failed with ${response.status}`);
+    }
+
+    const json = parseJson(text);
+    const modelIds = extractModelIds(json);
+    const modelGroups = groupModelIds(modelIds);
+    return {
+      ok: true,
+      detectedProtocol: protocol,
+      message: modelIds.length ? "Model endpoint reachable" : "Model endpoint reachable, but no models were returned",
+      modelGroups,
+      rawCount: modelIds.length,
+    };
+  }
+
   async updateProviderConfig(
     projectId: string,
     kindValue: string,
@@ -560,7 +668,7 @@ export class ProvidersService {
     const metadata = await this.requireMetadata(projectId, kind, providerId);
     const normalized = normalizeUpdateProviderConfigInput(input);
     const defaultModel = normalized.defaultModel ?? undefined;
-    if (defaultModel && !metadata.models.some((model) => model.id === defaultModel)) {
+    if (defaultModel && !metadata.models.some((model) => model.id === defaultModel) && !isGenericProvider(providerId)) {
       throw new BadRequestException(`Model ${defaultModel} is not available for ${metadata.displayName}`);
     }
 
@@ -578,6 +686,11 @@ export class ProvidersService {
       enabled: normalized.enabled ?? current?.enabled ?? defaultConfiguredEnabled(metadata),
       displayName: metadata.displayName,
       defaultModel: defaultModel ?? current?.defaultModel ?? metadata.defaultModel,
+      paramsJson: normalized.params
+        ? normalized.params as Prisma.InputJsonValue
+        : current?.paramsJson === undefined
+          ? undefined
+          : current.paramsJson as Prisma.InputJsonValue,
       secretJson: nextSecretJson,
     };
     const row = (await this.prisma.providerConfig.upsert({
@@ -631,6 +744,7 @@ export class ProvidersService {
       kind,
       provider: providerId,
       env: runtimeEnvForProvider(kind, providerId, storedCredential),
+      params: providerConfigParams(row?.paramsJson),
       programmableProvider: programmableRuntime
         ? {
             ...programmableRuntime,
@@ -897,8 +1011,13 @@ export class ProvidersService {
     lastTest?: ProviderConnectionTestSummary;
   } {
     const configuredDefaultModel = row?.defaultModel ?? undefined;
+    const params = providerConfigParams(row?.paramsJson);
+    const providerModels =
+      configuredDefaultModel && !provider.models.some((model) => model.id === configuredDefaultModel)
+        ? [{ id: configuredDefaultModel, displayName: configuredDefaultModel, default: true }, ...provider.models]
+        : provider.models;
     const defaultModel =
-      configuredDefaultModel && provider.models.some((model) => model.id === configuredDefaultModel)
+      configuredDefaultModel && providerModels.some((model) => model.id === configuredDefaultModel)
         ? configuredDefaultModel
         : provider.defaultModel;
     const credentialSource = credentialSourceForProvider(kind, provider.id, row, config);
@@ -916,7 +1035,7 @@ export class ProvidersService {
       enabled,
       disabledReason: disabledReasonText,
       defaultModel,
-      models: provider.models.map((model) => ({
+      models: providerModels.map((model) => ({
         ...model,
         default: model.id === defaultModel,
       })),
@@ -924,12 +1043,14 @@ export class ProvidersService {
       credentialConfigured,
       credentialSource,
       configuredDefaultModel,
+      params,
       lastTest: lastTestSummary(row),
     } as unknown as TProvider & {
       configuredEnabled: boolean;
       credentialConfigured: boolean;
       credentialSource?: ProviderCredentialSource;
       configuredDefaultModel?: string;
+      params?: ProviderConfigParams;
       lastTest?: ProviderConnectionTestSummary;
     };
   }
@@ -1160,6 +1281,9 @@ function hasEnvCredential(kind: ManagedProviderKind, providerId: string, config:
   if (programmableProviderId(providerId)) {
     return false;
   }
+  if (isGenericProvider(providerId)) {
+    return false;
+  }
   if (kind === "image") {
     if (providerId === "image2") {
       return config.imageProviderKeysConfigured.image2;
@@ -1198,7 +1322,161 @@ function runtimeEnvForProvider(
   if (kind === "video" && providerId === "happyhorse") {
     return { HAPPYHORSE_API_KEY: storedCredential };
   }
+  if (kind === "image" && providerId === "generic-image") {
+    return { GENERIC_IMAGE_API_KEY: storedCredential, OPENAI_API_KEY: storedCredential };
+  }
+  if (kind === "video" && providerId === "generic-video") {
+    return { GENERIC_VIDEO_API_KEY: storedCredential };
+  }
   return {};
+}
+
+function isGenericProvider(providerId: string): boolean {
+  return providerId === "generic-image" || providerId === "generic-video";
+}
+
+function providerConfigParams(value: unknown): ProviderConfigParams | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const raw = value as Record<string, unknown>;
+  const protocol = typeof raw.protocol === "string" ? raw.protocol : undefined;
+  const baseUrl = typeof raw.baseUrl === "string" ? raw.baseUrl : undefined;
+  const imageRequestMode = typeof raw.imageRequestMode === "string" ? raw.imageRequestMode : undefined;
+  const videoRequestMode = typeof raw.videoRequestMode === "string" ? raw.videoRequestMode : undefined;
+  const safeParams =
+    typeof raw.safeParams === "object" && raw.safeParams !== null && !Array.isArray(raw.safeParams)
+      ? raw.safeParams as ProviderConfigParams["safeParams"]
+      : undefined;
+  return {
+    ...(protocol === "openai_compatible" || protocol === "gemini" || protocol === "ark" || protocol === "mock"
+      ? { protocol }
+      : {}),
+    ...(baseUrl ? { baseUrl } : {}),
+    ...(imageRequestMode === "openai" || imageRequestMode === "gemini" || imageRequestMode === "ark"
+      ? { imageRequestMode }
+      : {}),
+    ...(videoRequestMode === "task" || videoRequestMode === "sync" || videoRequestMode === "mock"
+      ? { videoRequestMode }
+      : {}),
+    ...(safeParams ? { safeParams } : {}),
+  };
+}
+
+function parseHttpBaseUrl(value: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new BadRequestException("Endpoint must start with http:// or https://");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new BadRequestException("Endpoint must start with http:// or https://");
+  }
+  return value.replace(/\/+$/g, "");
+}
+
+function modelDiscoveryUrl(baseUrl: string, protocol: ProviderProtocol): string {
+  if (protocol === "gemini") {
+    return `${baseUrl}${baseUrl.endsWith("/models") ? "" : "/models"}`;
+  }
+  if (protocol === "ark") {
+    return `${baseUrl}${baseUrl.endsWith("/models") ? "" : baseUrl.endsWith("/api/v3") ? "/models" : "/api/v3/models"}`;
+  }
+  return `${baseUrl}${baseUrl.endsWith("/models") ? "" : baseUrl.endsWith("/v1") ? "/models" : "/v1/models"}`;
+}
+
+function modelDiscoveryHeaders(credential: string, protocol: ProviderProtocol): Record<string, string> {
+  if (protocol === "gemini") {
+    return { "x-goog-api-key": credential, accept: "application/json" };
+  }
+  return { authorization: `Bearer ${credential}`, accept: "application/json" };
+}
+
+function isRedirectStatus(status: number): boolean {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+
+function looksLikeHtml(text: string, contentType: string | null): boolean {
+  return Boolean(contentType?.includes("text/html")) || /^\s*<!doctype html/i.test(text) || /^\s*<html[\s>]/i.test(text);
+}
+
+function parseJson(text: string): unknown {
+  if (!text.trim()) {
+    return {};
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
+function extractModelIds(value: unknown): string[] {
+  const rawModels = Array.isArray((value as { data?: unknown[] }).data)
+    ? (value as { data: unknown[] }).data
+    : Array.isArray((value as { models?: unknown[] }).models)
+      ? (value as { models: unknown[] }).models
+      : [];
+  return [...new Set(rawModels.flatMap((item) => {
+    if (typeof item === "string") {
+      return [normalizeModelId(item)];
+    }
+    if (typeof item === "object" && item !== null) {
+      const raw = item as Record<string, unknown>;
+      const id = typeof raw.id === "string"
+        ? raw.id
+        : typeof raw.name === "string"
+          ? raw.name.replace(/^models\//, "")
+          : undefined;
+      return id ? [normalizeModelId(id)] : [];
+    }
+    return [];
+  }).filter(Boolean))].sort();
+}
+
+function normalizeModelId(value: string): string {
+  return value.trim().replace(/^models\//, "");
+}
+
+function groupModelIds(ids: string[]): { image: string[]; video: string[]; chat: string[] } {
+  return ids.reduce(
+    (groups, id) => {
+      const normalized = id.toLowerCase();
+      if (/image|img|dall|flux|sdxl|stable|banana|gpt-image|midjourney|kolors/.test(normalized)) {
+        groups.image.push(id);
+      } else if (/video|veo|seedance|wan|runway|kling|sora|ltx/.test(normalized)) {
+        groups.video.push(id);
+      } else {
+        groups.chat.push(id);
+      }
+      return groups;
+    },
+    { image: [] as string[], video: [] as string[], chat: [] as string[] },
+  );
+}
+
+function failedDiscovery(protocol: ProviderProtocol, status: number, message: string): ProviderModelDiscoveryResult {
+  return {
+    ok: false,
+    detectedProtocol: protocol,
+    message,
+    modelGroups: { image: [], video: [], chat: [] },
+    rawCount: 0,
+  };
+}
+
+function mockDiscoveryResult(kind: ManagedProviderKind): ProviderModelDiscoveryResult {
+  const modelGroups = kind === "image"
+    ? { image: ["mock-image-v1"], video: [], chat: [] }
+    : { image: [], video: ["mock-video-v1"], chat: [] };
+  return {
+    ok: true,
+    detectedProtocol: "mock",
+    message: "Mock provider models are available",
+    modelGroups,
+    rawCount: kind === "image" ? modelGroups.image.length : modelGroups.video.length,
+  };
 }
 
 function assertWorkerRuntimeConfigAuthorized(config: AppConfig, workerToken: string | undefined): void {

@@ -5,11 +5,24 @@ import type { GenerationQueueSummary } from "@guga-flow/shared-types";
 import {
   BookOpen,
   Boxes,
+  ChevronDown,
+  ChevronLeft,
   Clapperboard,
+  Eye,
   FolderOpen,
+  Globe2,
+  Hand,
+  Maximize2,
+  MessageCircle,
+  Minus,
+  MousePointer2,
   PackageCheck,
+  Plus,
+  Redo2,
+  Send,
   Settings,
   Sparkles,
+  Undo2,
   Users,
 } from "lucide-react";
 import React, { type ReactNode } from "react";
@@ -76,15 +89,10 @@ function WorkbenchShellContent({
   return (
     <main className="workbench" aria-label={t("workbench.aria")}>
       <header className="topbar">
-        <div className="brand-cluster">
-          <div className="brand-mark" aria-hidden="true">
-            <Sparkles size={16} />
-          </div>
-          <div>
-            <div className="brand">GugaFlow</div>
-            <div className="project-title">{projectTitle}</div>
-          </div>
-        </div>
+        <a className="canvas-back-link" href="/" aria-label={t("workbench.projects")}>
+          <ChevronLeft size={20} aria-hidden="true" />
+          <span>{projectTitle}</span>
+        </a>
         <nav className="toolbar" aria-label={t("workbench.primaryActions")}>
           <button
             className={`tool-button ${storyboardEnabled ? "active" : ""}`}
@@ -105,11 +113,6 @@ function WorkbenchShellContent({
         </nav>
         <LanguageSwitcher locale={locale} setLocale={setLocale} />
         {saveStateSlot ?? <div className="save-state">{t("save.saved")}</div>}
-        <div className="window-dots" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
       </header>
 
       <section className="main-grid">
@@ -195,37 +198,139 @@ function WorkbenchShellContent({
           )}
         </section>
 
-        <aside className="inspector" aria-label={t("workbench.inspector")}>
-          {inspectorSlot ?? (
-            <>
-              <h2 className="panel-title">{t("workbench.inspector")}</h2>
-              <ul className="property-list">
-                <li className="property-item">
-                  <span>{t("inspector.selection")}</span>
-                  <span className="property-value">{t("inspector.none")}</span>
-                </li>
-                <li className="property-item">
-                  <span>{t("inspector.providerMode")}</span>
-                  <span className="property-value">{t("inspector.mock")}</span>
-                </li>
-                <li className="property-item">
-                  <span>{t("inspector.canvasStatus")}</span>
-                  <span className="property-value">{t("inspector.ready")}</span>
-                </li>
-                {projectId ? (
-                  <li className="property-item">
-                    <span>{t("inspector.project")}</span>
-                    <span className="property-value">{projectId}</span>
-                  </li>
-                ) : null}
-              </ul>
-            </>
-          )}
+        <aside className="inspector assistant-panel" aria-label={t("workbench.inspector")}>
+          <div className="assistant-panel-header">
+            <div className="assistant-brand">
+              <span className="assistant-logo" aria-hidden="true">
+                <Sparkles size={16} />
+              </span>
+              <strong>GugaFlow</strong>
+            </div>
+            <div className="assistant-header-actions" aria-label={t("workbench.primaryActions")}>
+              <button className="assistant-chip-button" type="button">
+                <Plus size={14} aria-hidden="true" />
+                新建对话
+              </button>
+              <button className="assistant-chip-button" type="button">
+                <MessageCircle size={14} aria-hidden="true" />
+                对话管理
+                <ChevronDown size={13} aria-hidden="true" />
+              </button>
+              <button className="assistant-icon-button" type="button" aria-label="Expand panel">
+                <Maximize2 size={15} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
+          <div className="assistant-panel-body">
+            <div className="assistant-greeting">
+              <span className="assistant-greeting-icon" aria-hidden="true">
+                <Sparkles size={28} />
+              </span>
+              <p>你好！输入你的创意，我来帮你完成剧本、分镜、角色设计等工作。</p>
+            </div>
+            <div className="assistant-scroll">
+              {inspectorSlot ?? (
+                <>
+                  <h2 className="panel-title">{t("workbench.inspector")}</h2>
+                  <ul className="property-list">
+                    <li className="property-item">
+                      <span>{t("inspector.selection")}</span>
+                      <span className="property-value">{t("inspector.none")}</span>
+                    </li>
+                    <li className="property-item">
+                      <span>{t("inspector.providerMode")}</span>
+                      <span className="property-value">{t("inspector.mock")}</span>
+                    </li>
+                    <li className="property-item">
+                      <span>{t("inspector.canvasStatus")}</span>
+                      <span className="property-value">{t("inspector.ready")}</span>
+                    </li>
+                    {projectId ? (
+                      <li className="property-item">
+                        <span>{t("inspector.project")}</span>
+                        <span className="property-value">{projectId}</span>
+                      </li>
+                    ) : null}
+                  </ul>
+                </>
+              )}
+            </div>
+          </div>
+
+          <form className="assistant-composer" onSubmit={(event) => event.preventDefault()}>
+            <div className="assistant-composer-tabs">
+              <button type="button">技能库</button>
+              <button type="button">
+                <Globe2 size={13} aria-hidden="true" />
+                技能社区
+              </button>
+            </div>
+            <label className="assistant-input">
+              <textarea
+                rows={3}
+                placeholder="输入创意想法，按 / 调用技能，@ 引用素材库"
+                aria-label="Creative prompt"
+              />
+            </label>
+            <div className="assistant-composer-footer">
+              <div className="assistant-quick-actions">
+                <button type="button" aria-label="Add image">
+                  <Boxes size={15} aria-hidden="true" />
+                </button>
+                <button type="button" aria-label="Add script">
+                  <BookOpen size={15} aria-hidden="true" />
+                </button>
+                <button type="button" aria-label="Add audio">
+                  <Clapperboard size={15} aria-hidden="true" />
+                </button>
+              </div>
+              <button className="assistant-ask-button" type="submit">
+                <MessageCircle size={14} aria-hidden="true" />
+                询问
+                <ChevronDown size={13} aria-hidden="true" />
+              </button>
+              <button className="assistant-send-button" type="submit" aria-label="Send">
+                <Send size={16} aria-hidden="true" />
+              </button>
+            </div>
+          </form>
         </aside>
       </section>
 
       <footer className="bottom-queue" aria-label={t("queue.aria")}>
-        <strong>{t("queue.title")}</strong>
+        <div className="canvas-bottom-dock" aria-label="Canvas view controls">
+          <button className="dock-button active" type="button" aria-label="Select tool">
+            <MousePointer2 size={17} aria-hidden="true" />
+          </button>
+          <button className="dock-button" type="button" aria-label="Pan tool">
+            <Hand size={17} aria-hidden="true" />
+          </button>
+          <span className="dock-divider" />
+          <button className="dock-button" type="button" aria-label="Zoom out">
+            <Minus size={16} aria-hidden="true" />
+          </button>
+          <span className="dock-zoom">100%</span>
+          <button className="dock-button" type="button" aria-label="Zoom in">
+            <Plus size={16} aria-hidden="true" />
+          </button>
+          <span className="dock-divider" />
+          <button className="dock-button" type="button" aria-label="Fit view">
+            <Maximize2 size={16} aria-hidden="true" />
+          </button>
+          <span className="dock-divider" />
+          <button className="dock-button" type="button" aria-label="Preview">
+            <Eye size={16} aria-hidden="true" />
+          </button>
+          <span className="dock-divider" />
+          <button className="dock-button" type="button" aria-label="Undo">
+            <Undo2 size={16} aria-hidden="true" />
+          </button>
+          <button className="dock-button" type="button" aria-label="Redo">
+            <Redo2 size={16} aria-hidden="true" />
+          </button>
+        </div>
+        <strong className="queue-title">{t("queue.title")}</strong>
         <div className="queue-summary">
           <span className="queue-pill">{t("queue.queued", { count: queueSummary.queued })}</span>
           <span className="queue-pill">{t("queue.running", { count: queueSummary.running })}</span>

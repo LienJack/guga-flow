@@ -1,7 +1,13 @@
 import type { VideoProvider } from "./contracts";
 import { ProviderError } from "./contracts";
 import { MockVideoProvider } from "./mock-providers";
-import { HappyHorseProvider, SeedanceProvider, type RealVideoProviderOptions } from "./real-video-providers";
+import {
+  GenericVideoProvider,
+  HappyHorseProvider,
+  SeedanceProvider,
+  type GenericVideoProviderOptions,
+  type RealVideoProviderOptions,
+} from "./real-video-providers";
 
 export interface VideoProviderRegistry {
   get(providerId?: string): VideoProvider;
@@ -13,6 +19,8 @@ export interface VideoProviderRegistryOptions {
   fetchImpl?: RealVideoProviderOptions["fetchImpl"];
   seedanceBaseUrl?: string;
   falBaseUrl?: string;
+  genericBaseUrl?: string;
+  genericProtocol?: GenericVideoProviderOptions["protocol"];
   additionalProviders?: VideoProvider[];
 }
 
@@ -57,6 +65,12 @@ export function createVideoProviderRegistry(
     new HappyHorseProvider({
       apiKey: env.HAPPYHORSE_API_KEY ?? env.FAL_KEY ?? env.FAL_API_KEY ?? env.RUNWARE_API_KEY,
       baseUrl: options.falBaseUrl,
+      fetchImpl: options.fetchImpl,
+    }),
+    new GenericVideoProvider({
+      apiKey: env.GENERIC_VIDEO_API_KEY,
+      baseUrl: options.genericBaseUrl,
+      protocol: options.genericProtocol,
       fetchImpl: options.fetchImpl,
     }),
     ...(options.additionalProviders ?? []),

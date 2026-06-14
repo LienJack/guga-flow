@@ -1,15 +1,18 @@
 import type {
   CreateGenerationJobInput,
+  CreateAssetAnalysisJobInput,
   CreateBatchImagesToVideosJobInput,
   CreateBatchShotsToImagesJobInput,
   AnyImageProviderId,
   AnyVideoProviderId,
+  AssetAnalysisJobOutput,
   CanvasSnapshotJson,
   EditorExportPackageOutput,
   GeneratedMediaProviderOutput,
   Phase8GenerationOperation,
   ProjectAspectRatio,
   ProviderFailure,
+  VideoReferenceMediaInput,
   VideoProviderResolution,
   WorkerProviderRuntimeConfigInput,
   WorkerGenerationJobFailInput,
@@ -105,8 +108,49 @@ export class CreateGenerationJobDto implements CreateGenerationJobInput {
   resolution?: VideoProviderResolution;
 
   @IsOptional()
+  @IsArray()
+  @IsObject({ each: true })
+  referenceMedia?: VideoReferenceMediaInput[];
+
+  @IsOptional()
   @IsObject()
   videoProviderParams?: CanvasSnapshotJson;
+}
+
+export class CreateAssetAnalysisJobDto implements CreateAssetAnalysisJobInput {
+  @IsIn(["asset_caption", "asset_classification"])
+  operation!: CreateAssetAnalysisJobInput["operation"];
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  @MaxLength(160, { each: true })
+  assetIds!: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  provider?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  model?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  overwrite?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  prompt?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  forceFailure?: boolean;
 }
 
 export class CreateBatchImagesToVideosJobDto implements CreateBatchImagesToVideosJobInput {
@@ -148,6 +192,11 @@ export class CreateBatchImagesToVideosJobDto implements CreateBatchImagesToVideo
   @IsOptional()
   @IsIn(VIDEO_PROVIDER_RESOLUTIONS)
   resolution?: VideoProviderResolution;
+
+  @IsOptional()
+  @IsArray()
+  @IsObject({ each: true })
+  referenceMedia?: VideoReferenceMediaInput[];
 
   @IsOptional()
   @IsObject()
@@ -234,6 +283,10 @@ export class WorkerGenerationJobSucceedDto implements WorkerGenerationJobSucceed
   @IsOptional()
   @IsObject()
   packageOutput?: EditorExportPackageOutput;
+
+  @IsOptional()
+  @IsObject()
+  assetAnalysisOutput?: AssetAnalysisJobOutput;
 }
 
 export class WorkerProviderRuntimeConfigDto implements WorkerProviderRuntimeConfigInput {

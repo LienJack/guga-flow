@@ -4,6 +4,7 @@ import type {
   EditorExportSortMode,
   TimelineManifest,
   ProjectAspectRatio,
+  VideoReferenceMediaInput,
   StoryboardResult,
   VideoProviderMode,
   VideoProviderResolution,
@@ -83,6 +84,7 @@ export interface VideoGenerationInput {
   aspectRatio?: ProjectAspectRatio;
   resolution?: VideoProviderResolution;
   referenceAssetIds?: string[];
+  referenceMedia?: VideoReferenceMediaInput[];
   providerParams?: CanvasSnapshotJson;
   forceFailure?: boolean;
 }

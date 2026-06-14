@@ -1,5 +1,7 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type {
+  AssetAnalysisJobInput,
+  AssetAnalysisJobOutput,
   CanvasEdgeRecord,
   CanvasLoadResult,
   CanvasNodeRecord,
@@ -138,6 +140,20 @@ function createPromptServiceMock() {
 function createAssetsServiceMock() {
   let assetSequence = 1;
   return {
+    getAsset: vi.fn(async (_projectId: string, assetId: string) => ({
+      id: assetId,
+      projectId: "project_1",
+      type: assetId.includes("video") ? "video" : "image",
+      purpose: "uploaded",
+      storageKey: `project_1/${assetId}.png`,
+      mimeType: assetId.includes("video") ? "video/mp4" : "image/png",
+      originalFilename: `${assetId}.png`,
+      sizeBytes: 68,
+      metadataJson: {},
+      previewKind: assetId.includes("video") ? "video" : "image",
+      previewUrl: `/api/v1/projects/project_1/assets/${assetId}/preview`,
+      createdAt: createdAt.toISOString(),
+    })),
     createGeneratedAsset: vi.fn(
       async (_projectId: string, input: { providerOutput: { storageKey: string; mimeType: string } }) => {
         const id = `asset_generated_${assetSequence}`;
@@ -173,6 +189,7 @@ function createAssetsServiceMock() {
       previewUrl: `/api/v1/projects/project_1/assets/asset_package_1/preview`,
       createdAt: createdAt.toISOString(),
     })),
+    applyAssetAnalysis: vi.fn(async () => []),
   };
 }
 
@@ -569,6 +586,10 @@ describe("GenerationService", () => {
           durationSeconds: 5,
           aspectRatio: "16:9",
           resolution: "720p",
+          referenceMedia: [
+            { assetId: "asset_image_1", role: "first_frame", sourceNodeId: "image_1" },
+            { assetId: "asset_ref_1", role: "reference_image" },
+          ],
           generationSettings: expect.objectContaining({
             effective: expect.objectContaining({
               visualStyle: "project cinematic noir",
@@ -579,6 +600,39 @@ describe("GenerationService", () => {
       }),
     });
     expect(result.job.operation).toBe("image_to_video");
+    expect(assetsService.getAsset).toHaveBeenCalledWith("project_1", "asset_image_1");
+    expect(assetsService.getAsset).toHaveBeenCalledWith("project_1", "asset_ref_1");
+  });
+
+  it("creates a queued asset analysis job after validating and deduping assets", async () => {
+    const result = await service.createAssetAnalysisJob("project_1", {
+      operation: "asset_caption",
+      assetIds: ["asset_1", "asset_1"],
+      prompt: "Describe production details",
+      overwrite: true,
+    });
+
+    expect(assetsService.getAsset).toHaveBeenCalledTimes(1);
+    expect(assetsService.getAsset).toHaveBeenCalledWith("project_1", "asset_1");
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        operation: "asset_caption",
+        status: "queued",
+        provider: "mock-vision",
+        model: "mock-vision-v1",
+        inputJson: expect.objectContaining({
+          operation: "asset_caption",
+          assetIds: ["asset_1"],
+          prompt: "Describe production details",
+          overwrite: true,
+        }),
+      }),
+    });
+    expect(result.job.inputJson).toMatchObject({
+      operation: "asset_caption",
+      assetIds: ["asset_1"],
+    });
   });
 
   it("creates an image refinement job from an ImageNode asset and prompt", async () => {
@@ -837,6 +891,9 @@ describe("GenerationService", () => {
             "location_to_image",
             "image_refinement",
             "image_to_video",
+            "asset_caption",
+            "asset_classification",
+            "workflow_run",
             "editor_export",
           ],
         },
@@ -1127,6 +1184,61 @@ describe("GenerationService", () => {
       data: { status: "failed" },
     });
     expect(result.status).toBe("failed");
+  });
+
+  it("completes asset analysis jobs by applying metadata and storing output", async () => {
+    const input = assetAnalysisInput();
+    const output: AssetAnalysisJobOutput = {
+      operation: "asset_caption",
+      provider: "mock-vision",
+      model: "mock-vision-v1",
+      overwrite: false,
+      results: [
+        {
+          assetId: "asset_1",
+          caption: "Hero keyframe with console light.",
+        },
+      ],
+      completedAt: "2026-06-12T00:10:00.000Z",
+    };
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "asset_caption",
+        status: "running",
+        provider: "mock-vision",
+        model: "mock-vision-v1",
+        sourceNodeId: null,
+        inputJson: input,
+      }),
+    );
+    prisma.generationJob.update.mockResolvedValue(
+      generationJob({
+        operation: "asset_caption",
+        status: "succeeded",
+        provider: "mock-vision",
+        model: "mock-vision-v1",
+        sourceNodeId: null,
+        inputJson: input,
+        outputJson: output,
+      }),
+    );
+
+    const result = await service.succeedJob("job_1", undefined, undefined, undefined, output);
+
+    expect(prisma.generationJob.updateMany).toHaveBeenCalledWith({
+      where: { id: "job_1", status: { in: ["running", "provider_waiting"] } },
+      data: { errorMessage: null },
+    });
+    expect(assetsService.applyAssetAnalysis).toHaveBeenCalledWith("project_1", output);
+    expect(prisma.generationJob.update).toHaveBeenCalledWith({
+      where: { id: "job_1" },
+      data: {
+        status: "succeeded",
+        outputJson: output,
+        errorMessage: null,
+      },
+    });
+    expect(result.outputJson).toEqual(output);
   });
 
   it("does not complete jobs that leave active state before media side effects", async () => {
@@ -1948,6 +2060,18 @@ function characterInput(overrides: Partial<CharacterToImageJobInput> = {}): Char
     aspectRatio: "1:1",
     providerParams: {},
     assetPurpose: "character_reference",
+    ...overrides,
+  };
+}
+
+function assetAnalysisInput(overrides: Partial<AssetAnalysisJobInput> = {}): AssetAnalysisJobInput {
+  return {
+    operation: "asset_caption",
+    projectId: "project_1",
+    assetIds: ["asset_1"],
+    provider: "mock-vision",
+    model: "mock-vision-v1",
+    overwrite: false,
     ...overrides,
   };
 }

@@ -9,6 +9,7 @@ import {
   createBatchShotsToImagesJobs,
   createAgentCanvasAction,
   createAgentMemory,
+  createAssetAnalysisJob,
   createEditorExport,
   createGenerationJob,
   createProgrammableProvider,
@@ -17,12 +18,15 @@ import {
   createCreativeStoryboard,
   createNovelDocument,
   createScriptDraft,
+  discoverProviderModels,
   editorExportDownloadUrl,
+  exportCanvasFragment,
   exportProjectSettings,
   extractNovelEvents,
   exportScriptDraft,
   generateStoryboardFromScriptDraft,
   generateStoryboardDraft,
+  generationEventsUrl,
   getActiveStoryboardDraft,
   getEditorExport,
   getImageProviderCatalog,
@@ -31,17 +35,26 @@ import {
   getProjectSettingsSummary,
   getProjectImageProviderCatalog,
   getProjectVideoProviderCatalog,
+  batchAssets,
+  createAssetCollection,
+  createAssetTag,
+  listAssetCollections,
   listProgrammableProviders,
   getProject,
   importStoryboardToCanvas,
+  importCanvasFragment,
   importNovelSource,
+  listAssets,
+  listAssetTags,
   listScriptDrafts,
   listEditorExports,
   listAgentMemories,
   listGenerationJobs,
+  listWorkflows,
   listSkillTemplates,
   markStoryboardDraftReady,
   retryGenerationJob,
+  runWorkflow,
   recallAgentMemories,
   testProviderConfig,
   disableProgrammableProvider,
@@ -55,6 +68,9 @@ import {
   sendEditorExportToLocalEditor,
   updateStoryboardDraft,
   undoAgentCanvasAction,
+  createWorkflowDefinition,
+  createWorkflowVersion,
+  activateWorkflowVersion,
 } from "./api";
 
 describe("frontend api client", () => {
@@ -99,6 +115,187 @@ describe("frontend api client", () => {
         }),
         headers: { "Content-Type": "application/json" },
       }),
+    );
+  });
+
+  it("calls asset library filtering, taxonomy, and batch endpoints", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json([]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await listAssets("project_1", {
+      query: "hero frame",
+      type: "image",
+      collectionId: "collection_1",
+      tagIds: ["tag_1", "tag_2"],
+    });
+    await listAssetCollections("project_1");
+    await createAssetCollection("project_1", { name: "Characters", kind: "character" });
+    await listAssetTags("project_1");
+    await createAssetTag("project_1", { name: "approved", color: "#2f7d46" });
+    await batchAssets("project_1", {
+      assetIds: ["asset_1"],
+      action: "add_tags",
+      tagIds: ["tag_1"],
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:3002/api/v1/projects/project_1/assets?query=hero+frame&type=image&collectionId=collection_1&tagIds=tag_1%2Ctag_2",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:3002/api/v1/projects/project_1/assets/collections",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:3002/api/v1/projects/project_1/assets/collections",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ name: "Characters", kind: "character" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:3002/api/v1/projects/project_1/assets/tags",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "http://localhost:3002/api/v1/projects/project_1/assets/tags",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ name: "approved", color: "#2f7d46" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "http://localhost:3002/api/v1/projects/project_1/assets/batch",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          assetIds: ["asset_1"],
+          action: "add_tags",
+          tagIds: ["tag_1"],
+        }),
+      }),
+    );
+  });
+
+  it("calls infinite canvas P1 workflow, fragment, analysis, and event endpoints", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const manifest = {
+      format: "guga-flow-canvas-fragment" as const,
+      schemaVersion: 1 as const,
+      sourceProjectId: "source_project",
+      exportedAt: "2026-06-14T00:00:00.000Z",
+      nodes: [],
+      edges: [],
+      assets: [],
+    };
+    const workflowSource = { nodes: [] };
+    const workflowMapping = {
+      fields: [{ id: "prompt", type: "text" as const, required: true }],
+      outputs: [{ kind: "image" as const }],
+    };
+
+    await createAssetAnalysisJob("project_1", {
+      operation: "asset_caption",
+      assetIds: ["asset_1"],
+    });
+    await exportCanvasFragment("project_1", { nodeIds: ["node_1"] });
+    await importCanvasFragment("project_1", { manifest });
+    await listWorkflows("project_1");
+    await createWorkflowDefinition("project_1", {
+      kind: "comfyui",
+      provider: "comfyui",
+      displayName: "Reference Upscale",
+      sourceJson: workflowSource,
+      mappingJson: workflowMapping,
+    });
+    await createWorkflowVersion("project_1", "workflow_1", {
+      sourceJson: workflowSource,
+      mappingJson: workflowMapping,
+    });
+    await activateWorkflowVersion("project_1", "workflow_1", "version_2");
+    await runWorkflow("project_1", "workflow_1", {
+      sourceNodeId: "image_1",
+      outputKind: "image",
+      referenceAssetIds: ["asset_1"],
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:3002/api/v1/projects/project_1/generation/jobs/asset-analysis",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ operation: "asset_caption", assetIds: ["asset_1"] }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/fragments/export",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ nodeIds: ["node_1"] }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/fragments/import",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ manifest }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:3002/api/v1/projects/project_1/workflows",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "http://localhost:3002/api/v1/projects/project_1/workflows",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          kind: "comfyui",
+          provider: "comfyui",
+          displayName: "Reference Upscale",
+          sourceJson: workflowSource,
+          mappingJson: workflowMapping,
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "http://localhost:3002/api/v1/projects/project_1/workflows/workflow_1/versions",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ sourceJson: workflowSource, mappingJson: workflowMapping }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "http://localhost:3002/api/v1/projects/project_1/workflows/workflow_1/versions/version_2/activate",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      "http://localhost:3002/api/v1/projects/project_1/workflows/workflow_1/run",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          sourceNodeId: "image_1",
+          outputKind: "image",
+          referenceAssetIds: ["asset_1"],
+        }),
+      }),
+    );
+    expect(generationEventsUrl("project_1")).toBe(
+      "http://localhost:3002/api/v1/projects/project_1/generation/events",
     );
   });
 
@@ -579,7 +776,18 @@ describe("frontend api client", () => {
     await updateProviderConfig("project_1", "image", "image2", {
       enabled: true,
       defaultModel: "gpt-image-2",
+      params: {
+        protocol: "openai_compatible",
+        baseUrl: "https://api.example.test",
+      },
       credential: { action: "set", value: "sk-client-test" },
+    });
+    await discoverProviderModels("project_1", {
+      kind: "image",
+      provider: "image2",
+      protocol: "openai_compatible",
+      baseUrl: "https://api.example.test",
+      credential: { source: "temporary", value: "sk-client-test" },
     });
     await testProviderConfig("project_1", "image", "image2", {
       model: "gpt-image-2",
@@ -617,12 +825,30 @@ describe("frontend api client", () => {
         body: JSON.stringify({
           enabled: true,
           defaultModel: "gpt-image-2",
+          params: {
+            protocol: "openai_compatible",
+            baseUrl: "https://api.example.test",
+          },
           credential: { action: "set", value: "sk-client-test" },
         }),
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       5,
+      "http://localhost:3002/api/v1/projects/project_1/providers/discover-models",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          kind: "image",
+          provider: "image2",
+          protocol: "openai_compatible",
+          baseUrl: "https://api.example.test",
+          credential: { source: "temporary", value: "sk-client-test" },
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
       "http://localhost:3002/api/v1/projects/project_1/providers/image/image2/test",
       expect.objectContaining({
         method: "POST",
@@ -630,12 +856,12 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      6,
+      7,
       "http://localhost:3002/api/v1/projects/project_1/providers/programmable",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      7,
+      8,
       "http://localhost:3002/api/v1/projects/project_1/providers/programmable",
       expect.objectContaining({
         method: "POST",
@@ -643,7 +869,7 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      8,
+      9,
       "http://localhost:3002/api/v1/projects/project_1/providers/programmable/image/custom%3Aatlas-cloud/source",
       expect.objectContaining({
         method: "PATCH",
@@ -651,7 +877,7 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      9,
+      10,
       "http://localhost:3002/api/v1/projects/project_1/providers/programmable/image/custom%3Aatlas-cloud/activate",
       expect.objectContaining({
         method: "POST",
@@ -659,7 +885,7 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      10,
+      11,
       "http://localhost:3002/api/v1/projects/project_1/providers/programmable/image/custom%3Aatlas-cloud/disable",
       expect.objectContaining({ method: "POST" }),
     );

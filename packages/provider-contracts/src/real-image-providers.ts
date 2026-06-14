@@ -1,4 +1,4 @@
-import type { CanvasSnapshotJson } from "@guga-flow/shared-types";
+import type { CanvasSnapshotJson, ProviderProtocol } from "@guga-flow/shared-types";
 
 import type { ImageGenerationInput, ImageProvider, ImageProviderOutput, ImageProviderResult } from "./contracts";
 import { ProviderError } from "./contracts";
@@ -9,6 +9,10 @@ export interface RealImageProviderOptions {
   apiKey?: string;
   baseUrl?: string;
   fetchImpl?: FetchLike;
+}
+
+export interface GenericImageProviderOptions extends RealImageProviderOptions {
+  protocol?: ProviderProtocol;
 }
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -159,6 +163,135 @@ export class BananaProvider implements ImageProvider {
   }
 }
 
+export class GenericImageProvider implements ImageProvider {
+  readonly capability = {
+    id: "generic-image",
+    displayName: "Generic Image Provider",
+    requiresApiKey: true,
+  };
+
+  private readonly apiKey?: string;
+  private readonly baseUrl: string;
+  private readonly protocol: ProviderProtocol;
+  private readonly fetchImpl: FetchLike;
+
+  constructor(options: GenericImageProviderOptions = {}) {
+    this.apiKey = options.apiKey;
+    this.baseUrl = (options.baseUrl ?? DEFAULT_OPENAI_BASE_URL).replace(/\/+$/g, "");
+    this.protocol = options.protocol ?? "openai_compatible";
+    this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  async generateImage(input: ImageGenerationInput): Promise<ImageProviderResult> {
+    failIfRequested(this.capability.id, input.forceFailure);
+    if (this.protocol === "mock") {
+      const model = input.model ?? "mock-generic-image-v1";
+      const assetId = stableId(
+        "provider_image",
+        `${this.capability.id}-${input.projectId}-${input.prompt}-${model}`,
+      );
+      return {
+        outputs: [
+          {
+            assetId,
+            storageKey: storageKeyForOutput(this.capability.id, input.projectId, assetId, "png"),
+            mimeType: "image/png",
+            provider: this.capability.id,
+            model,
+            prompt: input.prompt,
+            referenceAssetIds: input.referenceAssetIds ?? [],
+            rawJson: { protocol: "mock" },
+          },
+        ],
+      };
+    }
+    this.assertConfigured();
+
+    if (this.protocol === "gemini") {
+      return this.generateGeminiImage(input);
+    }
+
+    return this.generateOpenAiCompatibleImage(input);
+  }
+
+  private async generateOpenAiCompatibleImage(input: ImageGenerationInput): Promise<ImageProviderResult> {
+    const model = input.model ?? "gpt-image-1";
+    const response = await fetchWithProviderError(this.capability.id, () =>
+      this.fetchImpl(`${openAiBase(this.baseUrl)}/images/generations`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.apiKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          prompt: composePrompt(input),
+          n: normalizeCount(input.count, 4),
+          size: openAiSizeFromAspectRatio(input.aspectRatio),
+          ...(isRecord(input.providerParams) ? input.providerParams : {}),
+        }),
+      }),
+    );
+    const json = await readJsonResponse(response, this.capability.id);
+    const data = arrayProp(json, "data");
+    return nonEmptyResult(
+      this.capability.id,
+      data.flatMap((item, index) =>
+        openAiImageOutputFromItem(item, {
+          input,
+          model,
+          provider: this.capability.id,
+          index,
+        }),
+      ),
+    );
+  }
+
+  private async generateGeminiImage(input: ImageGenerationInput): Promise<ImageProviderResult> {
+    const model = input.model ?? "gemini-2.5-flash-image";
+    const response = await fetchWithProviderError(this.capability.id, () =>
+      this.fetchImpl(
+        `${this.baseUrl}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(
+          this.apiKey ?? "",
+        )}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: composePrompt(input) }] }],
+            generationConfig: {
+              responseModalities: ["IMAGE"],
+              imageConfig: { aspectRatio: input.aspectRatio ?? "16:9" },
+            },
+          }),
+        },
+      ),
+    );
+    const json = await readJsonResponse(response, this.capability.id);
+    return nonEmptyResult(
+      this.capability.id,
+      bananaOutputsFromResponse(json, {
+        input,
+        model,
+        provider: this.capability.id,
+      }),
+    );
+  }
+
+  private assertConfigured(): void {
+    if (this.apiKey) {
+      return;
+    }
+
+    throw new ProviderError({
+      provider: this.capability.id,
+      code: "PROVIDER_NOT_CONFIGURED",
+      message: "Generic image provider is disabled because no server-side API key is configured.",
+      retryable: false,
+    });
+  }
+}
+
 function failIfRequested(provider: string, forceFailure?: boolean): void {
   if (!forceFailure) {
     return;
@@ -200,6 +333,10 @@ function openAiSizeFromAspectRatio(aspectRatio: ImageGenerationInput["aspectRati
     default:
       return "1536x1024";
   }
+}
+
+function openAiBase(baseUrl: string): string {
+  return baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 }
 
 async function readJsonResponse(response: Response, provider: string): Promise<unknown> {

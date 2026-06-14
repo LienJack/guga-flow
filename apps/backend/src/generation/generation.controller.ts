@@ -3,6 +3,7 @@ import { Body, Controller, Get, Inject, Param, Post } from "@nestjs/common";
 import {
   CreateBatchImagesToVideosJobDto,
   CreateBatchShotsToImagesJobDto,
+  CreateAssetAnalysisJobDto,
   CreateGenerationJobDto,
 } from "./dto";
 import { GenerationService } from "./generation.service";
@@ -14,6 +15,14 @@ export class GenerationController {
   @Post()
   createJob(@Param("projectId") projectId: string, @Body() body: CreateGenerationJobDto) {
     return this.generationService.createJob(projectId, body);
+  }
+
+  @Post("asset-analysis")
+  createAssetAnalysisJob(
+    @Param("projectId") projectId: string,
+    @Body() body: CreateAssetAnalysisJobDto,
+  ) {
+    return this.generationService.createAssetAnalysisJob(projectId, body);
   }
 
   @Post("batch-images-to-videos")

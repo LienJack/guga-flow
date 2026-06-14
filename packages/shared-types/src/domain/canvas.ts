@@ -236,7 +236,7 @@ export interface LocationAssetNodeData {
 
 export interface GeneratedMediaNodeData {
   generationJobId?: string;
-  generationOperation?: "shot_to_image" | "image_refinement" | "image_to_video";
+  generationOperation?: "shot_to_image" | "image_refinement" | "image_to_video" | "workflow_run";
   generatedFromNodeId?: string;
   sourceNodeIds?: string[];
   referenceAssetIds?: string[];

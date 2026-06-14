@@ -1,6 +1,7 @@
 export * from "./domain/assets";
 export * from "./domain/agent";
 export * from "./domain/canvas";
+export * from "./domain/canvas-fragments";
 export * from "./domain/generation";
 export * from "./domain/novel-events";
 export * from "./domain/prompt-composer";
@@ -10,3 +11,4 @@ export * from "./domain/settings";
 export * from "./domain/skills";
 export * from "./domain/storyboard";
 export * from "./domain/storyboard-import";
+export * from "./domain/workflows";

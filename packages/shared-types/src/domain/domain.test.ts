@@ -176,9 +176,9 @@ describe("shared domain constants", () => {
       "image_refinement",
       "image_to_video",
     ]);
-    expect(IMAGE_PROVIDER_IDS).toEqual(["mock-image", "image2", "banana"]);
+    expect(IMAGE_PROVIDER_IDS).toEqual(["mock-image", "image2", "banana", "generic-image"]);
     expect(IMAGE_PROVIDER_MODES).toEqual(["text_to_image", "image_to_image", "multi_reference"]);
-    expect(VIDEO_PROVIDER_IDS).toEqual(["mock-video", "seedance", "happyhorse"]);
+    expect(VIDEO_PROVIDER_IDS).toEqual(["mock-video", "seedance", "happyhorse", "generic-video"]);
     expect(VIDEO_PROVIDER_MODES).toEqual([
       "text_to_video",
       "image_to_video",

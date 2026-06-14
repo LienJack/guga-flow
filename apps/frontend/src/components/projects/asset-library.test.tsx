@@ -7,9 +7,14 @@ import { AssetLibrary } from "./asset-library";
 vi.mock("../../lib/api", () => ({
   assetPreviewUrl: (projectId: string, assetId: string) =>
     `http://localhost:3002/api/v1/projects/${projectId}/assets/${assetId}/preview`,
+  batchAssets: vi.fn(),
+  createAssetCollection: vi.fn(),
+  createAssetTag: vi.fn(),
   deleteAsset: vi.fn(),
   getAsset: vi.fn(),
+  listAssetCollections: vi.fn(async () => []),
   listAssets: vi.fn(async () => []),
+  listAssetTags: vi.fn(async () => []),
   uploadAsset: vi.fn(),
 }));
 
@@ -30,6 +35,23 @@ describe("AssetLibrary", () => {
             sizeBytes: 1200,
             createdAt: "2026-06-12T00:00:00.000Z",
             previewKind: "image",
+            collection: {
+              id: "collection_1",
+              projectId: "project_1",
+              name: "Characters",
+              kind: "character",
+              sortOrder: 0,
+              createdAt: "2026-06-12T00:00:00.000Z",
+              updatedAt: "2026-06-12T00:00:00.000Z",
+            },
+            tags: [
+              {
+                id: "tag_1",
+                projectId: "project_1",
+                name: "approved",
+                createdAt: "2026-06-12T00:00:00.000Z",
+              },
+            ],
           },
           {
             id: "asset_2",
@@ -73,10 +95,17 @@ describe("AssetLibrary", () => {
 
     expect(html).toContain("Assets");
     expect(html).toContain("Upload");
+    expect(html).toContain("Search");
+    expect(html).toContain("New collection");
+    expect(html).toContain("New tag");
+    expect(html).toContain("0 selected");
+    expect(html).toContain("Apply");
     expect(html).toContain("hero.png");
     expect(html).toContain("clip.mp4");
     expect(html).toContain("voice.mp3");
     expect(html).toContain("notes.md");
+    expect(html).toContain("Characters");
+    expect(html).toContain("approved");
     expect(html).toContain("Voice ref");
     expect(html).toContain("Shot audio");
     expect(html).toContain("BGM");

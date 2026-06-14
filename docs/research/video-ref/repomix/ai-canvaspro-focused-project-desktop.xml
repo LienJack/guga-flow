@@ -1,0 +1,2820 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files and files not matching ignore patterns, combined into a single document by Repomix.
+The content has been processed where comments have been removed, empty lines have been removed, line numbers have been added, content has been compressed (code blocks are separated by ⋮---- delimiter).
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: server.py, backend/services/config_route_service.py, backend/services/json_file_route_service.py, backend/services/library_file_route_service.py, backend/services/media_file_route_service.py, backend/services/http_route_dispatcher.py, electron/main.js, electron/preload.cjs, electron/projectPackageService.js, electron/projectPackageController.js, electron/recoverySnapshot.js, electron/storageRoots.js, electron/recentDocuments.js, electron/ipc/*.js, src/services/projectService.js, src/services/desktopProjectService.js, src/services/desktopProjectFileStore.js, src/services/fileService.js, api/projectsV2Api.js, api/legacyProjectsApi.js
+- Files matching these patterns are excluded: **/*.test.js, **/*.spec.js, vendor/**, images/**, assets/**, build/**, docs/**, native/**, package-lock.json
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Code comments have been removed from supported file types
+- Empty lines have been removed from all files
+- Line numbers have been added to the beginning of each line
+- Content has been compressed - code blocks are separated by ⋮---- delimiter
+- Long base64 data strings (e.g., data:image/png;base64,...) have been truncated to reduce token count
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+api/
+  legacyProjectsApi.js
+  projectsV2Api.js
+backend/
+  services/
+    config_route_service.py
+    http_route_dispatcher.py
+    json_file_route_service.py
+    library_file_route_service.py
+    media_file_route_service.py
+electron/
+  ipc/
+    appIpc.js
+    canvasVisualSnapshotIpc.js
+    clipboardIpc.js
+    diagnosticsIpc.js
+    fileIpc.js
+    localAssetCleanupIpc.js
+    mainIpcSetup.js
+    mediaTaskIpc.js
+    projectIpc.js
+    registerIpcHandlers.js
+    screenshotIpc.js
+    secureSettingsIpc.js
+    webPreviewIpc.js
+  main.js
+  preload.cjs
+  projectPackageController.js
+  projectPackageService.js
+  recentDocuments.js
+  recoverySnapshot.js
+  storageRoots.js
+src/
+  services/
+    desktopProjectFileStore.js
+    desktopProjectService.js
+    fileService.js
+    projectService.js
+server.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="api/legacyProjectsApi.js">
+(function(_0x3c51f0,_0x3b50f7)
+</file>
+
+<file path="api/projectsV2Api.js">
+const a58_0x35d5f2=a58_0x1226;(function(_0x14644e,_0x159af0)
+</file>
+
+<file path="backend/services/config_route_service.py">
+class ConfigRouteService
+⋮----
+def __init__(self, *, config_file_getter)
+⋮----
+@staticmethod
+    def _json_ok(data)
+⋮----
+@staticmethod
+    def _json_err(code, message)
+⋮----
+@staticmethod
+    def _parse_json_object(body)
+⋮----
+data = json.loads(body)
+⋮----
+def _config_file(self)
+⋮----
+def _read_config(self)
+⋮----
+path = self._config_file()
+⋮----
+data = json.load(file)
+⋮----
+def _write_config(self, data)
+⋮----
+def get_custom_ai_config(self)
+⋮----
+env_url = os.environ.get("CUSTOM_AI_URL", "").strip()
+env_key = os.environ.get("CUSTOM_AI_KEY", "").strip()
+⋮----
+cfg_url = ""
+cfg_key = ""
+⋮----
+cfg = self._read_config()
+custom_ai = cfg.get("custom_ai", {}) if isinstance(cfg, dict) else {}
+cfg_url = custom_ai.get("apiUrl") or cfg.get("apiUrl", "")
+cfg_key = custom_ai.get("apiKey") or cfg.get("apiKey", "")
+⋮----
+@staticmethod
+    def _masked_key(api_key)
+⋮----
+key = str(api_key or "")
+⋮----
+def _read_public_config(self)
+⋮----
+env_grsai_key = os.environ.get("GRSAI_API_KEY", "").strip()
+⋮----
+old_key = cfg.get("apiKey") or cfg.get("apiKeyInput")
+providers = cfg.get("providers", {})
+⋮----
+providers = {}
+⋮----
+grsai = providers.get("grsai", {})
+⋮----
+grsai = {}
+⋮----
+env_ppio_key = os.environ.get("PPIO_API_KEY", "").strip()
+⋮----
+ppio = providers.get("ppio", {})
+⋮----
+ppio = {}
+⋮----
+def _read_custom_ai_public_config(self)
+⋮----
+cfg = self.get_custom_ai_config()
+api_key = cfg["apiKey"]
+⋮----
+def handle_get(self, handler, path)
+⋮----
+def handle_post(self, handler, path, body)
+⋮----
+existing = self._read_config()
+</file>
+
+<file path="backend/services/http_route_dispatcher.py">
+SUBSCRIPTION_NETWORK_HELP_MESSAGE = (
+⋮----
+class HttpRouteDispatcher
+⋮----
+_TRUE_VALUES = ("1", "true", "yes", "on")
+⋮----
+@classmethod
+    def _parse_query(cls, raw_path, *, max_num_fields)
+⋮----
+parsed = urllib.parse.urlparse(str(raw_path or ""))
+⋮----
+@classmethod
+    def _parse_query_flag(cls, query, key, *, default=False)
+⋮----
+raw = (query.get(str(key)) or [None])[0]
+⋮----
+def _with_subscription_contact_defaults(self, payload)
+⋮----
+result = dict(payload)
+target = result
+nested = result.get("data")
+⋮----
+target = dict(nested)
+⋮----
+has_contact_text = str(
+has_contact_url = str(
+has_contact_wechat = str(
+⋮----
+def _subscription_missing_payload(self, *, message)
+⋮----
+def _subscription_unavailable_payload(self)
+⋮----
+def _activation_missing_payload(self)
+⋮----
+def _runtime_info_payload(self)
+⋮----
+def _handle_subscription_status(self, handler)
+⋮----
+client = self._get_subscription_client()
+gate_service = self._get_subscription_gate_service()
+query = self._parse_query(handler.path, max_num_fields=20)
+install_id_qs = (query.get("installId") or [""])[0]
+install_id = client.normalize_install_id(install_id_qs)
+⋮----
+install_id = gate_service.extract_install_id_from_request(handler)
+⋮----
+device_id = self._extract_subscription_device_id(
+⋮----
+payload = client.fetch_subscription_status(install_id, device_id=device_id)
+⋮----
+payload = client.fetch_subscription_status(install_id)
+⋮----
+def _handle_subscription_authorization_clear(self, handler)
+⋮----
+result = self._clear_subscription_authorization()
+⋮----
+def _handle_heartbeat_stream(self, handler)
+⋮----
+def _handle_update_check(self, handler)
+⋮----
+query = self._parse_query(handler.path, max_num_fields=10)
+info = self._get_update_service().check_for_updates(
+⋮----
+def _handle_update_local_preview(self, handler)
+⋮----
+def _handle_smart_clip_status(self, handler)
+⋮----
+job_id = (query.get("jobId") or [""])[0].strip()
+⋮----
+job = self._smart_clip_jobs.get(job_id)
+⋮----
+def _handle_subscription_activate(self, handler)
+⋮----
+body = self._read_body(handler)
+⋮----
+data = json.loads(body) if body else {}
+⋮----
+install_id = gate_service.extract_install_id_from_request(handler, data)
+⋮----
+cdkey = str(data.get("cdkey") or "").strip()
+⋮----
+payload = client.activate_cdkey(install_id, cdkey, device_id=device_id)
+⋮----
+payload = client.activate_cdkey(install_id, cdkey)
+⋮----
+extractor = getattr(client, "extract_device_id_from_request", None)
+⋮----
+value = str(payload.get("deviceId") or payload.get("device_id") or "").strip()
+⋮----
+def _handle_update_apply(self, handler)
+⋮----
+def handle_get(self, handler, path)
+⋮----
+config_get_response = self._get_config_route_service().handle_get(
+⋮----
+json_file_get_response = self._get_json_file_route_service().handle_get(
+⋮----
+library_file_get_response = self._get_library_file_route_service().handle_get(
+⋮----
+dreamina_get_response = self._get_dreamina_route_service().handle_get(
+⋮----
+media_file_get_response = self._get_media_file_route_service().handle_get(
+⋮----
+remote_proxy_get_response = self._get_remote_proxy_route_service().handle_get(
+⋮----
+def handle_post(self, handler, path)
+⋮----
+library_file_post_paths = (
+library_file_post_response = self._get_library_file_route_service().handle_post(
+⋮----
+config_post_response = self._get_config_route_service().handle_post(
+⋮----
+json_file_post_response = self._get_json_file_route_service().handle_post(
+⋮----
+dreamina_post_response = self._get_dreamina_route_service().handle_post(
+⋮----
+media_file_post_response = self._get_media_file_route_service().handle_post(
+⋮----
+local_media_post_response = self._get_local_media_processing_route_service().handle_post(
+⋮----
+remote_proxy_post_response = self._get_remote_proxy_route_service().handle_post(
+⋮----
+def handle_delete(self, handler, path)
+⋮----
+json_file_delete_response = self._get_json_file_route_service().handle_delete(
+⋮----
+def handle_patch(self, handler, path)
+⋮----
+json_file_patch_response = self._get_json_file_route_service().handle_patch(
+</file>
+
+<file path="backend/services/json_file_route_service.py">
+class JsonFileRouteService
+⋮----
+@staticmethod
+    def _json_ok(data)
+⋮----
+@staticmethod
+    def _json_err(code, message)
+⋮----
+@staticmethod
+    def _parse_json_object(body)
+⋮----
+data = json.loads(body)
+⋮----
+@staticmethod
+    def _parse_json_value(body)
+⋮----
+@staticmethod
+    def _safe_json_filename(filename)
+⋮----
+name = str(filename or "")
+⋮----
+@staticmethod
+    def _valid_json_path_fragment(filename)
+⋮----
+@staticmethod
+    def _safe_name(value)
+⋮----
+@staticmethod
+    def _load_json_file(path, default=None)
+⋮----
+@staticmethod
+    def _write_json_file(path, data)
+⋮----
+def _list_projects(self)
+⋮----
+canvas_dir = self._get_canvas_dir()
+files = []
+⋮----
+path = os.path.join(canvas_dir, filename)
+⋮----
+def _load_project(self, path)
+⋮----
+filename = unquote(path[len("/api/v2/projects/") :])
+⋮----
+project_path = os.path.join(self._get_canvas_dir(), filename)
+⋮----
+def _list_json_objects(self, directory, *, id_from_filename=False)
+⋮----
+items = []
+⋮----
+path = os.path.join(directory, filename)
+data = self._load_json_file(path)
+⋮----
+@staticmethod
+    def _first_query_value(query, key, default="")
+⋮----
+values = query.get(str(key)) or []
+⋮----
+@staticmethod
+    def _parse_int(value, default, *, min_value=None, max_value=None)
+⋮----
+next_value = int(str(value).strip())
+⋮----
+next_value = int(default)
+⋮----
+next_value = max(int(min_value), next_value)
+⋮----
+next_value = min(int(max_value), next_value)
+⋮----
+@staticmethod
+    def _normalize_virtual_path(value)
+⋮----
+@classmethod
+    def _asset_primary_media_paths(cls, asset)
+⋮----
+paths = []
+⋮----
+def push(value)
+⋮----
+text = str(value or "").strip()
+⋮----
+node = None
+nodes = asset.get("nodes") if isinstance(asset, dict) else None
+⋮----
+node = nodes[0] if isinstance(nodes[0], dict) else None
+⋮----
+@staticmethod
+    def _looks_like_preview_derivative(local_path)
+⋮----
+text = str(local_path or "").replace("\\", "/").lower()
+⋮----
+def _virtual_media_path_exists(self, virtual_path)
+⋮----
+local_path = self._normalize_virtual_path(virtual_path)
+⋮----
+root_dir = None
+rel_path = ""
+⋮----
+root_dir = os.path.abspath(self._get_output_dir())
+rel_path = local_path[len("output/") :].lstrip("/")
+⋮----
+root_dir = os.path.abspath(self._get_uploads_dir())
+rel_path = local_path[len("data/uploads/") :].lstrip("/")
+⋮----
+root_dir = os.path.abspath(self._get_assets_dir())
+rel_path = local_path[len("data/assets/") :].lstrip("/")
+⋮----
+abs_path = os.path.abspath(os.path.join(root_dir, *rel_path.split("/")))
+⋮----
+def _generation_history_media_exists(self, asset)
+⋮----
+saw_local_media_path = False
+⋮----
+local_path = self._normalize_virtual_path(path)
+⋮----
+saw_local_media_path = True
+⋮----
+def _list_assets(self, handler, path)
+⋮----
+assets = self._list_json_objects(self._get_assets_dir(), id_from_filename=True)
+raw_query = getattr(handler, "path", path) if handler is not None else path
+query = parse_qs(urlparse(str(raw_query or "")).query, keep_blank_values=True)
+⋮----
+kind = self._first_query_value(query, "kind")
+project_id = self._first_query_value(query, "projectId")
+canvas_id = self._first_query_value(query, "canvasId")
+media_kind = self._first_query_value(query, "mediaKind")
+order = str(self._first_query_value(query, "order", "desc") or "desc").lower()
+⋮----
+order = "desc"
+offset = self._parse_int(self._first_query_value(query, "offset", "0"), 0, min_value=0)
+limit = self._parse_int(
+⋮----
+filtered = []
+⋮----
+total = len(filtered)
+items = filtered[offset : offset + limit]
+next_offset = offset + len(items)
+has_more = next_offset < total
+⋮----
+def _load_user_json(self, path)
+⋮----
+filename = path[len("/api/v2/user/") :]
+⋮----
+file_path = os.path.join(self._get_user_dir(), filename)
+⋮----
+def _save_project(self, body)
+⋮----
+name = str(data.get("projectName", "未命名画布")).strip() or "未命名画布"
+filename = self._safe_name(name) + ".json"
+path = os.path.join(self._get_canvas_dir(), filename)
+⋮----
+payload = {
+⋮----
+def _save_asset(self, body)
+⋮----
+asset_id = data.get("id")
+⋮----
+filename = self._safe_name(asset_id) + ".json"
+⋮----
+def _save_workflow(self, body)
+⋮----
+workflow_id = data.get("id")
+⋮----
+filename = self._safe_name(workflow_id) + ".json"
+⋮----
+def _save_user_json(self, path, body)
+⋮----
+def _start_file_save_migration_job(self, body)
+⋮----
+def _load_file_save_migration_status(self, handler)
+⋮----
+raw_path = getattr(handler, "path", "") if handler is not None else ""
+query = parse_qs(urlparse(str(raw_path or "")).query, keep_blank_values=True)
+job_id = self._first_query_value(query, "jobId")
+⋮----
+def _delete_json_file(self, path, *, prefix, directory, not_found_message)
+⋮----
+filename = unquote(path[len(prefix) :])
+⋮----
+file_path = os.path.join(directory, filename)
+⋮----
+def _rename_project(self, path, body)
+⋮----
+file_path = os.path.join(self._get_canvas_dir(), filename)
+⋮----
+new_name = str(data.get("name") or "").strip()
+⋮----
+new_filename = self._safe_name(new_name) + ".json"
+⋮----
+def handle_get(self, handler, path)
+⋮----
+def handle_post(self, handler, path, body)
+⋮----
+def handle_delete(self, handler, path)
+⋮----
+def handle_patch(self, handler, path, body)
+</file>
+
+<file path="backend/services/library_file_route_service.py">
+class LibraryFileRouteService
+⋮----
+_DEFAULT_PRESET_TYPES = ("ai-image", "ai-text", "ai-video", "ai-audio")
+_PRESET_THUMB_USER_PREFIX = "user/prompt/_thumbs/presets/"
+_PRESET_TRIGGER_MODE_DIRECT = "direct"
+_PRESET_TRIGGER_MODE_INSERT_PROMPT = "insertPrompt"
+⋮----
+@staticmethod
+    def _json_ok(data)
+⋮----
+@staticmethod
+    def _json_err(code, message)
+⋮----
+@staticmethod
+    def _parse_json_object(body)
+⋮----
+data = json.loads(body)
+⋮----
+@staticmethod
+    def _safe_name(value)
+⋮----
+@staticmethod
+    def _normalize_preset_template(value)
+⋮----
+text = str(value or "")
+text = re.sub(
+text = re.sub(r"<br\b[^>]*\/?>", "\n", text, flags=re.IGNORECASE)
+text = re.sub(r"</(div|p)>", "\n", text, flags=re.IGNORECASE)
+text = re.sub(r"<[^>]+>", "", text)
+⋮----
+@staticmethod
+    def _normalize_preset_desc(value)
+⋮----
+@staticmethod
+    def _normalize_preset_trigger_mode(value)
+⋮----
+mode = str(value or "").strip()
+⋮----
+def _normalize_preset_type(self, value)
+⋮----
+preset_type = str(value or "").strip()
+⋮----
+def _preset_dir(self, preset_type)
+⋮----
+def _preset_path(self, preset_type, title)
+⋮----
+safe_title = self._safe_name(str(title or "").strip()).strip()
+⋮----
+def _preset_meta_path(self, preset_type, title)
+⋮----
+@staticmethod
+    def _normalize_preset_thumb_local_path(value)
+⋮----
+local_path = str(value or "").strip().replace("\\", "/").lstrip("/")
+⋮----
+def _preset_thumb_user_root(self)
+⋮----
+def _preset_thumb_abs_path(self, local_path)
+⋮----
+normalized = self._normalize_preset_thumb_local_path(local_path)
+⋮----
+rel = normalized[len("user/prompt/_thumbs/") :].lstrip("/")
+root = os.path.abspath(self._preset_thumb_user_root())
+abs_path = os.path.abspath(os.path.join(root, rel))
+⋮----
+def _remove_preset_thumb(self, local_path)
+⋮----
+abs_path = self._preset_thumb_abs_path(local_path)
+⋮----
+def _save_preset_thumb(self, preset_type, title, data_url)
+⋮----
+raw = base64.b64decode(encoded)
+⋮----
+extension = self._extension_from_data_url_header(header)
+⋮----
+target_dir = os.path.join(self._preset_thumb_user_root(), "presets", preset_type)
+⋮----
+filename = f"{safe_title}{extension}"
+⋮----
+def _is_subscription_active(self, handler, payload)
+⋮----
+gate_service = self._get_subscription_gate_service()
+decision = gate_service.check_vip_subscription_gate(
+⋮----
+@staticmethod
+    def _extension_from_data_url_header(header)
+⋮----
+mime = "image/jpeg"
+⋮----
+mime = str(header or "")[5:].split(";", 1)[0]
+⋮----
+def _read_presets(self)
+⋮----
+prompt_dir = os.path.join(self._get_user_dir(), "prompt")
+⋮----
+result = {}
+⋮----
+type_dir = os.path.join(prompt_dir, node_type)
+⋮----
+path = os.path.join(type_dir, filename)
+⋮----
+content = file.read().strip()
+⋮----
+item = {
+meta_path = self._preset_meta_path(node_type, filename[:-4])
+⋮----
+meta = json.load(meta_file)
+desc = self._normalize_preset_desc(
+⋮----
+thumb_local_path = self._normalize_preset_thumb_local_path(
+⋮----
+trigger_mode = self._normalize_preset_trigger_mode(
+⋮----
+def _save_preset(self, handler, data)
+⋮----
+preset_type = self._normalize_preset_type(data.get("nodeType"))
+title = str(data.get("title") or "").strip()
+original_title = str(data.get("originalTitle") or "").strip()
+template = self._normalize_preset_template(data.get("template"))
+⋮----
+thumbnail_data_url = str(data.get("thumbnailDataUrl") or "").strip()
+trigger_mode = self._normalize_preset_trigger_mode(data.get("triggerMode"))
+⋮----
+target_dir = self._preset_dir(preset_type)
+⋮----
+target_path = self._preset_path(preset_type, title)
+⋮----
+original_path = (
+original_exists = bool(original_path and os.path.exists(original_path))
+target_exists = os.path.exists(target_path)
+⋮----
+current_count = len(self._read_presets().get(preset_type, []))
+creating_new = not original_exists and not target_exists
+⋮----
+original_thumb_local_path = ""
+original_meta_path = self._preset_meta_path(preset_type, original_title)
+⋮----
+original_meta = json.load(meta_file)
+⋮----
+original_thumb_local_path = self._normalize_preset_thumb_local_path(
+⋮----
+thumb_local_path = next_thumb_path
+target_meta_path = self._preset_meta_path(preset_type, title)
+meta_payload = {}
+⋮----
+def _delete_preset(self, data)
+⋮----
+path = self._preset_path(preset_type, title)
+thumb_local_path = ""
+meta_path = self._preset_meta_path(preset_type, title)
+⋮----
+item_id = ""
+⋮----
+item_id = data.get(field) or item_id
+⋮----
+key = data.get("key") or data.get("idx") or default_key
+data_url = data.get("dataUrl") or ""
+⋮----
+filename = f"{self._safe_name(item_id)}_{self._safe_name(key)}{extension}"
+⋮----
+local_path = f"{relative_prefix}/{filename}"
+⋮----
+def handle_get(self, handler, path)
+⋮----
+def handle_post(self, handler, path, body)
+</file>
+
+<file path="backend/services/media_file_route_service.py">
+GRID_TILE_MAX_AXIS = 10
+GRID_TILE_MAX_COUNT = 100
+⋮----
+IMAGE_EXTENSIONS = frozenset((".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg", ".avif"))
+VIDEO_EXTENSIONS = frozenset((".mp4", ".webm", ".mov", ".m4v", ".avi", ".mkv"))
+AUDIO_EXTENSIONS = frozenset((".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".webm"))
+OUTPUT_INDEX_FILENAME = ".output_index.json"
+OUTPUT_INDEX_VERSION = 1
+⋮----
+class MediaFileRouteService
+⋮----
+@staticmethod
+    def _json_ok(data)
+⋮----
+@staticmethod
+    def _json_err(code, message)
+⋮----
+@staticmethod
+    def _parse_json_object(body)
+⋮----
+data = json.loads(body or b"{}")
+⋮----
+@staticmethod
+    def _normalize_posix_rel_path(path_value)
+⋮----
+@classmethod
+    def normalize_virtual_local_path(cls, path_value)
+⋮----
+raw = str(path_value or "").strip()
+⋮----
+slash_path = raw.replace("\\", "/")
+lower = slash_path.lower()
+⋮----
+path_part = urllib.parse.urlsplit(slash_path).path
+⋮----
+path_part = slash_path
+decoded = urllib.parse.unquote(path_part).strip().lstrip("/")
+parts = []
+⋮----
+segment = part.strip()
+⋮----
+normalized = "/".join(parts)
+⋮----
+@classmethod
+    def _join_virtual_local_path(cls, root_prefix, rel_path)
+⋮----
+root = cls._normalize_posix_rel_path(root_prefix)
+rel = cls._normalize_posix_rel_path(rel_path)
+⋮----
+@staticmethod
+    def _is_path_inside(path, root)
+⋮----
+path_abs = os.path.abspath(path)
+root_abs = os.path.abspath(root)
+⋮----
+@staticmethod
+    def _safe_filename(filename)
+⋮----
+@staticmethod
+    def _write_unique_upload_file(upload_dir, preferred_filename, file_bytes)
+⋮----
+safe_fn = MediaFileRouteService._safe_filename(preferred_filename or "upload") or "upload"
+⋮----
+stem = stem or "upload"
+stamp = int(time.time() * 1000)
+⋮----
+stored_fn = safe_fn if attempt == 0 else f"{stem}_{stamp}_{attempt:03d}{ext}"
+fpath = os.path.join(upload_dir, stored_fn)
+⋮----
+def _uploads_dir(self)
+⋮----
+def _output_dir(self)
+⋮----
+def _user_dir(self)
+⋮----
+def _assets_dir(self)
+⋮----
+def _output_index_file(self)
+⋮----
+def _ffprobe(self)
+⋮----
+@staticmethod
+    def _hash_dedupe_key(value)
+⋮----
+text = str(value or "").strip()
+⋮----
+def _get_output_url_dedupe_map(self, index_data)
+⋮----
+root_index = self._ensure_output_index_root(index_data, self._output_dir())
+mapping = root_index.get("savedUrlOutputs")
+⋮----
+mapping = {}
+⋮----
+def _lookup_saved_output_from_url(self, dedupe_hash)
+⋮----
+key = str(dedupe_hash or "").strip()
+⋮----
+index_data = self._load_output_index()
+mapping = self._get_output_url_dedupe_map(index_data)
+item = mapping.get(key)
+⋮----
+local_path = str(item.get("localPath") or item.get("path") or "").strip()
+abs_path = self.resolve_local_virtual_path(local_path)
+⋮----
+def _remember_saved_output_from_url(self, dedupe_hash, local_path, url)
+⋮----
+path = str(local_path or "").strip()
+⋮----
+def _wait_for_save_output_from_url_owner(self, dedupe_hash)
+⋮----
+cached = self._lookup_saved_output_from_url(key)
+⋮----
+event = self._save_output_from_url_inflight.get(key)
+⋮----
+event = threading.Event()
+⋮----
+def _finish_save_output_from_url_owner(self, dedupe_hash, event)
+⋮----
+current = self._save_output_from_url_inflight.get(key)
+⋮----
+@classmethod
+    def _classify_media_kind(cls, filename)
+⋮----
+ext = os.path.splitext(str(filename or "").lower())[1]
+⋮----
+def resolve_virtual_media_root(self, local_path=None, abs_path=None)
+⋮----
+norm_local = self.normalize_virtual_local_path(local_path)
+⋮----
+rel = norm_local[len("output/") :].lstrip("/")
+⋮----
+rel = norm_local[len("data/uploads/") :].lstrip("/")
+⋮----
+rel = norm_local[len("data/assets/") :].lstrip("/")
+⋮----
+abs_candidate = os.path.abspath(abs_path) if abs_path else None
+⋮----
+rel = os.path.relpath(abs_candidate, self._output_dir()).replace("\\", "/")
+⋮----
+rel = os.path.relpath(abs_candidate, self._uploads_dir()).replace("\\", "/")
+⋮----
+rel = os.path.relpath(abs_candidate, self._assets_dir()).replace("\\", "/")
+⋮----
+def resolve_local_virtual_path(self, src_path)
+⋮----
+norm_slash = self.normalize_virtual_local_path(src_path)
+⋮----
+rel = norm_slash[len("output/") :].lstrip("/")
+path = os.path.abspath(os.path.join(self._output_dir(), *rel.split("/")))
+⋮----
+rel = norm_slash[len("data/uploads/") :].lstrip("/")
+path = os.path.abspath(os.path.join(self._uploads_dir(), *rel.split("/")))
+⋮----
+rel = norm_slash[len("data/assets/") :].lstrip("/")
+path = os.path.abspath(os.path.join(self._assets_dir(), *rel.split("/")))
+⋮----
+@staticmethod
+    def _image_variant_needs_alpha(img)
+⋮----
+def _build_image_derivative_target(self, root_abs, root_prefix, rel_original_path, variant, ext)
+⋮----
+normalized_rel = self._normalize_posix_rel_path(rel_original_path)
+rel_dir = self._normalize_posix_rel_path(os.path.dirname(normalized_rel))
+base_name = os.path.splitext(os.path.basename(normalized_rel))[0]
+rel_parts = [self.image_derivative_root_dirname, variant]
+⋮----
+rel_variant = "/".join(rel_parts)
+abs_variant = os.path.abspath(os.path.join(root_abs, *rel_variant.split("/")))
+local_variant = self._join_virtual_local_path(root_prefix, rel_variant)
+⋮----
+def _save_image_derivative_variant(self, source_img, out_path, max_edge, ext, quality, keep_alpha)
+⋮----
+resampling = getattr(
+img = source_img.copy()
+⋮----
+img = img.convert("RGBA")
+⋮----
+img = img.convert("RGB")
+⋮----
+def collect_image_derivative_payload(self, abs_path, root_abs, root_prefix, rel_original_path)
+⋮----
+base_img = ImageOps.exif_transpose(opened)
+⋮----
+keep_alpha = self._image_variant_needs_alpha(opened) or self._image_variant_needs_alpha(base_img)
+variant_ext = "png" if keep_alpha else "jpg"
+⋮----
+original_local = self._join_virtual_local_path(root_prefix, rel_original_path)
+⋮----
+def augment_saved_media_response(self, payload, abs_path, local_path)
+⋮----
+derivative_payload = self.collect_image_derivative_payload(
+⋮----
+next_payload = dict(payload or {})
+⋮----
+original_local = str(next_payload.get("originalLocalPath") or "").strip()
+display_local = str(next_payload.get("displayLocalPath") or "").strip()
+thumb_local = str(next_payload.get("thumbLocalPath") or "").strip()
+⋮----
+def _handle_upload(self, handler)
+⋮----
+qs = urllib.parse.parse_qs(urllib.parse.urlparse(handler.path).query)
+content_type = handler.headers.get("Content-Type", "") or ""
+⋮----
+body = self._read_body(handler, self.max_upload_bytes)
+⋮----
+filename = (qs.get("filename", [""])[0] or "").strip()
+file_bytes = body
+⋮----
+match = re.search(r"boundary=([^;]+)", content_type)
+boundary = (match.group(1).strip().strip('"') if match else "")
+⋮----
+boundary_bytes = ("--" + boundary).encode("utf-8", "ignore")
+parts = body.split(boundary_bytes)
+⋮----
+header_end = part.find(b"\r\n\r\n")
+⋮----
+header_blob = part[:header_end].decode("utf-8", "ignore")
+data_blob = part[header_end + 4 :]
+⋮----
+data_blob = data_blob[:-2]
+⋮----
+mf = re.search(r'filename="([^"]+)"', header_blob)
+⋮----
+filename = mf.group(1).strip()
+file_bytes = data_blob
+⋮----
+upload_dir = self._uploads_dir()
+⋮----
+local_path = f"data/uploads/{stored_fn}"
+⋮----
+def _handle_images_derivatives_ensure(self, handler)
+⋮----
+body = self._read_body(handler)
+⋮----
+local_path = str(data.get("localPath") or data.get("path") or "").strip()
+⋮----
+response_payload = {
+⋮----
+def _handle_save_output(self, handler)
+⋮----
+ext = (qs.get("ext", ["png"])[0] or "png").strip().lower()
+⋮----
+ext = "png"
+⋮----
+sub_dir = (qs.get("subDir", [""])[0] or "").strip()
+kind = (qs.get("kind", [""])[0] or "").strip()
+⋮----
+kind = ""
+⋮----
+target_dir = os.path.join(self._output_dir(), sub_dir)
+⋮----
+filename = self._next_output_filename(ext)
+fpath = os.path.join(target_dir, filename)
+rel_path = f"output/{sub_dir}/{filename}"
+⋮----
+fpath = os.path.join(self._output_dir(), filename)
+rel_path = f"output/{filename}"
+⋮----
+meta_file = os.path.join(self._output_dir(), ".output_meta.json")
+meta = self._load_json_file(meta_file)
+⋮----
+meta = {}
+items = meta.get("items") if isinstance(meta.get("items"), list) else []
+⋮----
+items = items[-2000:]
+⋮----
+@staticmethod
+    def _is_allowlisted_download_host(host)
+⋮----
+host_value = (host or "").strip().lower().strip(".")
+⋮----
+@staticmethod
+    def _is_private_ip(ip_str)
+⋮----
+ip = ipaddress.ip_address(ip_str)
+⋮----
+@staticmethod
+    def _extension_from_content_type(content_type)
+⋮----
+content_type = str(content_type or "").split(";", 1)[0].strip().lower()
+⋮----
+def _validate_download_host(self, parsed)
+⋮----
+host = parsed.hostname
+⋮----
+allow_private = self._is_allowlisted_download_host(host)
+⋮----
+infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80))
+⋮----
+ip_str = info[4][0]
+⋮----
+@staticmethod
+    def _quote_download_url_for_request(url)
+⋮----
+parts = urllib.parse.urlsplit(str(url or ""))
+hostname = parts.hostname or ""
+⋮----
+host = hostname.encode("idna").decode("ascii") if hostname else ""
+⋮----
+host = hostname
+⋮----
+host = f"[{host}]"
+⋮----
+userinfo = ""
+⋮----
+userinfo = urllib.parse.quote(parts.username, safe="")
+⋮----
+port = f":{parts.port}" if parts.port else ""
+⋮----
+port = ""
+netloc = f"{userinfo}{host}{port}" if host else parts.netloc
+path = urllib.parse.quote(parts.path or "", safe="/%:@!$&'()*+,;=")
+query = urllib.parse.quote(parts.query or "", safe="=&%:@/?!$'()*+,;")
+⋮----
+def _handle_save_output_from_url(self, handler)
+⋮----
+url = (data.get("url") or "").strip()
+⋮----
+url = "https:" + url
+⋮----
+url = "https://" + url.lstrip("/")
+⋮----
+parsed = urllib.parse.urlparse(url)
+⋮----
+host_error = self._validate_download_host(parsed)
+⋮----
+dedupe_hash = self._hash_dedupe_key(data.get("dedupeKey") or url)
+dedupe_owner = self._wait_for_save_output_from_url_owner(dedupe_hash)
+⋮----
+filename = os.path.basename(cached_path)
+⋮----
+max_bytes = int(data.get("maxBytes") or 1024 * 1024 * 300)
+⋮----
+max_bytes = 1024 * 1024 * 300
+⋮----
+request_url = self._quote_download_url_for_request(url)
+⋮----
+request = urllib.request.Request(request_url, method="GET")
+⋮----
+content_type = resp.headers.get("Content-Type") or ""
+ext = (data.get("ext") or "").strip().lower()
+⋮----
+ext = ""
+⋮----
+ext = self._extension_from_content_type(content_type)
+⋮----
+total = 0
+⋮----
+chunk = resp.read(1024 * 256)
+⋮----
+@staticmethod
+    def _parse_grid_count(value)
+⋮----
+count = int(round(float(value)))
+⋮----
+@staticmethod
+    def _parse_image_quality(value, default=85)
+⋮----
+quality = int(round(float(value)))
+⋮----
+@staticmethod
+    def _normalize_output_image_ext(value)
+⋮----
+ext = str(value or "jpg").strip().lower()
+⋮----
+ext = "jpg"
+⋮----
+@staticmethod
+    def _image_has_alpha(img)
+⋮----
+def _prepare_grid_tile_for_save(self, tile, ext)
+⋮----
+flattened = Image.new("RGB", tile.size, (255, 255, 255))
+alpha_source = tile.convert("RGBA")
+⋮----
+def _save_grid_tile_image(self, tile, fpath, ext, quality)
+⋮----
+prepared = self._prepare_grid_tile_for_save(tile, ext)
+⋮----
+def _handle_grid_tiles_crop(self, handler)
+⋮----
+cols = self._parse_grid_count(data.get("cols"))
+rows = self._parse_grid_count(data.get("rows"))
+⋮----
+ext = self._normalize_output_image_ext(data.get("ext"))
+quality = self._parse_image_quality(data.get("quality"), 85)
+sub_dir = str(data.get("subDir") or "").strip()
+⋮----
+sub_dir = ""
+⋮----
+target_dir = os.path.join(self._output_dir(), sub_dir) if sub_dir else self._output_dir()
+rel_dir = f"output/{sub_dir}" if sub_dir else "output"
+⋮----
+tiles = []
+⋮----
+tile_w = int(source_width // cols)
+tile_h = int(source_height // rows)
+⋮----
+crop_box = (
+tile_img = base_img.crop(crop_box)
+⋮----
+rel_path = f"{rel_dir}/{filename}"
+⋮----
+payload = self.augment_saved_media_response(
+⋮----
+def _resolve_output_list_dir(self, dir_value)
+⋮----
+rel = self._normalize_posix_rel_path(dir_value)
+norm = os.path.normpath(rel).replace("\\", "/")
+⋮----
+norm = ""
+⋮----
+output_dir = self._output_dir()
+abs_dir = os.path.abspath(os.path.join(output_dir, *([p for p in norm.split("/") if p] or [])))
+⋮----
+def _handle_output_files_list(self, handler)
+⋮----
+dir_value = qs.get("dir", [""])[0]
+order = str(qs.get("order", ["desc"])[0] or "desc").lower()
+⋮----
+order = "desc"
+⋮----
+items = []
+⋮----
+names = os.listdir(abs_dir)
+⋮----
+output_root = os.path.abspath(self._output_dir())
+output_index = self._load_output_index()
+root_index = self._ensure_output_index_root(output_index, output_root)
+changed_index = False
+current_local_paths = set()
+⋮----
+abs_path = os.path.abspath(os.path.join(abs_dir, name))
+⋮----
+rel_path = "/".join([p for p in (rel_dir, name) if p]).replace("\\", "/")
+local_path = self._join_virtual_local_path("output", rel_path)
+⋮----
+stat = os.stat(abs_path)
+⋮----
+is_dir = os.path.isdir(abs_path)
+media_kind = "folder" if is_dir else self._classify_media_kind(name)
+size = 0 if is_dir else int(stat.st_size)
+mtime = int(stat.st_mtime * 1000)
+item = {
+⋮----
+cached = self._get_output_index_item(root_index, local_path, media_kind, size, mtime)
+⋮----
+cached = self._build_output_index_item(abs_path, local_path, media_kind, size, mtime)
+⋮----
+changed_index = True
+⋮----
+changed_index = self._prune_output_index_for_directory(
+⋮----
+reverse = order == "desc"
+⋮----
+parent = ""
+⋮----
+parent = os.path.dirname(rel_dir).replace("\\", "/")
+⋮----
+parts = [part for part in rel_dir.split("/") if part]
+breadcrumbs = [{"name": "output", "dir": ""}]
+acc = []
+⋮----
+def _resolve_output_file_delete_path(self, local_path)
+⋮----
+normalized = self._normalize_posix_rel_path(local_path)
+⋮----
+rel = normalized[len("output/") :].lstrip("/")
+⋮----
+abs_path = os.path.abspath(os.path.join(output_dir, *[part for part in norm.split("/") if part]))
+⋮----
+def _handle_output_files_delete(self, handler)
+⋮----
+raw_paths = data.get("localPaths")
+⋮----
+seen = set()
+targets = []
+⋮----
+deleted = []
+missing = []
+⋮----
+root_index = self._ensure_output_index_root(output_index, self._output_dir())
+index_items = root_index.get("items")
+⋮----
+def _load_output_index(self)
+⋮----
+data = self._load_json_file(self._output_index_file())
+⋮----
+data = {}
+⋮----
+roots = data.get("roots")
+⋮----
+def _save_output_index(self, data)
+⋮----
+payload = data if isinstance(data, dict) else {}
+⋮----
+def _ensure_output_index_root(self, index_data, output_root)
+⋮----
+roots = index_data.get("roots")
+⋮----
+roots = {}
+⋮----
+key = os.path.abspath(output_root)
+root_index = roots.get(key)
+⋮----
+root_index = {}
+⋮----
+def _get_output_index_item(self, root_index, local_path, media_kind, size, mtime)
+⋮----
+items = root_index.get("items") if isinstance(root_index, dict) else {}
+cached = items.get(local_path) if isinstance(items, dict) else None
+⋮----
+def _build_output_index_item(self, abs_path, local_path, media_kind, size, mtime)
+⋮----
+media_payload = self._read_output_media_dimensions(abs_path, media_kind)
+⋮----
+@staticmethod
+    def _output_index_item_to_media_payload(cached)
+⋮----
+payload = {}
+⋮----
+def _prune_output_index_for_directory(self, root_index, rel_dir, current_local_paths)
+⋮----
+items = root_index.get("items")
+⋮----
+dir_prefix = self._join_virtual_local_path("output", rel_dir)
+dir_prefix = dir_prefix.rstrip("/")
+⋮----
+prefix = f"{dir_prefix}/"
+⋮----
+prefix = "output/"
+changed = False
+⋮----
+rel = str(local_path)[len(prefix) :]
+⋮----
+changed = True
+⋮----
+def _read_output_media_dimensions(self, abs_path, media_kind)
+⋮----
+img = ImageOps.exif_transpose(opened)
+⋮----
+startupinfo = None
+⋮----
+startupinfo = subprocess.STARTUPINFO()
+⋮----
+proc = subprocess.run(
+⋮----
+data = json.loads(proc.stdout or "{}")
+streams = data.get("streams") if isinstance(data, dict) else []
+stream = streams[0] if isinstance(streams, list) and streams else {}
+width = int(float(stream.get("width") or 0))
+height = int(float(stream.get("height") or 0))
+duration = float(stream.get("duration") or 0)
+⋮----
+def handle_get(self, handler, path)
+⋮----
+def handle_post(self, handler, path)
+</file>
+
+<file path="electron/ipc/appIpc.js">
+(function(_0x7fa2bc,_0x3d1652)
+</file>
+
+<file path="electron/ipc/canvasVisualSnapshotIpc.js">
+(function(_0x5ee889,_0x31cbaf)
+</file>
+
+<file path="electron/ipc/clipboardIpc.js">
+(function(_0x2c6d0d,_0x3fe882)
+</file>
+
+<file path="electron/ipc/diagnosticsIpc.js">
+(function(_0x481c4e,_0x48aa4e)
+</file>
+
+<file path="electron/ipc/fileIpc.js">
+(function(_0x3e0ade,_0x28e2bd)
+</file>
+
+<file path="electron/ipc/localAssetCleanupIpc.js">
+(function(_0x364e10,_0x37c057)
+</file>
+
+<file path="electron/ipc/mainIpcSetup.js">
+function a96_0x2319()
+</file>
+
+<file path="electron/ipc/mediaTaskIpc.js">
+function a97_0x383b()
+</file>
+
+<file path="electron/ipc/projectIpc.js">
+function a98_0x39aa(_0x43e476,_0x32ec5a)
+</file>
+
+<file path="electron/ipc/registerIpcHandlers.js">
+(function(_0x3ecabd,_0x1a98bd)
+</file>
+
+<file path="electron/ipc/screenshotIpc.js">
+(function(_0x5d7ef9,_0x188213)
+</file>
+
+<file path="electron/ipc/secureSettingsIpc.js">
+function a101_0x1e05(_0x42dee6,_0x1aaeb0)
+</file>
+
+<file path="electron/ipc/webPreviewIpc.js">
+(function(_0x27ef8d,_0x42f7f8)
+</file>
+
+<file path="electron/main.js">
+const a107_0x12ff31=a107_0x334b;(function(_0x28c6f1,_0x4c9fa0)
+</file>
+
+<file path="electron/preload.cjs">
+getAppVersion: ()
+getDeviceId: (payload)
+checkForUpdates: ()
+getUpdateState: ()
+downloadUpdate: ()
+installDownloadedUpdate: ()
+onUpdaterEvent: (callback) =>
+⋮----
+const listener = (_event, payload) =>
+⋮----
+getPathForFile: (file)
+⋮----
+open: (payload)
+save: (payload)
+exportPackage: (payload)
+importPackage: (payload)
+listRecent: ()
+removeRecent: (payload)
+setUnsavedState: (payload)
+writeRecoverySnapshot: (payload)
+getRecoverySnapshotInfo: (payload)
+readRecoverySnapshot: ()
+clearRecoverySnapshot: ()
+consumeExternalOpenRequests: ()
+onExternalOpen: (callback) =>
+onPackageProgress: (callback) =>
+⋮----
+writeImage: (payload)
+readImage: ()
+writeFileReferences: (payload)
+readFileReferences: ()
+writeText: (payload)
+readText: ()
+⋮----
+capturePage: (payload)
+⋮----
+captureDisplay: ()
+onGlobalCapture: (callback) =>
+onGlobalShortcutStatus: (callback) =>
+⋮----
+get: (payload)
+set: (payload)
+delete: (payload)
+⋮----
+importAsset: (payload)
+importRemoteAsset: (payload)
+⋮----
+enqueue: (payload)
+cancel: (payload)
+list: (payload)
+onUpdate: (callback) =>
+⋮----
+getLocalPreviewUrl: (payload)
+importLocalFile: (payload)
+selectDirectory: (payload)
+⋮----
+listMp3Files: (payload)
+listSystemSounds: ()
+openSystemSoundFolder: ()
+⋮----
+showItemInFolder: (payload)
+openKnownFolder: (payload)
+⋮----
+openExternal: (url) => ipcRenderer.invoke("shell:openExternal",
+⋮----
+syncViews: (payload)
+syncViewsFast: (payload) =>
+disposeViews: (payload)
+controlView: (payload)
+onEvent: (callback) =>
+⋮----
+logEvent: (payload)
+createPackage: ()
+openLogsFolder: ()
+⋮----
+showGenerationComplete: (payload)
+⋮----
+scan: (payload)
+trash: (payload)
+⋮----
+onAssetUpdated: (callback) =>
+logDragImport: (label, payload)
+</file>
+
+<file path="electron/projectPackageController.js">
+function a114_0x49bf(_0x3bc36,_0x191626)
+</file>
+
+<file path="electron/projectPackageService.js">
+const a115_0x12ac7d=a115_0xfd17;(function(_0x5e5ab0,_0x12f06c)
+</file>
+
+<file path="electron/recentDocuments.js">
+const a116_0x55d023=a116_0x36b3;(function(_0x3d710d,_0x50d018)
+</file>
+
+<file path="electron/recoverySnapshot.js">
+function a117_0x443f()
+</file>
+
+<file path="electron/storageRoots.js">
+function a123_0x2e05()
+</file>
+
+<file path="src/services/desktopProjectFileStore.js">
+const a629_0x15f8fa=a629_0x23ba;(function(_0x295218,_0x56903b)
+</file>
+
+<file path="src/services/desktopProjectService.js">
+function a630_0x2f84()
+</file>
+
+<file path="src/services/fileService.js">
+const a634_0x1f6c67=a634_0x5461;(function(_0x11ce7c,_0x33b6d0)
+</file>
+
+<file path="src/services/projectService.js">
+const a647_0x3d2ea5=a647_0x5df2;(function(_0x46ede2,_0x58801b)
+</file>
+
+<file path="server.py">
+r"""
+./server.py - AI Canvas V2 本地服务
+用法:
+  cd v2
+  venv\Scripts\python server.py
+访问地址: http://localhost:8777
+主要目录位于 v2/ 下:
+  user/Canvas Project/  - 画布项目
+  user/shortcuts.json   - 快捷键配置
+  user/settings.json    - 应用设置
+  user/config.json      - API Key 配置
+  data/uploads/         - 上传文件
+"""
+⋮----
+CURRENT_DIR = os.path.abspath(os.path.dirname(__file__))
+⋮----
+STATIC_VIDEO_CACHE_EXTS = {
+DERIVED_MEDIA_CACHE_CONTROL = "public, max-age=604800, immutable"
+APIMART_DEFAULT_API_URL = "https://api.apib.ai"
+⋮----
+def _normalize_apimart_base_url(value)
+⋮----
+raw = str(value or APIMART_DEFAULT_API_URL).strip().rstrip("/")
+⋮----
+def _build_apimart_presign_url(api_url)
+⋮----
+normalized_api_url = _normalize_apimart_base_url(api_url)
+⋮----
+parsed = urllib.parse.urlsplit(normalized_api_url)
+⋮----
+host = re.sub(r"^api\.", "", parsed.hostname, flags=re.IGNORECASE)
+netloc = host
+⋮----
+netloc = f"{host}:{parsed.port}"
+⋮----
+STATIC_VIDEO_CACHE_CONTROL = "public, max-age=86400"
+NO_STORE_CACHE_CONTROL = "no-store, no-cache, must-revalidate, max-age=0"
+SMART_CLIP_MIN_SEGMENTS = 2
+SMART_CLIP_MAX_SEGMENTS = 25
+SMART_CLIP_DEFAULT_SEGMENTS = 20
+SMART_CLIP_FPS_OPTIONS = (16, 24, 30)
+SMART_CLIP_DEFAULT_FPS = 24
+SMART_CLIP_OUTPUT_MODE_SEGMENTS = "videoSegments"
+SMART_CLIP_OUTPUT_MODE_KEYFRAMES = "keyframes"
+SMART_CLIP_DEFAULT_OUTPUT_MODE = SMART_CLIP_OUTPUT_MODE_SEGMENTS
+DERIVED_STATIC_MEDIA_PREFIXES = (
+⋮----
+def _normalize_request_path(request_path)
+⋮----
+raw_path = urllib.parse.urlsplit(str(request_path or "")).path
+⋮----
+def _is_cacheable_derived_media_request(request_path)
+⋮----
+decoded_path = _normalize_request_path(request_path)
+⋮----
+def _is_cacheable_static_video_request(request_path)
+⋮----
+def _resolve_static_cache_control(request_path)
+⋮----
+def _get_int_env(name, default, min_value=None)
+⋮----
+value = int(str(os.environ.get(name, default)).strip())
+⋮----
+def _get_bool_env(name, default=False)
+⋮----
+raw = os.environ.get(name)
+⋮----
+def _split_env_list(name)
+⋮----
+raw = str(os.environ.get(name, "") or "").strip()
+⋮----
+def _get_path_env(name, fallback)
+⋮----
+def _get_optional_path_env(name)
+⋮----
+def _get_optional_path_env_list(base_name, max_items=4)
+⋮----
+values = []
+seen = set()
+⋮----
+name = base_name if index == 1 else f"{base_name}_{index}"
+value = _get_optional_path_env(name)
+⋮----
+key = os.path.normcase(os.path.abspath(value))
+⋮----
+def _get_executable_env(name, fallback)
+⋮----
+def _normalize_origin(origin)
+⋮----
+raw = str(origin or "").strip().rstrip("/")
+⋮----
+parsed = urllib.parse.urlparse(raw)
+⋮----
+PORT      = _get_int_env("AICANVAS_PORT", 8777, 1)
+BIND_HOST = (os.environ.get("AIC_BIND_HOST", "127.0.0.1") or "").strip() or "127.0.0.1"
+LAN_MODE  = _get_bool_env("AIC_LAN_MODE") or _get_bool_env("AIC_ENABLE_LAN")
+ALLOWED_ORIGINS = tuple(
+LOCAL_ACCESS_TOKEN = str(os.environ.get("AIC_LOCAL_TOKEN", "") or "").strip()
+DIRECTORY = os.path.abspath(os.path.dirname(__file__))   # v2/ 绝对路径
+# --- 版本号 ---
+# 从 index.html 读取版本号
+⋮----
+def get_version_from_index_html()
+⋮----
+"""从 index.html 读取应用版本号。"""
+index_path = os.path.join(DIRECTORY, "index.html")
+⋮----
+content = f.read()
+⋮----
+match = re.search(r'<meta name="app-version" content="([^"]+)"', content)
+⋮----
+LOCAL_VERSION   = get_version_from_index_html()
+_gen_seq_lock   = threading.Lock()
+_smart_clip_jobs = {}
+_smart_clip_lock = threading.Lock()
+_file_save_migration_jobs = {}
+_file_save_migration_lock = threading.Lock()
+⋮----
+def _normalize_smart_clip_max_segments(value)
+⋮----
+max_segments = int(value)
+⋮----
+max_segments = SMART_CLIP_DEFAULT_SEGMENTS
+⋮----
+def _normalize_smart_clip_fps(value)
+⋮----
+fps = int(round(float(value)))
+⋮----
+fps = SMART_CLIP_DEFAULT_FPS
+⋮----
+def _normalize_smart_clip_output_mode(value)
+⋮----
+raw = str(value or "").strip()
+⋮----
+# --- 可配置的数据目录，默认位于 v2/ 下 ---
+DEFAULT_USER_DIR = _get_path_env("AIC_USER_DIR", os.path.join(DIRECTORY, "user"))
+DEFAULT_CANVAS_DIR = _get_path_env("AIC_CANVAS_DIR", os.path.join(DEFAULT_USER_DIR, "Canvas Project"))
+DEFAULT_OUTPUT_DIR = _get_path_env("AIC_OUTPUT_DIR", os.path.join(DIRECTORY, "output"))
+DEFAULT_DATA_DIR = _get_path_env("AIC_DATA_DIR", os.path.join(DIRECTORY, "data"))
+DEFAULT_UPLOADS_DIR = _get_path_env("AIC_UPLOADS_DIR", os.path.join(DEFAULT_DATA_DIR, "uploads"))
+DEFAULT_ASSETS_DIR = _get_path_env("AIC_ASSETS_DIR", os.path.join(DEFAULT_DATA_DIR, "assets"))
+DEFAULT_WORKFLOWS_DIR = _get_path_env("AIC_WORKFLOWS_DIR", os.path.join(DEFAULT_DATA_DIR, "workflows"))
+LEGACY_DEFAULT_CANVAS_DIRS = _get_optional_path_env_list("AIC_LEGACY_CANVAS_DIR")
+LEGACY_DEFAULT_OUTPUT_DIRS = _get_optional_path_env_list("AIC_LEGACY_OUTPUT_DIR")
+LEGACY_DEFAULT_DATA_DIRS = _get_optional_path_env_list("AIC_LEGACY_DATA_DIR")
+LEGACY_DEFAULT_UPLOADS_DIRS = _get_optional_path_env_list("AIC_LEGACY_UPLOADS_DIR")
+LEGACY_DEFAULT_CANVAS_DIR = LEGACY_DEFAULT_CANVAS_DIRS[0] if LEGACY_DEFAULT_CANVAS_DIRS else ""
+LEGACY_DEFAULT_OUTPUT_DIR = LEGACY_DEFAULT_OUTPUT_DIRS[0] if LEGACY_DEFAULT_OUTPUT_DIRS else ""
+LEGACY_DEFAULT_DATA_DIR = LEGACY_DEFAULT_DATA_DIRS[0] if LEGACY_DEFAULT_DATA_DIRS else ""
+LEGACY_DEFAULT_UPLOADS_DIR = LEGACY_DEFAULT_UPLOADS_DIRS[0] if LEGACY_DEFAULT_UPLOADS_DIRS else ""
+FFMPEG_EXE = _get_executable_env("AIC_FFMPEG_EXE", "ffmpeg")
+FFPROBE_EXE = _get_executable_env("AIC_FFPROBE_EXE", "ffprobe")
+SYSTEM_FILE_SAVE_PATHS_ENABLED = bool(str(os.environ.get("AIC_USER_DIR", "") or "").strip())
+⋮----
+USER_DIR       = DEFAULT_USER_DIR
+CANVAS_DIR     = DEFAULT_CANVAS_DIR
+DATA_DIR       = DEFAULT_DATA_DIR
+ASSETS_DIR     = DEFAULT_ASSETS_DIR
+ASSET_THUMBS_DIR = os.path.join(ASSETS_DIR, "thumbs")
+WORKFLOWS_DIR  = DEFAULT_WORKFLOWS_DIR
+WORKFLOW_THUMBS_DIR = os.path.join(ASSETS_DIR, "workflows", "thumbs")
+UPLOADS_DIR    = DEFAULT_UPLOADS_DIR
+OUTPUT_DIR     = DEFAULT_OUTPUT_DIR
+CONFIG_FILE    = os.path.join(USER_DIR, "config.json")
+SETTINGS_FILE  = os.path.join(USER_DIR, "settings.json")
+GEN_SEQ_STATE_FILE = os.path.join(OUTPUT_DIR, ".gen_seq_state.json")
+MAX_UPLOAD_BYTES = _get_int_env("AIC_UPLOAD_MAX_BYTES", 100 * 1024 * 1024, 1)
+IMAGE_DERIVATIVE_DISPLAY_MAX_EDGE = 1280
+IMAGE_DERIVATIVE_THUMB_MAX_EDGE = 320
+IMAGE_DERIVATIVE_DISPLAY_QUALITY = 78
+IMAGE_DERIVATIVE_THUMB_QUALITY = 70
+IMAGE_DERIVATIVE_ROOT_DIRNAME = "_derived"
+⋮----
+DREAMINA_VIDEO_VIP_MODEL_ID = get_subscription_gate_model_id_by_key("dreaminaVideoVip")
+VIDEO_VIP_MODEL_IDS = get_subscription_gate_model_ids()
+VIDEO_VIP_WORKFLOW_IDS = get_runninghub_subscription_workflow_ids()
+VIDEO_VIP_MODEL_NAME_MAP = get_subscription_gate_model_name_map()
+SUB_STATUS_NONE = "none"
+SUB_STATUS_ACTIVE = "active"
+SUB_STATUS_EXPIRED = "expired"
+SUB_ERROR_INVALID_ARGUMENTS = "INVALID_ARGUMENTS"
+SUB_ERROR_INVALID_CDKEY = "INVALID_CDKEY"
+SUB_ERROR_CDKEY_ALREADY_USED = "CDKEY_ALREADY_USED"
+SUB_ERROR_REQUIRED = "SUBSCRIPTION_REQUIRED"
+SUB_ERROR_MODEL_NOT_ENTITLED = "SUBSCRIPTION_MODEL_NOT_ENTITLED"
+SUB_MESSAGE_V54_REQUIRED = "该模型为 VIP 模型，请先激活 CDKEY/订阅"
+DEFAULT_SUB_CONTACT_TEXT = os.environ.get(
+DEFAULT_SUB_CONTACT_WECHAT = os.environ.get(
+DEFAULT_SUB_CONTACT_IMAGE_URL = "https://api.ashuoai.com/static/contact/wechat.png"
+DEFAULT_SUB_CONTACT_URL = os.environ.get(
+OFFICIAL_SUBSCRIPTION_API_BASE = "https://api.ashuoai.com"
+⋮----
+def _get_system_state_dir()
+⋮----
+app_folder = "AI-CanvasPro"
+⋮----
+base_dir = (
+⋮----
+SYSTEM_STATE_DIR = _get_system_state_dir()
+SYSTEM_SETTINGS_FILE = os.path.join(SYSTEM_STATE_DIR, "settings.json")
+DEVICE_IDENTITY_FILENAME = "device-identity.json"
+SUBSCRIPTION_AUTHORIZATION_ID_KEYS = ("installId", "install_id", "deviceId", "device_id")
+⋮----
+def _read_json_file(path, default=None)
+⋮----
+fallback = {} if default is None else default
+⋮----
+data = json.load(f)
+⋮----
+def _write_json_file(path, data)
+⋮----
+parent = os.path.dirname(path)
+⋮----
+def _normalize_storage_dir(raw, fallback)
+⋮----
+value = str(raw or "").strip()
+⋮----
+value = os.path.expandvars(os.path.expanduser(value))
+⋮----
+def _same_storage_path(a, b)
+⋮----
+def _unique_storage_paths(paths)
+⋮----
+def _legacy_default_candidates(primary, additional=())
+⋮----
+def _replace_legacy_default_path(raw, legacy_defaults, next_default)
+⋮----
+def _migrate_legacy_default_file_save_paths(paths)
+⋮----
+migrated = dict(paths)
+replacements = (
+changed = False
+⋮----
+raw = migrated.get(key)
+next_value = _replace_legacy_default_path(raw, legacy_default, next_default)
+⋮----
+changed = True
+⋮----
+def _is_path_inside_system_temp(path_value)
+⋮----
+candidate = os.path.normcase(os.path.abspath(path_value))
+temp_root = os.path.normcase(os.path.abspath(tempfile.gettempdir()))
+⋮----
+def _is_path_policy_test_residue(path_value)
+⋮----
+normalized = os.path.normcase(os.path.abspath(path_value)).replace("\\", "/")
+⋮----
+def _should_ignore_system_file_save_paths(paths)
+⋮----
+values = (
+⋮----
+def _has_file_save_paths(settings)
+⋮----
+def _is_user_managed_file_save_paths(settings)
+⋮----
+meta = settings.get("fileSavePathsMeta")
+⋮----
+def _read_system_file_save_paths()
+⋮----
+system_settings = _read_json_file(SYSTEM_SETTINGS_FILE, {})
+paths = system_settings.get("fileSavePaths") if isinstance(system_settings, dict) else None
+⋮----
+def _clear_system_file_save_paths()
+⋮----
+next_system_settings = dict(system_settings)
+⋮----
+def _migrate_system_file_save_paths_to_user_settings(local_settings, paths)
+⋮----
+next_settings = dict(local_settings) if isinstance(local_settings, dict) else {}
+⋮----
+def _persist_local_file_save_paths_if_needed(local_settings, paths)
+⋮----
+def _infer_data_dir_from_temp_dir(temp_dir)
+⋮----
+raw = str(temp_dir or "").strip()
+⋮----
+normalized = os.path.abspath(raw)
+⋮----
+def _file_save_paths_from_settings(settings, migrate_legacy_defaults=True)
+⋮----
+src = settings.get("fileSavePaths") if isinstance(settings, dict) else {}
+⋮----
+src = {}
+⋮----
+src = _migrate_legacy_default_file_save_paths(src)
+raw_data_dir = src.get("dataDir")
+raw_temp_dir = src.get("tempDir")
+has_data_dir = bool(str(raw_data_dir or "").strip())
+data_dir = _normalize_storage_dir(
+temp_dir = (
+⋮----
+def _normalize_file_save_paths_for_policy(paths, migrate_legacy_defaults=True)
+⋮----
+normalized = _file_save_paths_from_settings(
+⋮----
+def _current_file_save_paths()
+⋮----
+def _is_path_inside(candidate, root)
+⋮----
+candidate_abs = os.path.normcase(os.path.abspath(candidate))
+root_abs = os.path.normcase(os.path.abspath(root))
+⋮----
+def _is_same_or_nested_path(a, b)
+⋮----
+aa = os.path.normcase(os.path.abspath(a))
+bb = os.path.normcase(os.path.abspath(b))
+⋮----
+def _validate_file_save_paths(paths, migrate_legacy_defaults=True)
+⋮----
+normalized = _normalize_file_save_paths_for_policy(
+⋮----
+pairs = (
+⋮----
+def _remove_empty_dirs(root_dir)
+⋮----
+root_dir = os.path.abspath(root_dir)
+⋮----
+def _move_missing_tree(src, dst)
+⋮----
+src = os.path.abspath(src)
+dst = os.path.abspath(dst)
+⋮----
+rel_root = os.path.relpath(root, src)
+target_root = dst if rel_root == "." else os.path.join(dst, rel_root)
+⋮----
+src_file = os.path.join(root, filename)
+dst_file = os.path.join(target_root, filename)
+⋮----
+def _is_using_default_file_save_paths(paths)
+⋮----
+def _path_at(paths, index)
+⋮----
+def _legacy_default_file_save_path_sets()
+⋮----
+canvas_dirs = _legacy_default_candidates(LEGACY_DEFAULT_CANVAS_DIR, LEGACY_DEFAULT_CANVAS_DIRS)
+output_dirs = _legacy_default_candidates(LEGACY_DEFAULT_OUTPUT_DIR, LEGACY_DEFAULT_OUTPUT_DIRS)
+data_dirs = _legacy_default_candidates(LEGACY_DEFAULT_DATA_DIR, LEGACY_DEFAULT_DATA_DIRS)
+uploads_dirs = _legacy_default_candidates(LEGACY_DEFAULT_UPLOADS_DIR, LEGACY_DEFAULT_UPLOADS_DIRS)
+total = max(len(canvas_dirs), len(output_dirs), len(data_dirs), len(uploads_dirs), 0)
+legacy_sets = []
+⋮----
+data_dir = _path_at(data_dirs, index)
+uploads_dir = _path_at(uploads_dirs, index) or (os.path.join(data_dir, "uploads") if data_dir else "")
+paths = {
+⋮----
+def _move_legacy_default_tree(src, dst)
+⋮----
+def _migrate_legacy_default_files_to_current(paths=None)
+⋮----
+current = paths if isinstance(paths, dict) else _current_file_save_paths()
+⋮----
+moved = False
+⋮----
+moved = _move_legacy_default_tree(legacy_paths.get("canvasDir"), current.get("canvasDir")) or moved
+moved = _move_legacy_default_tree(legacy_paths.get("outputDir"), current.get("outputDir")) or moved
+moved_data = _move_legacy_default_tree(legacy_paths.get("dataDir"), current.get("dataDir"))
+moved = moved_data or moved
+⋮----
+moved = _move_legacy_default_tree(legacy_paths.get("tempDir"), current.get("tempDir")) or moved
+⋮----
+def _new_file_save_migration_job_id()
+⋮----
+ts = int(time.time() * 1000)
+⋮----
+def _snapshot_file_save_migration_job(job_id)
+⋮----
+job = _file_save_migration_jobs.get(job_id)
+⋮----
+def _update_file_save_migration_job(job_id, **kwargs)
+⋮----
+def _file_save_migration_public_job(job)
+⋮----
+public = dict(job)
+errors = public.get("errors")
+⋮----
+def _count_file_save_migration_files(src)
+⋮----
+total = 0
+⋮----
+def _build_file_save_migration_steps(previous, normalized)
+⋮----
+def _move_missing_tree_with_file_save_progress(job_id, step)
+⋮----
+src = os.path.abspath(step["src"])
+dst = os.path.abspath(step["dst"])
+label = str(step.get("label") or "")
+⋮----
+rel_file = filename if rel_root == "." else os.path.join(rel_root, filename)
+current_file = rel_file.replace("\\", "/")
+⋮----
+total_files = max(1, int(job.get("totalFiles") or 0))
+⋮----
+errors = job.get("errors")
+⋮----
+errors = []
+⋮----
+def _run_file_save_migration_job(job_id, settings_payload, normalized, previous)
+⋮----
+steps = _build_file_save_migration_steps(previous, normalized)
+⋮----
+total_files = 0
+step_summaries = []
+⋮----
+count = 0
+⋮----
+count = _count_file_save_migration_files(step["src"])
+⋮----
+payload = dict(settings_payload) if isinstance(settings_payload, dict) else {}
+⋮----
+applied_paths = _current_file_save_paths()
+⋮----
+def _start_file_save_migration(data)
+⋮----
+payload = dict(data) if isinstance(data, dict) else {}
+settings_payload = payload.get("settings")
+⋮----
+settings_payload = dict(payload)
+path_payload = payload.get("fileSavePaths")
+⋮----
+path_payload = settings_payload.get("fileSavePaths")
+⋮----
+normalized = _validate_file_save_paths(path_payload, migrate_legacy_defaults=False)
+previous = _current_file_save_paths()
+⋮----
+job_id = _new_file_save_migration_job_id()
+job = {
+⋮----
+thread = threading.Thread(
+⋮----
+def _get_file_save_migration_status(job_id)
+⋮----
+job_id = str(job_id or "").strip()
+⋮----
+job = _snapshot_file_save_migration_job(job_id)
+⋮----
+def _refresh_storage_globals(paths)
+⋮----
+USER_DIR = os.path.abspath(paths["userDir"])
+CANVAS_DIR = os.path.abspath(paths.get("canvasDir") or DEFAULT_CANVAS_DIR)
+DATA_DIR = os.path.abspath(paths["dataDir"])
+UPLOADS_DIR = os.path.abspath(paths.get("tempDir") or os.path.join(DATA_DIR, "uploads"))
+ASSETS_DIR = os.path.join(DATA_DIR, "assets")
+⋮----
+WORKFLOWS_DIR = os.path.join(DATA_DIR, "workflows")
+⋮----
+OUTPUT_DIR = os.path.abspath(paths["outputDir"])
+CONFIG_FILE = os.path.join(USER_DIR, "config.json")
+SETTINGS_FILE = os.path.join(USER_DIR, "settings.json")
+⋮----
+DREAMINA_CLI_SERVICE = DreaminaCliService(
+DREAMINA_ROUTE_SERVICE = DreaminaRouteService(
+⋮----
+def _ensure_storage_dirs()
+⋮----
+def _apply_file_save_paths(paths, migrate=False, migrate_legacy_defaults=True)
+⋮----
+normalized = _validate_file_save_paths(
+⋮----
+def _is_enabled_env(name)
+⋮----
+value = str(os.environ.get(name, "") or "").strip().lower()
+⋮----
+def _resolve_subscription_api_base()
+⋮----
+allow_override = (
+raw_override = (os.environ.get("AIC_SUBSCRIPTION_API_BASE", "") or "").strip()
+⋮----
+SUBSCRIPTION_TIMEOUT_SECONDS = int(
+⋮----
+SUBSCRIPTION_TIMEOUT_SECONDS = 5
+⋮----
+SUBSCRIPTION_CLIENT = SubscriptionRemoteClient(
+SUBSCRIPTION_GATE_SERVICE = SubscriptionGateService(
+⋮----
+_startup_system_settings = _read_json_file(SYSTEM_SETTINGS_FILE, {})
+_startup_local_settings = _read_json_file(os.path.join(DEFAULT_USER_DIR, "settings.json"), {})
+_startup_settings = dict(_startup_local_settings)
+_startup_system_file_save_paths = _read_system_file_save_paths()
+⋮----
+_startup_applied_file_save_paths = _apply_file_save_paths(
+⋮----
+def _read_user_settings()
+⋮----
+local_settings = _read_json_file(SETTINGS_FILE, {})
+⋮----
+system_install_id = str(system_settings.get("installId") or "").strip()
+local_install_id = str(local_settings.get("installId") or "").strip()
+local_file_save_paths = (
+system_file_save_paths = _read_system_file_save_paths()
+⋮----
+system_settings = dict(system_settings)
+⋮----
+system_install_id = local_install_id
+⋮----
+merged = dict(local_settings)
+⋮----
+normalized_paths = _normalize_file_save_paths_for_policy(system_file_save_paths)
+⋮----
+def _write_user_settings(data, migrate=True)
+⋮----
+applied_paths = _apply_file_save_paths(
+⋮----
+meta = payload.get("fileSavePathsMeta") if isinstance(payload.get("fileSavePathsMeta"), dict) else {}
+⋮----
+install_id = str(payload.get("installId") or "").strip()
+⋮----
+def _subscription_user_data_root()
+⋮----
+def _subscription_device_identity_paths()
+⋮----
+paths = [
+⋮----
+unique = []
+⋮----
+path_text = str(path_value or "").strip()
+⋮----
+normalized = os.path.abspath(path_text)
+⋮----
+def _subscription_settings_authorization_paths()
+⋮----
+def _collect_subscription_authorization_ids_from_file(path)
+⋮----
+data = _read_json_file(path, {})
+⋮----
+install_ids = []
+device_ids = []
+⋮----
+value = str(data.get(key) or "").strip()
+⋮----
+def _strip_subscription_authorization_keys(path)
+⋮----
+next_data = dict(data)
+⋮----
+def _clear_subscription_authorization()
+⋮----
+cleared = []
+⋮----
+targets = device_ids or [""]
+⋮----
+def _is_dev_build()
+⋮----
+def _is_advanced_mode()
+⋮----
+UPDATE_SERVICE = HotUpdateService(
+⋮----
+CONFIG_ROUTE_SERVICE = ConfigRouteService(config_file_getter=lambda: CONFIG_FILE)
+JSON_FILE_ROUTE_SERVICE = JsonFileRouteService(
+LIBRARY_FILE_ROUTE_SERVICE = LibraryFileRouteService(
+⋮----
+def _get_custom_ai_config()
+⋮----
+def _request_server_port(handler)
+⋮----
+def _local_allowed_origins(handler)
+⋮----
+port = _request_server_port(handler)
+⋮----
+def _is_allowed_origin(handler, origin)
+⋮----
+normalized = _normalize_origin(origin)
+⋮----
+def _allowed_cors_origin(handler)
+⋮----
+origin = handler.headers.get("Origin", "")
+⋮----
+def _send_cors_origin_header(handler)
+⋮----
+origin = _allowed_cors_origin(handler)
+⋮----
+def _client_is_loopback(handler)
+⋮----
+host = str(handler.client_address[0] or "").strip()
+⋮----
+def _request_has_valid_local_token(handler)
+⋮----
+token = str(handler.headers.get("X-AIC-Local-Token", "") or "").strip()
+auth = str(handler.headers.get("Authorization", "") or "").strip()
+⋮----
+token = auth[7:].strip()
+⋮----
+_SENSITIVE_API_PREFIXES = (
+⋮----
+def _is_sensitive_api_path(path)
+⋮----
+clean_path = str(path or "").split("?", 1)[0].rstrip("/") or "/"
+⋮----
+def _request_passes_local_security(handler, path)
+⋮----
+def _enforce_local_api_access(handler, path)
+⋮----
+def _extract_install_id_from_request(handler, payload=None)
+⋮----
+def _enforce_vip_subscription_gate(handler, payload=None, required_model_id="")
+⋮----
+decision = SUBSCRIPTION_GATE_SERVICE.check_vip_subscription_gate(
+⋮----
+def _json_ok(handler, data)
+⋮----
+body = json.dumps(data, ensure_ascii=False, indent=2).encode()
+⋮----
+def _json_err(handler, code, msg)
+⋮----
+body = json.dumps({"error": msg}, ensure_ascii=False, indent=2).encode()
+⋮----
+def _send_route_response(handler, response)
+⋮----
+kind = str(response.get("kind") or "").strip()
+⋮----
+body = response.get("body") or b""
+⋮----
+body = body.encode("utf-8")
+⋮----
+body = bytes(body)
+⋮----
+headers = response.get("headers") if isinstance(response.get("headers"), dict) else {}
+⋮----
+def _read_body(handler, max_bytes=None)
+⋮----
+te = (handler.headers.get("Transfer-Encoding", "") or "").lower()
+⋮----
+chunks = []
+⋮----
+line = handler.rfile.readline()
+⋮----
+size_hex = line.split(b";", 1)[0].strip()
+⋮----
+size = int(size_hex, 16)
+⋮----
+chunk = handler.rfile.read(size)
+⋮----
+length = int(handler.headers.get("Content-Length", 0))
+⋮----
+def _iter_sse_data_lines(response)
+⋮----
+iterator = response.iter_lines(decode_unicode=True)
+⋮----
+iterator = response.iter_lines()
+⋮----
+iterator = []
+⋮----
+line = raw_line.decode("utf-8", errors="replace")
+⋮----
+line = str(raw_line or "")
+line = line.strip()
+⋮----
+def _extract_chat_completion_text_parts(payload)
+⋮----
+parts = []
+choices = payload.get("choices")
+⋮----
+data = payload.get("data")
+choices = data.get("choices") if isinstance(data, dict) else []
+⋮----
+delta = choice.get("delta")
+⋮----
+message = choice.get("message")
+⋮----
+def _normalize_chat_completion_sse_response(response)
+⋮----
+text_parts = []
+last_payload = None
+finish_reason = None
+role = "assistant"
+⋮----
+payload = json.loads(data_line)
+⋮----
+last_payload = payload
+⋮----
+finish_reason = choices[0].get("finish_reason") or finish_reason
+delta = choices[0].get("delta")
+message = choices[0].get("message")
+⋮----
+role = delta.get("role") or role
+⋮----
+role = message.get("role") or role
+⋮----
+content = "".join(text_parts)
+⋮----
+normalized = {
+⋮----
+MEDIA_FILE_ROUTE_SERVICE = MediaFileRouteService(
+⋮----
+LOCAL_MEDIA_PROCESSING_ROUTE_SERVICE = LocalMediaProcessingRouteService(
+⋮----
+REMOTE_PROXY_ROUTE_SERVICE = RemoteProxyRouteService(
+⋮----
+def _smart_clip_new_job_id()
+⋮----
+def _smart_clip_cleanup(max_age_sec=2 * 60 * 60)
+⋮----
+now = time.time()
+⋮----
+now = 0.0
+⋮----
+expired = []
+⋮----
+created = float(job.get("createdAt") or 0.0)
+⋮----
+created = 0.0
+⋮----
+def _smart_clip_update(job_id, **kwargs)
+⋮----
+job = _smart_clip_jobs.get(job_id)
+⋮----
+HTTP_ROUTE_DISPATCHER = HttpRouteDispatcher(
+⋮----
+def _run_smart_clip_job(job_id, local_src, options)
+⋮----
+opt = options if isinstance(options, dict) else {}
+raw_mode = str(opt.get("mode") or "stable").strip().lower()
+mode_map = {"stable": "stable", "balanced": "balanced", "sensitive": "sensitive"}
+mode = mode_map.get(raw_mode, raw_mode)
+⋮----
+mode = "stable"
+max_segments = _normalize_smart_clip_max_segments(
+output_fps = _normalize_smart_clip_fps(
+output_mode = _normalize_smart_clip_output_mode(
+output_keyframes = output_mode == SMART_CLIP_OUTPUT_MODE_KEYFRAMES
+⋮----
+black_luma_thr = float(opt.get("blackLuma", 16.0))
+⋮----
+black_luma_thr = 16.0
+black_luma_thr = max(0.0, min(60.0, black_luma_thr))
+⋮----
+min_black_sec = float(opt.get("minBlackSec", 0.5))
+⋮----
+min_black_sec = 0.5
+min_black_sec = max(0.1, min(10.0, min_black_sec))
+⋮----
+startupinfo = None
+⋮----
+startupinfo = subprocess.STARTUPINFO()
+⋮----
+def _ffprobe_duration_sec(p)
+⋮----
+cmd = [
+process = subprocess.Popen(
+⋮----
+txt = (stdout or b"").decode("utf-8", errors="ignore").strip()
+⋮----
+def _ffprobe_video_size(p)
+⋮----
+data = json.loads((stdout or b"{}").decode("utf-8", errors="ignore") or "{}")
+streams = data.get("streams") if isinstance(data, dict) else None
+stream = streams[0] if isinstance(streams, list) and streams else {}
+width = int(stream.get("width") or 0)
+height = int(stream.get("height") or 0)
+⋮----
+duration_sec = _ffprobe_duration_sec(local_src)
+⋮----
+duration_sec = 0.0
+fps_str = str(output_fps)
+⋮----
+def _run_detect_content_boundaries(threshold, min_scene_sec)
+⋮----
+scene_manager = SceneManager()
+video = open_video(local_src)
+⋮----
+fps = float(getattr(video, "frame_rate", 0.0) or 0.0)
+⋮----
+fps = 0.0
+⋮----
+fps = 30.0
+min_scene_len = max(1, int(round(float(min_scene_sec) * fps)))
+⋮----
+scene_list = scene_manager.get_scene_list() or []
+boundaries = []
+⋮----
+t = float(start_tc.get_seconds())
+⋮----
+dur = duration_sec
+⋮----
+dur = float(scene_list[-1][1].get_seconds())
+⋮----
+dur = 0.0
+⋮----
+black_intervals = []
+⋮----
+sample_fps = 2.0 if duration_sec <= 900 else 1.0
+step = 1.0 / sample_fps
+cap = cv2.VideoCapture(local_src)
+t = 0.0
+blk_start = None
+margin = 0.15
+⋮----
+gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+mean_luma = float(gray.mean())
+⋮----
+mean_luma = 999.0
+is_black = mean_luma <= black_luma_thr
+⋮----
+blk_start = t
+⋮----
+blk_end = t
+⋮----
+s = max(0.0, blk_start - margin)
+e = min(duration_sec, blk_end + margin)
+⋮----
+blk_end = duration_sec
+⋮----
+e = min(duration_sec, blk_end)
+⋮----
+def _is_in_black(mid_t)
+⋮----
+def _postprocess(boundaries, min_scene_sec, debounce_sec, strip_black)
+⋮----
+bds = []
+⋮----
+bds = [t for t in bds if duration_sec and t > 0.0 and t < duration_sec]
+⋮----
+debounced = []
+prev = None
+⋮----
+prev = t
+⋮----
+bds = debounced
+⋮----
+raw_segments = []
+cur = 0.0
+⋮----
+cur = t
+⋮----
+segments2 = []
+⋮----
+mid = (s + e) / 2.0
+⋮----
+i = 0
+⋮----
+dur = e - s
+⋮----
+i = max(0, i - 1)
+⋮----
+segments2 = [seg for seg in segments2 if (seg[1] - seg[0]) >= 0.2]
+⋮----
+def _merge_to_limit(segs, limit)
+⋮----
+out = [list(x) for x in (segs or [])]
+⋮----
+shortest_i = 0
+shortest_d = 999999.0
+⋮----
+d = float(e) - float(s)
+⋮----
+shortest_d = d
+shortest_i = i
+⋮----
+left_d = out[shortest_i - 1][1] - out[shortest_i - 1][0]
+right_d = out[shortest_i + 1][1] - out[shortest_i + 1][0]
+⋮----
+segments2 = _merge_to_limit(segments2, max_segments)
+⋮----
+def _equal_split(duration_sec, max_segments)
+⋮----
+desired = int(round(duration_sec / 3.0))
+desired = max(2, desired)
+desired = min(int(max_segments), desired)
+step = float(duration_sec) / float(desired)
+⋮----
+desired = max(2, min(int(max_segments), int(duration_sec / 0.2)))
+⋮----
+out = []
+⋮----
+s = t
+e = float(duration_sec) if i == desired - 1 else min(float(duration_sec), s + step)
+⋮----
+t = e
+⋮----
+profiles = {
+chain = ["stable", "balanced", "sensitive"] if mode == "stable" else (["balanced", "sensitive"] if mode == "balanced" else ["sensitive"])
+⋮----
+prof = profiles[key]
+⋮----
+duration_sec = dur2
+segments2 = _postprocess(content_boundaries, prof["min_scene_sec"], prof["debounce_sec"], prof["strip_black"])
+⋮----
+segments2 = _equal_split(duration_sec, max_segments)
+⋮----
+segments = []
+⋮----
+out_dir_name = "SceneKeyframes" if output_keyframes else "SceneCuts"
+out_dir = os.path.join(OUTPUT_DIR, out_dir_name, job_id)
+⋮----
+out_segments = []
+total = len(segments)
+⋮----
+s = float(seg["start"])
+e = float(seg["end"])
+dur = max(0.01, e - s)
+ms_s = int(round(s * 1000))
+ms_e = int(round(e * 1000))
+filename = (
+out_path = os.path.join(out_dir, filename)
+⋮----
+err_text = (stderr or b"").decode("utf-8", errors="ignore").strip()
+⋮----
+err_text = ""
+⋮----
+rel = f"output/{out_dir_name}/{job_id}/{filename}"
+segment_result = {
+⋮----
+p = 0.05 + 0.95 * float(idx + 1) / float(total)
+⋮----
+def _load_json_file(p)
+⋮----
+def _atomic_write_json(p, data)
+⋮----
+tmp = p + ".tmp"
+⋮----
+def _scan_max_gen_seq_for_date(date_str)
+⋮----
+pat = re.compile(r"^gen_" + re.escape(date_str) + r"_(\d+)\.[a-z0-9]{1,5}$")
+max_n = 0
+⋮----
+m = pat.match(fn)
+⋮----
+n = int(m.group(1))
+⋮----
+max_n = n
+⋮----
+def _next_gen_output_filename(ext)
+⋮----
+date_str = datetime.datetime.now().strftime("%Y%m%d")
+⋮----
+state = _load_json_file(GEN_SEQ_STATE_FILE)
+last = 0
+⋮----
+last = int(state.get(date_str) or 0)
+⋮----
+scanned = _scan_max_gen_seq_for_date(date_str)
+⋮----
+last = scanned
+n = last + 1
+⋮----
+seq = str(n).zfill(4)
+⋮----
+def _normalize_posix_rel_path(path_value)
+⋮----
+def _join_virtual_local_path(root_prefix, rel_path)
+⋮----
+def _resolve_virtual_media_root(local_path=None, abs_path=None)
+⋮----
+def _collect_image_derivative_payload(abs_path, root_abs, root_prefix, rel_original_path)
+⋮----
+def _augment_saved_media_response(payload, abs_path, local_path)
+⋮----
+def _resolve_local_virtual_path(src_path)
+⋮----
+class Handler(http.server.SimpleHTTPRequestHandler)
+⋮----
+def __init__(self, *args, **kwargs)
+⋮----
+def translate_path(self, path)
+⋮----
+raw_path = urllib.parse.urlsplit(path).path
+decoded_path = urllib.parse.unquote(raw_path).replace("\\", "/")
+virtual_roots = (
+media_path = _resolve_local_virtual_path(decoded_path)
+⋮----
+rel = decoded_path[len(prefix):].lstrip("/")
+rel = os.path.normpath(rel)
+⋮----
+# 屏蔽日志噪音（按霢注释掉）
+def log_message(self, fmt, *args)
+⋮----
+def send_head(self)
+⋮----
+path = self.translate_path(self.path)
+f = None
+⋮----
+parts = urllib.parse.urlsplit(self.path)
+⋮----
+new_parts = (parts[0], parts[1], parts[2] + '/', parts[3], parts[4])
+new_url = urllib.parse.urlunsplit(new_parts)
+⋮----
+index_path = os.path.join(path, index)
+⋮----
+path = index_path
+⋮----
+ctype = self.guess_type(path)
+⋮----
+f = open(path, 'rb')
+⋮----
+fs = os.fstat(f.fileno())
+size = fs.st_size
+range_header = self.headers.get("Range", "")
+⋮----
+spec = range_header[6:].strip()
+⋮----
+suffix_len = int(end_s)
+⋮----
+start = max(0, size - suffix_len)
+end = size - 1
+⋮----
+start = int(start_s)
+end = int(end_s) if end_s else size - 1
+⋮----
+end = min(end, size - 1)
+⋮----
+def copyfile(self, source, outputfile)
+⋮----
+rng = getattr(self, "_range", None)
+⋮----
+remaining = end - start + 1
+bufsize = 64 * 1024
+⋮----
+chunk = source.read(min(bufsize, remaining))
+⋮----
+def do_OPTIONS(self)
+⋮----
+path = self.path.split("?")[0]
+⋮----
+def do_DELETE(self)
+⋮----
+def do_PATCH(self)
+⋮----
+def do_GET(self)
+⋮----
+def end_headers(self)
+⋮----
+header_buf = getattr(self, "_headers_buffer", []) or []
+has_cache_control = any(b"Cache-Control:" in h for h in header_buf)
+has_cors = any(b"Access-Control-Allow-Origin:" in h for h in header_buf)
+has_server_id = any(b"X-AICanvas-Server:" in h for h in header_buf)
+⋮----
+# ════════════════════════════════════════════════════
+#  POST
+⋮----
+def do_POST(self)
+⋮----
+content_type_header = self.headers.get("Content-Type", "") or ""
+body = _read_body(self)
+filename = "upload.bin"
+file_content_type = "application/octet-stream"
+file_extension = ""
+api_key = ""
+api_url = APIMART_DEFAULT_API_URL
+permanent = False
+file_bytes = b""
+⋮----
+match = re.search(r"boundary=([^;]+)", content_type_header)
+boundary = (match.group(1).strip().strip('"') if match else "")
+⋮----
+boundary_bytes = ("--" + boundary).encode("utf-8", "ignore")
+⋮----
+header_end = part.find(b"\r\n\r\n")
+⋮----
+header_blob = part[:header_end].decode("utf-8", "ignore")
+data_blob = part[header_end + 4 :]
+⋮----
+data_blob = data_blob[:-2]
+⋮----
+name_match = re.search(r'name="([^"]+)"', header_blob)
+field_name = name_match.group(1) if name_match else ""
+⋮----
+file_bytes = data_blob
+filename_match = re.search(r'filename="([^"]*)"', header_blob)
+⋮----
+filename = os.path.basename(filename_match.group(1).strip())
+type_match = re.search(r"Content-Type:\s*([^\r\n;]+)", header_blob, flags=re.IGNORECASE)
+⋮----
+file_content_type = type_match.group(1).strip()
+⋮----
+value = data_blob.decode("utf-8", "ignore").strip()
+⋮----
+file_content_type = value
+⋮----
+file_extension = value.lstrip(".")
+⋮----
+permanent = value.lower() in ("1", "true", "yes", "on")
+⋮----
+api_key = re.sub(r"^Bearer\s+", "", value, flags=re.IGNORECASE).strip()
+⋮----
+api_url = _normalize_apimart_base_url(value)
+⋮----
+file_bytes = body
+file_content_type = content_type_header.split(";", 1)[0].strip() or file_content_type
+⋮----
+file_extension = (os.path.splitext(filename)[1] or "").lstrip(".")
+⋮----
+file_extension = (mimetypes.guess_extension(file_content_type) or ".bin").lstrip(".")
+⋮----
+upload_url = f"{normalized_api_url}/v1/uploads/images"
+⋮----
+resp = _req.post(
+content = resp.content
+⋮----
+boundary = f"----AICanvasAPIMartUpload{random.randint(100000, 999999)}"
+safe_filename = filename.replace('"', "_")
+body_prefix = (
+body_suffix = f"\r\n--{boundary}--\r\n".encode("utf-8")
+req_body = body_prefix + file_bytes + body_suffix
+req = urllib.request.Request(
+⋮----
+content = resp.read()
+status = resp.status
+content_type = resp.headers.get("Content-Type") or "application/json; charset=utf-8"
+⋮----
+content = exc.read()
+status = exc.code
+content_type = exc.headers.get("Content-Type") or "application/json; charset=utf-8"
+⋮----
+presign_payload = {
+presign_url = _build_apimart_presign_url(api_url)
+⋮----
+presign_resp = _req.post(
+⋮----
+presign_data = presign_resp.json()
+presigned_url = str(presign_data.get("presignedUrl") or "")
+cdn_url = str(presign_data.get("cdnUrl") or "")
+⋮----
+upload_resp = _req.put(
+⋮----
+req_body = json.dumps(presign_payload).encode("utf-8")
+⋮----
+presign_data = json.loads(resp.read().decode("utf-8", errors="replace"))
+⋮----
+put_req = urllib.request.Request(
+⋮----
+# ┢┢ 文件上传 ┢┢
+⋮----
+data = json.loads(body or b"{}")
+⋮----
+src_path = (data.get("src") or "").strip()
+options = data.get("options") or {}
+⋮----
+options = {}
+⋮----
+safe_src = src_path.lstrip("/")
+norm_src = os.path.normpath(safe_src)
+⋮----
+local_src = _resolve_local_virtual_path(src_path)
+⋮----
+job_id = _smart_clip_new_job_id()
+⋮----
+created_at = time.time()
+⋮----
+created_at = 0.0
+⋮----
+t = threading.Thread(
+⋮----
+data = json.loads(body)
+⋮----
+api_key = (data.get("apiKey") or "").strip()
+node_info_list = data.get("nodeInfoList")
+⋮----
+app_id = str(data.get("appId") or "2042569732972355585").strip() or "2042569732972355585"
+instance_type = data.get("instanceType") or data.get("rhInstanceType") or ""
+instance_type = str(instance_type).strip().lower()
+⋮----
+instance_type = "default"
+⋮----
+instance_type = "plus"
+⋮----
+def _resolve_local_file(url_or_path: str)
+⋮----
+fp = _resolve_local_virtual_path(url_or_path)
+⋮----
+def _guess_filename(raw: str, fallback_name: str)
+⋮----
+path_name = ""
+⋮----
+path_name = os.path.basename(urllib.parse.urlparse(raw).path or "")
+⋮----
+candidate = path_name or fallback_name
+⋮----
+fallback_ext = os.path.splitext(fallback_name)[1] or ".bin"
+candidate = f"{candidate}{fallback_ext}"
+⋮----
+def _download_remote_bytes(url: str)
+⋮----
+resp = _req.get(url, timeout=120)
+⋮----
+def _upload_to_runninghub(file_bytes: bytes, filename: str, content_type: str = "application/octet-stream")
+⋮----
+upload_api_url = "https://www.runninghub.cn/openapi/v2/media/upload/binary"
+⋮----
+files = {"file": (filename, file_bytes, content_type or "application/octet-stream")}
+⋮----
+js = resp.json()
+⋮----
+u = (js.get("data") or {}).get("download_url") or ""
+⋮----
+boundary = "----WebKitFormBoundary" + uuid.uuid4().hex
+head = (
+tail = f"\r\n--{boundary}--\r\n".encode("utf-8")
+payload = head + file_bytes + tail
+req = urllib.request.Request(upload_api_url, data=payload, method="POST")
+⋮----
+rb = resp.read()
+js = json.loads(rb.decode("utf-8", errors="replace"))
+⋮----
+def _materialize_media_url(raw_value: str, fallback_name: str, fallback_content_type: str)
+⋮----
+raw = str(raw_value or "").strip()
+⋮----
+local_file = _resolve_local_file(raw)
+⋮----
+file_bytes = f.read()
+filename = os.path.basename(local_file) or fallback_name
+content_type = mimetypes.guess_type(filename)[0] or fallback_content_type
+⋮----
+match = re.match(r"^data:([^;,]+)?;base64,(.*)$", raw, re.DOTALL)
+⋮----
+mime_type = (match.group(1) or fallback_content_type or "application/octet-stream").strip()
+ext = mimetypes.guess_extension(mime_type) or os.path.splitext(fallback_name)[1] or ".bin"
+filename_root = os.path.splitext(fallback_name)[0] or "upload"
+filename = f"{filename_root}{ext}"
+⋮----
+file_bytes = base64.b64decode(match.group(2))
+⋮----
+file_bytes = _download_remote_bytes(raw)
+filename = _guess_filename(raw, fallback_name)
+⋮----
+source_video_item = None
+mask_item = None
+⋮----
+node_id = str(item.get("nodeId") or "")
+field_name = str(item.get("fieldName") or "")
+⋮----
+source_video_item = item
+⋮----
+mask_item = item
+⋮----
+api_url = f"https://www.runninghub.cn/openapi/v2/run/ai-app/{app_id}"
+payload = {
+request_headers = {
+⋮----
+req_body = json.dumps(payload).encode("utf-8")
+req = urllib.request.Request(api_url, data=req_body, method="POST")
+⋮----
+resp_data = resp.read()
+⋮----
+# ┢┢ PPIO 图像生成代理 ┢┢
+⋮----
+api_url = data.pop("apiUrl", "").strip().rstrip("/")
+api_key = data.pop("apiKey", "").strip()
+⋮----
+local_authorization_payload = dict(data) if isinstance(data, dict) else {}
+⋮----
+def _extract_task_id_from_text(raw_text)
+⋮----
+text = str(raw_text or "")
+⋮----
+patterns = [
+⋮----
+match = re.search(pattern, text, flags=re.IGNORECASE)
+⋮----
+value = str(match.group(1) or "").strip()
+⋮----
+workflow_match = re.search(
+workflow_id = workflow_match.group(1) if workflow_match else ""
+is_runninghub_query_endpoint = bool(
+# 仅在“提交任务”类端点启用 task_id 快速探测；
+# 查询类端点和 GRSAI 新 JSON 端点必须透传完整响应，否则前端无法拿到最终出图 URL。
+is_grsai_query_endpoint = bool(
+is_grsai_generate_endpoint = bool(
+allow_task_probe_short_circuit = not (
+⋮----
+headers = {
+⋮----
+retry_delays = (0.0, 0.3, 0.9)
+proxy_error_markers = (
+⋮----
+header_task_id = ""
+⋮----
+value = str(resp.headers.get(key, "") or "").strip()
+⋮----
+header_task_id = value
+⋮----
+bytes_read = 0
+max_probe_bytes = 256 * 1024
+found_task_id = ""
+⋮----
+probe_text = b"".join(chunks).decode("utf-8", "ignore")
+found_task_id = _extract_task_id_from_text(probe_text)
+⋮----
+full_content = b"".join(chunks)
+⋮----
+msg = repr(e)
+is_proxy_chain_error = any(
+⋮----
+req_body = json.dumps(data).encode("utf-8")
+req = urllib.request.Request(api_url, data=req_body, headers=headers, method="POST")
+⋮----
+# ┢┢ 通用代理 forwarded ┢┢
+⋮----
+global_cfg = _get_custom_ai_config()
+api_url = api_url or global_cfg["apiUrl"]
+api_key = api_key or global_cfg["apiKey"]
+⋮----
+endpoint = api_url
+⋮----
+endpoint = f"{api_url}/chat/completions"
+⋮----
+req_body = json.dumps(data)
+⋮----
+resp = requests.post(endpoint, data=req_body, headers=headers, timeout=300, stream=True)
+⋮----
+# 兼容返回 SSE 的服务，转换为普通 JSON
+resp_content_type = resp.headers.get('Content-Type', '')
+⋮----
+resp_text = _normalize_chat_completion_sse_response(resp)
+⋮----
+resp_text = resp.text
+⋮----
+resp_text = "{}"
+⋮----
+# 处理 text/event-stream 或以 data: 开头的响应
+is_sse = resp_text.strip().startswith('data:')
+⋮----
+# 取 SSE 最后一条有效 JSON
+lines = [l.strip() for l in resp_text.split('\n') if l.strip().startswith('data:')]
+⋮----
+last_line = lines[-1].replace('data:', '').strip()
+⋮----
+# 找数第二个有效行
+valid_lines = [l for l in lines if l.replace('data:', '').strip() != '[DONE]']
+⋮----
+json_str = valid_lines[-1].replace('data:', '').strip()
+json_data = json.loads(json_str)
+resp_text = json.dumps(json_data)
+⋮----
+json_data = json.loads(last_line)
+⋮----
+# 解析失败时保留原始响应
+⋮----
+req = urllib.request.Request(endpoint, data=req_body, headers=headers, method="POST")
+⋮----
+resp_text = resp_data.decode('utf-8')
+⋮----
+api_url  = data.get("apiUrl", "").strip().rstrip("/")
+api_key  = data.get("apiKey", "").strip()
+model    = data.get("model", "")
+prompt   = data.get("prompt", "")
+# apiUrl/apiKey 未传时，回退到 config.json 中的自定义 AI 配置
+⋮----
+endpoint = api_url if api_url.endswith("/chat/completions") else f"{api_url}/chat/completions"
+⋮----
+req_body = json.dumps({
+⋮----
+resp_data = json.loads(resp.read().decode("utf-8"))
+⋮----
+content = resp_data["choices"][0]["message"]["content"]
+⋮----
+err_body = e.read().decode("utf-8", errors="ignore")
+try: err_msg = json.loads(err_body).get("error", {}).get("message", err_body)
+except: err_msg = err_body
+⋮----
+def _is_wildcard_bind_host(host)
+⋮----
+normalized = str(host or "").strip().lower()
+⋮----
+def _parse_server_args(argv)
+⋮----
+port = PORT
+bind_host = BIND_HOST
+lan_mode = bool(LAN_MODE)
+positional = []
+⋮----
+raw = str(arg or "").strip()
+⋮----
+lan_mode = True
+⋮----
+bind_host = raw.split("=", 1)[1].strip() or bind_host
+⋮----
+port = int(raw.split("=", 1)[1].strip())
+⋮----
+port = int(positional[0])
+⋮----
+bind_host = positional[1].strip() or bind_host
+⋮----
+def _resolve_bind_host(bind_host, lan_mode)
+⋮----
+host = str(bind_host or "").strip() or "127.0.0.1"
+⋮----
+def _display_urls(bind_host, port)
+⋮----
+host = str(bind_host or "").strip()
+⋮----
+hosts = ["127.0.0.1", "localhost"]
+⋮----
+hosts = [host]
+urls = []
+⋮----
+url_host = f"[{item}]" if ":" in item and not item.startswith("[") else item
+⋮----
+# --- 启动 ---
+def _is_benign_client_disconnect_error(error)
+⋮----
+current = error
+⋮----
+current = getattr(current, "__context__", None) or getattr(current, "__cause__", None)
+⋮----
+class QuietThreadingTCPServer(socketserver.ThreadingTCPServer)
+⋮----
+allow_reuse_address = True
+⋮----
+def handle_error(self, request, client_address)
+⋮----
+error = sys.exc_info()[1]
+⋮----
+_t = threading.Thread(target=UPDATE_SERVICE.update_check_loop, daemon=True, name='AutoUpdateChecker')
+</file>
+
+</files>

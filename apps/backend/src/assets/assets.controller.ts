@@ -8,6 +8,7 @@ import {
   Param,
   ParseFilePipe,
   Post,
+  Query,
   Res,
   UploadedFile,
   UseInterceptors,
@@ -17,15 +18,53 @@ import type { Response } from "express";
 import { memoryStorage } from "multer";
 
 import { AssetsService, MAX_UPLOAD_BYTES } from "./assets.service";
-import { UploadAssetDto } from "./dto";
+import {
+  AssetBatchDto,
+  AssetListQueryDto,
+  CreateAssetCollectionDto,
+  CreateAssetTagDto,
+  EditAssetDto,
+  UploadAssetDto,
+} from "./dto";
 
 @Controller("projects/:projectId/assets")
 export class AssetsController {
   constructor(@Inject(AssetsService) private readonly assetsService: AssetsService) {}
 
   @Get()
-  listAssets(@Param("projectId") projectId: string) {
-    return this.assetsService.listAssets(projectId);
+  listAssets(@Param("projectId") projectId: string, @Query() query: AssetListQueryDto) {
+    return this.assetsService.listAssets(projectId, {
+      query: query.query,
+      type: query.type,
+      purpose: query.purpose,
+      collectionId: query.collectionId,
+      tagIds: query.tagIds?.split(",").map((tagId) => tagId.trim()).filter(Boolean),
+    });
+  }
+
+  @Get("collections")
+  listCollections(@Param("projectId") projectId: string) {
+    return this.assetsService.listCollections(projectId);
+  }
+
+  @Post("collections")
+  createCollection(@Param("projectId") projectId: string, @Body() body: CreateAssetCollectionDto) {
+    return this.assetsService.createCollection(projectId, body);
+  }
+
+  @Get("tags")
+  listTags(@Param("projectId") projectId: string) {
+    return this.assetsService.listTags(projectId);
+  }
+
+  @Post("tags")
+  createTag(@Param("projectId") projectId: string, @Body() body: CreateAssetTagDto) {
+    return this.assetsService.createTag(projectId, body);
+  }
+
+  @Post("batch")
+  batchAssets(@Param("projectId") projectId: string, @Body() body: AssetBatchDto) {
+    return this.assetsService.batchAssets(projectId, body);
   }
 
   @Post("upload")
@@ -50,6 +89,15 @@ export class AssetsController {
   @Get(":assetId")
   getAsset(@Param("projectId") projectId: string, @Param("assetId") assetId: string) {
     return this.assetsService.getAsset(projectId, assetId);
+  }
+
+  @Post(":assetId/edit")
+  editAsset(
+    @Param("projectId") projectId: string,
+    @Param("assetId") assetId: string,
+    @Body() body: EditAssetDto,
+  ) {
+    return this.assetsService.editAsset(projectId, assetId, body);
   }
 
   @Get(":assetId/preview")

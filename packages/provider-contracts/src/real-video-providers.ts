@@ -1,4 +1,4 @@
-import type { CanvasSnapshotJson } from "@guga-flow/shared-types";
+import type { CanvasSnapshotJson, ProviderProtocol } from "@guga-flow/shared-types";
 
 import type { MockAssetOutput, VideoGenerationInput, VideoProvider, VideoProviderTaskResult } from "./contracts";
 import { ProviderError } from "./contracts";
@@ -9,6 +9,10 @@ export interface RealVideoProviderOptions {
   apiKey?: string;
   baseUrl?: string;
   fetchImpl?: FetchLike;
+}
+
+export interface GenericVideoProviderOptions extends RealVideoProviderOptions {
+  protocol?: ProviderProtocol;
 }
 
 const DEFAULT_SEEDANCE_BASE_URL = "https://ark.ap-southeast.bytepluses.com/api/v3";
@@ -246,6 +250,159 @@ export class HappyHorseProvider implements VideoProvider {
   }
 }
 
+export class GenericVideoProvider implements VideoProvider {
+  readonly capability = {
+    id: "generic-video",
+    displayName: "Generic Video Provider",
+    requiresApiKey: true,
+  };
+
+  private readonly apiKey?: string;
+  private readonly baseUrl: string;
+  private readonly protocol: ProviderProtocol;
+  private readonly fetchImpl: FetchLike;
+
+  constructor(options: GenericVideoProviderOptions = {}) {
+    this.apiKey = options.apiKey;
+    this.baseUrl = (options.baseUrl ?? "https://api.example.invalid/v1").replace(/\/+$/g, "");
+    this.protocol = options.protocol ?? "openai_compatible";
+    this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  async createTask(input: VideoGenerationInput): Promise<VideoProviderTaskResult> {
+    failIfRequested(this.capability.id, input.forceFailure);
+    if (this.protocol === "mock") {
+      const model = input.model ?? "mock-generic-video-v1";
+      const providerTaskId = stableId("generic_video_task", `${input.projectId}-${input.prompt}-${model}`);
+      return {
+        status: "succeeded",
+        providerTaskId,
+        output: {
+          assetId: stableId("provider_video", `${this.capability.id}-${providerTaskId}`),
+          storageKey: `providers/${this.capability.id}/tasks/${safePathSegment(providerTaskId)}/output.mp4`,
+          mimeType: "video/mp4",
+          provider: this.capability.id,
+          model,
+          referenceAssetIds: input.referenceAssetIds ?? [],
+          providerTaskId,
+          rawJson: { protocol: "mock" },
+        },
+        rawJson: rawTaskJson(this.capability.id, providerTaskId, model),
+      };
+    }
+    this.assertConfigured();
+
+    const model = input.model ?? "video-model";
+    const response = await fetchWithProviderError(this.capability.id, () =>
+      this.fetchImpl(`${genericTaskBase(this.baseUrl)}/video/generations`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.apiKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          prompt: input.prompt,
+          first_frame_asset_id: input.firstFrameAssetId ?? input.sourceImageAssetId,
+          last_frame_asset_id: input.lastFrameAssetId,
+          reference_asset_ids: input.referenceAssetIds ?? [],
+          duration: input.durationSec,
+          aspect_ratio: input.aspectRatio,
+          resolution: input.resolution,
+          ...(isRecord(input.providerParams) ? input.providerParams : {}),
+        }),
+      }),
+    );
+    const json = await readJsonResponse(response, this.capability.id);
+    const remoteUrl = findVideoUrl(json);
+    const providerTaskId = taskIdFromJson(json) ?? stableId("generic_video_task", `${input.projectId}-${input.prompt}`);
+    if (remoteUrl) {
+      return {
+        status: "succeeded",
+        providerTaskId,
+        output: videoOutputFromRemoteUrl(remoteUrl, {
+          provider: this.capability.id,
+          providerTaskId,
+          model,
+        }),
+        rawJson: rawTaskJson(this.capability.id, providerTaskId, model),
+      };
+    }
+
+    return waitingResult(this.capability.id, providerTaskId, model);
+  }
+
+  async getTask(providerTaskId: string): Promise<VideoProviderTaskResult> {
+    if (this.protocol === "mock") {
+      return {
+        status: "succeeded",
+        providerTaskId,
+        output: {
+          assetId: stableId("provider_video", `${this.capability.id}-${providerTaskId}`),
+          storageKey: `providers/${this.capability.id}/tasks/${safePathSegment(providerTaskId)}/output.mp4`,
+          mimeType: "video/mp4",
+          provider: this.capability.id,
+          model: "mock-generic-video-v1",
+          referenceAssetIds: [],
+          providerTaskId,
+        },
+        rawJson: rawTaskJson(this.capability.id, providerTaskId, "mock-generic-video-v1"),
+      };
+    }
+    this.assertConfigured();
+
+    const response = await fetchWithProviderError(this.capability.id, () =>
+      this.fetchImpl(`${genericTaskBase(this.baseUrl)}/tasks/${encodeURIComponent(providerTaskId)}`, {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${this.apiKey}`,
+        },
+      }),
+    );
+    const json = await readJsonResponse(response, this.capability.id);
+    return taskResultFromJson(json, {
+      provider: this.capability.id,
+      providerTaskId,
+      model: stringPropFromAny(json, "model") ?? "video-model",
+    });
+  }
+
+  async cancelTask(providerTaskId: string): Promise<VideoProviderTaskResult> {
+    if (this.protocol === "mock") {
+      return cancelledResult(this.capability.id, providerTaskId);
+    }
+    this.assertConfigured();
+    const response = await fetchWithProviderError(this.capability.id, () =>
+      this.fetchImpl(`${genericTaskBase(this.baseUrl)}/tasks/${encodeURIComponent(providerTaskId)}/cancel`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.apiKey}`,
+        },
+      }),
+    );
+    await readJsonResponse(response, this.capability.id);
+    return cancelledResult(this.capability.id, providerTaskId);
+  }
+
+  async generateVideo(input: VideoGenerationInput): Promise<MockAssetOutput> {
+    const created = await this.createTask(input);
+    return outputOrPendingError(this.capability.id, created);
+  }
+
+  private assertConfigured(): void {
+    if (this.apiKey) {
+      return;
+    }
+
+    throw new ProviderError({
+      provider: this.capability.id,
+      code: "PROVIDER_NOT_CONFIGURED",
+      message: "Generic video provider is disabled because no server-side API key is configured.",
+      retryable: false,
+    });
+  }
+}
+
 function failIfRequested(provider: string, forceFailure?: boolean): void {
   if (!forceFailure) {
     return;
@@ -278,6 +435,10 @@ function seedanceContent(input: VideoGenerationInput): Array<Record<string, Canv
 
 function sourceImageUrl(input: VideoGenerationInput): string | undefined {
   return stringParam(input.providerParams, "sourceImageUrl") ?? input.sourceImageAssetId;
+}
+
+function genericTaskBase(baseUrl: string): string {
+  return baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 }
 
 async function readJsonResponse(response: Response, provider: string): Promise<unknown> {

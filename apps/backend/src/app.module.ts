@@ -15,6 +15,7 @@ import { ProjectSettingsModule } from "./project-settings/project-settings.modul
 import { PrismaModule } from "./prisma/prisma.module";
 import { ProjectsModule } from "./projects/projects.module";
 import { SkillTemplatesModule } from "./skill-templates/skill-templates.module";
+import { WorkflowsModule } from "./workflows/workflows.module";
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { SkillTemplatesModule } from "./skill-templates/skill-templates.module";
     EditorExportsModule,
     AgentsModule,
     SkillTemplatesModule,
+    WorkflowsModule,
   ],
   controllers: [HealthController],
 })

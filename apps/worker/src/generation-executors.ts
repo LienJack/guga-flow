@@ -14,7 +14,9 @@ import type {
   GeneratedMediaProviderOutput,
   GenerationJobInput,
   GenerationJobRecord,
+  AssetAnalysisJobOutput,
   ProgrammableProviderRuntimeConfig,
+  ProviderConfigParams,
   ProviderFailure,
 } from "@guga-flow/shared-types";
 
@@ -28,6 +30,7 @@ type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 export interface GenerationExecutorRegistryOptions {
   env?: Record<string, string | undefined>;
   fetchImpl?: FetchLike;
+  providerParams?: ProviderConfigParams;
   programmableProvider?: ProgrammableProviderRuntimeConfig;
 }
 
@@ -43,6 +46,10 @@ export type GenerationExecutorResult =
       model?: string;
       providerTaskId: string;
       rawJson?: GeneratedMediaProviderOutput["rawJson"];
+    }
+  | {
+      status: "succeeded";
+      assetAnalysisOutput: AssetAnalysisJobOutput;
     };
 
 export function createGenerationExecutorRegistry(
@@ -69,11 +76,15 @@ export function createGenerationExecutorRegistry(
     imageProviders: createImageProviderRegistry({
       env,
       fetchImpl: normalized.fetchImpl,
+      genericBaseUrl: normalized.providerParams?.baseUrl,
+      genericProtocol: normalized.providerParams?.protocol,
       additionalProviders: programmableImageProviders,
     }),
     videoProviders: createVideoProviderRegistry({
       env,
       fetchImpl: normalized.fetchImpl,
+      genericBaseUrl: normalized.providerParams?.baseUrl,
+      genericProtocol: normalized.providerParams?.protocol,
       additionalProviders: programmableVideoProviders,
     }),
   };
@@ -91,6 +102,67 @@ export async function executeGenerationJob(
   registry: GenerationExecutorRegistry = createMockGenerationExecutorRegistry(),
 ): Promise<GenerationExecutorResult> {
   const input = job.inputJson;
+
+  if (input.operation === "asset_caption" || input.operation === "asset_classification") {
+    if (input.forceFailure) {
+      throw new ProviderError({
+        provider: input.provider,
+        code: "MOCK_ASSET_ANALYSIS_FAILED",
+        message: "Mock asset analysis failure requested.",
+        retryable: false,
+      });
+    }
+    return {
+      status: "succeeded",
+      assetAnalysisOutput: {
+        operation: input.operation,
+        provider: input.provider,
+        model: input.model,
+        overwrite: input.overwrite === true,
+        results: input.assetIds.map((assetId) => ({
+          assetId,
+          caption: input.operation === "asset_caption"
+            ? `Mock caption for asset ${assetId}. ${input.prompt ?? "Describe production-useful visual details."}`
+            : undefined,
+          classifications: input.operation === "asset_classification"
+            ? ["reference", "production", assetId.includes("audio") ? "audio" : "visual"]
+            : undefined,
+        })),
+        completedAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  if (input.operation === "workflow_run") {
+    if (input.forceFailure) {
+      throw new ProviderError({
+        provider: input.provider,
+        code: "MOCK_WORKFLOW_FAILED",
+        message: "Mock workflow failure requested.",
+        retryable: false,
+      });
+    }
+    const isVideo = input.outputKind === "video";
+    const extension = isVideo ? "mp4" : "png";
+    return {
+      status: "succeeded",
+      providerOutput: {
+        assetId: `workflow-${job.id}`,
+        storageKey: `${input.projectId}/workflows/${job.id}.${extension}`,
+        mimeType: isVideo ? "video/mp4" : "image/png",
+        provider: input.provider,
+        model: input.model ?? `${input.workflowKind}-workflow`,
+        prompt: input.prompt ?? `Run ${input.workflowKind} workflow ${input.workflowDefinitionId}`,
+        referenceAssetIds: input.referenceAssetIds,
+        rawJson: {
+          workflowDefinitionId: input.workflowDefinitionId,
+          workflowVersionId: input.workflowVersionId,
+          workflowKind: input.workflowKind,
+          outputKind: input.outputKind,
+        },
+      },
+    };
+  }
 
   if (input.operation === "shot_to_image") {
     const provider = registry.imageProviders.get(input.provider);
@@ -166,10 +238,13 @@ export async function executeGenerationJob(
       mode: "image_to_video",
       model: input.model,
       sourceImageAssetId: input.sourceImageAssetId,
+      firstFrameAssetId: input.referenceMedia?.find((item) => item.role === "first_frame")?.assetId,
+      lastFrameAssetId: input.referenceMedia?.find((item) => item.role === "last_frame")?.assetId,
       durationSec: input.durationSeconds,
       aspectRatio: input.aspectRatio,
       resolution: input.resolution,
       referenceAssetIds: input.referenceAssetIds,
+      referenceMedia: input.referenceMedia,
       providerParams: input.providerParams,
       forceFailure: input.forceFailure,
     });

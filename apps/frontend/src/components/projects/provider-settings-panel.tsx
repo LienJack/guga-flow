@@ -4,6 +4,7 @@ import type {
   ProviderConnectionTestResult,
   ProviderManagementItem,
   ProviderManagementResult,
+  ProviderProtocol,
   ProgrammableProviderDefinitionSummary,
 } from "@guga-flow/shared-types";
 import { CheckCircle2, Code2, KeyRound, Power, RefreshCw, Save, ShieldAlert } from "lucide-react";
@@ -12,6 +13,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   activateProgrammableProviderVersion,
   createProgrammableProvider,
+  discoverProviderModels,
   disableProgrammableProvider,
   getProviderManagement,
   listProgrammableProviders,
@@ -27,10 +29,12 @@ interface ProviderSettingsPanelProps {
 }
 
 interface ProviderDraft {
+  baseUrl: string;
   credential: string;
   clearCredential: boolean;
   defaultModel: string;
   enabled: boolean;
+  protocol: ProviderProtocol;
 }
 
 type RowState = {
@@ -206,6 +210,10 @@ export function ProviderSettingsPanel({
       const result = await updateProviderConfig(projectId, provider.kind, provider.id, {
         enabled: draft.enabled,
         defaultModel: draft.defaultModel,
+        params: {
+          protocol: draft.protocol,
+          baseUrl: draft.baseUrl,
+        },
         credential: draft.clearCredential
           ? { action: "clear" }
           : draft.credential.trim()
@@ -253,6 +261,46 @@ export function ProviderSettingsPanel({
         ...current,
         [key]: {
           error: caught instanceof Error ? caught.message : "Provider test failed",
+        },
+      }));
+    }
+  }
+
+  async function handleDiscover(provider: ProviderManagementItem) {
+    const key = providerKey(provider);
+    const draft = drafts[key] ?? draftForProvider(provider);
+    setRowState((current) => ({
+      ...current,
+      [key]: { testing: true },
+    }));
+
+    try {
+      const result = await discoverProviderModels(projectId, {
+        kind: provider.kind,
+        provider: provider.id,
+        protocol: draft.protocol,
+        baseUrl: draft.baseUrl,
+        credential: draft.credential.trim()
+          ? { source: "temporary", value: draft.credential.trim() }
+          : undefined,
+      });
+      const discoveredModels = provider.kind === "image"
+        ? result.modelGroups.image
+        : result.modelGroups.video;
+      const nextModel = discoveredModels[0] ?? result.modelGroups.chat[0] ?? draft.defaultModel;
+      setDraft(provider, { defaultModel: nextModel });
+      setProviders((current) => mergeProviderModels(current, provider, discoveredModels));
+      setRowState((current) => ({
+        ...current,
+        [key]: {
+          status: `${result.message}${result.rawCount ? ` (${result.rawCount} models)` : ""}`,
+        },
+      }));
+    } catch (caught) {
+      setRowState((current) => ({
+        ...current,
+        [key]: {
+          error: caught instanceof Error ? caught.message : "Model discovery failed",
         },
       }));
     }
@@ -354,6 +402,31 @@ export function ProviderSettingsPanel({
                     </label>
 
                     <label className="generation-field">
+                      <span>Protocol</span>
+                      <select
+                        name={`${key}:protocol`}
+                        value={draft.protocol}
+                        onChange={(event) => setDraft(provider, { protocol: event.target.value as ProviderProtocol })}
+                      >
+                        <option value="openai_compatible">OpenAI compatible</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="ark">Ark</option>
+                        <option value="mock">Mock</option>
+                      </select>
+                    </label>
+
+                    <label className="generation-field">
+                      <span>Base URL</span>
+                      <input
+                        name={`${key}:baseUrl`}
+                        onChange={(event) => setDraft(provider, { baseUrl: event.target.value })}
+                        placeholder="https://api.example.com"
+                        type="url"
+                        value={draft.baseUrl}
+                      />
+                    </label>
+
+                    <label className="generation-field">
                       <span>Credential</span>
                       <input
                         autoComplete="new-password"
@@ -401,6 +474,15 @@ export function ProviderSettingsPanel({
                     >
                       <RefreshCw size={14} aria-hidden="true" />
                       {state.testing ? "Testing" : "Test"}
+                    </button>
+                    <button
+                      className="ghost-action"
+                      disabled={state.saving || state.testing}
+                      onClick={() => void handleDiscover(provider)}
+                      type="button"
+                    >
+                      <RefreshCw size={14} aria-hidden="true" />
+                      Discover
                     </button>
                     <ProviderHealth provider={provider} />
                   </div>
@@ -551,10 +633,12 @@ function providerKey(provider: Pick<ProviderManagementItem, "id" | "kind">): str
 
 function draftForProvider(provider: ProviderManagementItem): ProviderDraft {
   return {
+    baseUrl: provider.params?.baseUrl ?? "",
     credential: "",
     clearCredential: false,
     defaultModel: provider.defaultModel,
     enabled: provider.configuredEnabled,
+    protocol: provider.params?.protocol ?? (provider.id.startsWith("mock-") ? "mock" : "openai_compatible"),
   };
 }
 
@@ -615,6 +699,22 @@ function mergeProviderTest(
         : provider,
     ),
   };
+}
+
+function mergeProviderModels(
+  current: ProviderManagementResult | null,
+  provider: ProviderManagementItem,
+  modelIds: string[],
+): ProviderManagementResult | null {
+  if (!current || modelIds.length === 0) {
+    return current;
+  }
+  const models = modelIds.map((id, index) => ({ id, displayName: id, default: index === 0 }));
+  return mergeProvider(current, {
+    ...provider,
+    defaultModel: models[0]?.id ?? provider.defaultModel,
+    models,
+  } as ProviderManagementItem);
 }
 
 function replaceProvider<TProvider extends ProviderManagementItem>(

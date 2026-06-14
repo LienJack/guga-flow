@@ -1,5 +1,6 @@
 import { ProviderError, type ImageProvider, type VideoProvider } from "@guga-flow/provider-contracts";
 import type {
+  AssetAnalysisJobInput,
   CharacterToImageJobInput,
   EditorExportJobInput,
   GenerationJobRecord,
@@ -16,6 +17,7 @@ import { runOneGenerationJob } from "./generation-runner";
 type WorkerGenerationJobInput =
   | ShotToImageJobInput
   | CharacterToImageJobInput
+  | AssetAnalysisJobInput
   | ImageRefinementJobInput
   | ImageToVideoJobInput
   | EditorExportJobInput;
@@ -33,6 +35,13 @@ function createClientMock(): GenerationWorkerClient {
       mimeType: "video/mp4",
     })),
     succeedJob: vi.fn(async () => jobRecord("job_done", shotInput())),
+    succeedAssetAnalysisJob: vi.fn(async () => jobRecord("job_analysis_done", {
+      operation: "asset_caption",
+      projectId: "project_1",
+      assetIds: ["asset_1"],
+      provider: "mock-vision",
+      model: "mock-vision-v1",
+    })),
     succeedEditorExportJob: vi.fn(async () => jobRecord("job_export_done", editorExportInput())),
     waitJob: vi.fn(async () => jobRecord("job_waiting", videoInput(), { status: "provider_waiting" })),
     failJob: vi.fn(async () => jobRecord("job_failed", shotInput(), { status: "failed" })),
@@ -250,10 +259,16 @@ describe("generation worker runner", () => {
       mode: "image_to_video",
       model: "mock-video-v1",
       sourceImageAssetId: "asset_image_1",
+      firstFrameAssetId: "asset_image_1",
+      lastFrameAssetId: undefined,
       durationSec: 5,
       aspectRatio: "16:9",
       resolution: "720p",
       referenceAssetIds: ["asset_ref_1"],
+      referenceMedia: [
+        { assetId: "asset_image_1", role: "first_frame", sourceNodeId: "image_1" },
+        { assetId: "asset_ref_1", role: "reference_image" },
+      ],
       providerParams: { cameraFixed: false },
       forceFailure: undefined,
     });
@@ -394,6 +409,35 @@ describe("generation worker runner", () => {
     expect(result).toEqual({ status: "succeeded", jobId: "job_export" });
   });
 
+  it("executes claimed asset analysis jobs and reports analysis output", async () => {
+    vi.mocked(client.claimNextJob).mockResolvedValue({
+      job: jobRecord("job_caption", assetCaptionInput(), {
+        operation: "asset_caption",
+        provider: "mock-vision",
+      }),
+    });
+
+    const result = await runOneGenerationJob({ client, registry });
+
+    expect(client.succeedAssetAnalysisJob).toHaveBeenCalledWith(
+      "job_caption",
+      expect.objectContaining({
+        operation: "asset_caption",
+        provider: "mock-vision",
+        overwrite: false,
+        results: [
+          expect.objectContaining({
+            assetId: "asset_1",
+            caption: expect.stringContaining("asset_1"),
+          }),
+        ],
+      }),
+    );
+    expect(registry.imageProviders.get).not.toHaveBeenCalled();
+    expect(registry.videoProviders.get).not.toHaveBeenCalled();
+    expect(result).toEqual({ status: "succeeded", jobId: "job_caption" });
+  });
+
   it("reports provider failures back to the backend fail endpoint", async () => {
     vi.mocked(client.claimNextJob).mockResolvedValue({
       job: jobRecord("job_image", shotInput()),
@@ -523,6 +567,10 @@ function videoInput(): ImageToVideoJobInput {
     resolution: "720p",
     parentShotNodeId: "shot_1",
     referenceAssetIds: ["asset_ref_1"],
+    referenceMedia: [
+      { assetId: "asset_image_1", role: "first_frame", sourceNodeId: "image_1" },
+      { assetId: "asset_ref_1", role: "reference_image" },
+    ],
     sourceNodeIds: ["image_1", "shot_1"],
     provider: "mock-video",
     model: "mock-video-v1",
@@ -579,6 +627,16 @@ function editorExportInput(): EditorExportJobInput {
   };
 }
 
+function assetCaptionInput(): AssetAnalysisJobInput {
+  return {
+    operation: "asset_caption",
+    projectId: "project_1",
+    assetIds: ["asset_1"],
+    provider: "mock-vision",
+    model: "mock-vision-v1",
+  };
+}
+
 function jobRecord(
   id: string,
   inputJson: WorkerGenerationJobInput,
@@ -591,7 +649,7 @@ function jobRecord(
     status: "running",
     provider: inputJson.operation === "editor_export" ? "mock-editor" : inputJson.provider,
     model: inputJson.operation === "editor_export" ? "zip-v1" : inputJson.model,
-    sourceNodeId: inputJson.operation === "editor_export" ? undefined : inputJson.sourceNodeId,
+    sourceNodeId: "sourceNodeId" in inputJson ? inputJson.sourceNodeId : undefined,
     inputJson,
     createdAt: "2026-06-12T00:00:00.000Z",
     updatedAt: "2026-06-12T00:00:00.000Z",

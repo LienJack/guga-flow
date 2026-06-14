@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Inject, Param, Patch, Post } from "@nestjs/common";
 
-import { ProviderConnectionTestDto, UpdateProviderConfigDto } from "./dto";
+import { ProviderConnectionTestDto, ProviderModelDiscoveryDto, UpdateProviderConfigDto } from "./dto";
 import {
   ActivateProgrammableProviderVersionDto,
   CreateProgrammableProviderDto,
@@ -45,6 +45,11 @@ export class ProjectProvidersController {
   @Get("programmable")
   listProgrammableProviders(@Param("projectId") projectId: string) {
     return this.providersService.listProgrammableProviders(projectId);
+  }
+
+  @Post("discover-models")
+  discoverModels(@Param("projectId") projectId: string, @Body() body: ProviderModelDiscoveryDto) {
+    return this.providersService.discoverModels(projectId, body);
   }
 
   @Post("programmable")

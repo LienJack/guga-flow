@@ -5,6 +5,7 @@ import type {
   ManagedProviderKind,
   ProviderCredentialUpdate,
   ProviderConnectionTestInput,
+  ProviderModelDiscoveryInput,
   UpdateProviderConfigInput,
 } from "@guga-flow/shared-types";
 
@@ -30,6 +31,10 @@ export class UpdateProviderConfigDto implements UpdateProviderConfigInput {
 
   @IsOptional()
   @IsObject()
+  params?: UpdateProviderConfigInput["params"];
+
+  @IsOptional()
+  @IsObject()
   credential?: ProviderCredentialUpdateDto;
 }
 
@@ -43,4 +48,28 @@ export class ProviderConnectionTestDto implements ProviderConnectionTestInput {
 export class ProviderKindParamDto {
   @IsIn(MANAGED_PROVIDER_KINDS)
   kind!: ManagedProviderKind;
+}
+
+export class ProviderModelDiscoveryDto implements ProviderModelDiscoveryInput {
+  @IsIn(MANAGED_PROVIDER_KINDS)
+  kind!: ManagedProviderKind;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  provider?: ProviderModelDiscoveryInput["provider"];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  protocol?: ProviderModelDiscoveryInput["protocol"];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  baseUrl?: string;
+
+  @IsOptional()
+  @IsObject()
+  credential?: ProviderModelDiscoveryInput["credential"];
 }

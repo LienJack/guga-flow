@@ -68,6 +68,11 @@ export async function runOneGenerationJob(
       options.logger?.info(`Generation job ${job.id} is waiting on provider task ${result.providerTaskId}.`);
       return { status: "waiting", jobId: job.id, providerTaskId: result.providerTaskId };
     }
+    if ("assetAnalysisOutput" in result) {
+      await options.client.succeedAssetAnalysisJob(job.id, result.assetAnalysisOutput);
+      options.logger?.info(`Asset analysis job ${job.id} succeeded.`);
+      return { status: "succeeded", jobId: job.id };
+    }
 
     await options.client.succeedJob(job.id, result.providerOutput, result.providerOutputs);
     options.logger?.info(`Generation job ${job.id} succeeded.`);
@@ -128,6 +133,7 @@ async function createRuntimeRegistry(
       ...process.env,
       ...runtimeConfig.env,
     },
+    providerParams: runtimeConfig.params,
     programmableProvider: runtimeConfig.programmableProvider,
   });
 }

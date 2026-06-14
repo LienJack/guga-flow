@@ -29,6 +29,7 @@ function asset(overrides: Record<string, unknown> = {}) {
   return {
     id: "asset_1",
     projectId: "project_1",
+    collectionId: null,
     type: "image",
     purpose: "uploaded",
     storageKey: "project_1/hero.png",
@@ -44,16 +45,66 @@ function asset(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function collection(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "collection_1",
+    projectId: "project_1",
+    name: "Characters",
+    parentId: null,
+    kind: "character",
+    sortOrder: 0,
+    createdAt,
+    updatedAt: createdAt,
+    ...overrides,
+  };
+}
+
+function tag(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "tag_1",
+    projectId: "project_1",
+    name: "approved",
+    color: null,
+    createdAt,
+    ...overrides,
+  };
+}
+
 function createPrismaMock() {
   return {
     project: {
       findUnique: vi.fn(async (): Promise<{ id: string } | null> => ({ id: "project_1" })),
     },
     asset: {
-      findMany: vi.fn(),
+      findMany: vi.fn(async (): Promise<unknown[]> => []),
       create: vi.fn(),
       findFirst: vi.fn(),
       delete: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+      deleteMany: vi.fn(async () => ({ count: 1 })),
+    },
+    assetCollection: {
+      findMany: vi.fn(async (): Promise<unknown[]> => []),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    assetTag: {
+      findMany: vi.fn(async (): Promise<unknown[]> => []),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+    },
+    assetTagAssignment: {
+      createMany: vi.fn(async () => ({ count: 1 })),
+      deleteMany: vi.fn(async () => ({ count: 1 })),
+    },
+    canvasNode: {
+      findMany: vi.fn(async (): Promise<unknown[]> => []),
+    },
+    generationJob: {
+      findMany: vi.fn(async (): Promise<unknown[]> => []),
     },
   };
 }
@@ -491,6 +542,174 @@ describe("AssetsService", () => {
     expect(prisma.asset.create).not.toHaveBeenCalled();
   });
 
+  it("lists assets with collection, tag, and metadata query filters", async () => {
+    prisma.asset.findMany.mockResolvedValue([
+      asset({
+        collectionId: "collection_1",
+        collection: collection(),
+        tagAssignments: [{ tag: tag() }],
+        metadataJson: { caption: "rain hero portrait" },
+      }),
+      asset({
+        id: "asset_2",
+        originalFilename: "unused.png",
+        storageKey: "project_1/unused.png",
+        metadataJson: { caption: "flat lay" },
+        tagAssignments: [],
+      }),
+    ]);
+
+    const result = await service.listAssets("project_1", {
+      query: "rain",
+      tagIds: ["tag_1"],
+    });
+
+    expect(prisma.asset.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { projectId: "project_1" },
+        include: {
+          collection: true,
+          tagAssignments: { include: { tag: true } },
+        },
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: "asset_1",
+      collection: { id: "collection_1", name: "Characters" },
+      tags: [{ id: "tag_1", name: "approved" }],
+    });
+  });
+
+  it("creates asset collections and tags", async () => {
+    prisma.assetCollection.create.mockResolvedValue(collection({ name: "Locations", kind: "location" }));
+    prisma.assetTag.create.mockResolvedValue(tag({ name: "needs polish", color: "#c45a2a" }));
+
+    await expect(
+      service.createCollection("project_1", { name: " Locations ", kind: "location" }),
+    ).resolves.toMatchObject({ name: "Locations", kind: "location" });
+    await expect(
+      service.createTag("project_1", { name: " needs polish ", color: "#c45a2a" }),
+    ).resolves.toMatchObject({ name: "needs polish", color: "#c45a2a" });
+
+    expect(prisma.assetCollection.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        name: "Locations",
+        kind: "location",
+      }),
+    });
+    expect(prisma.assetTag.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        name: "needs polish",
+        color: "#c45a2a",
+      }),
+    });
+  });
+
+  it("adds tags to selected assets in a batch operation", async () => {
+    prisma.asset.findMany
+      .mockResolvedValueOnce([{ id: "asset_1" }])
+      .mockResolvedValueOnce([
+        asset({
+          tagAssignments: [{ tag: tag() }],
+        }),
+      ]);
+    prisma.assetTag.findMany.mockResolvedValue([{ id: "tag_1" }]);
+
+    const result = await service.batchAssets("project_1", {
+      assetIds: ["asset_1", "asset_1"],
+      action: "add_tags",
+      tagIds: ["tag_1"],
+    });
+
+    expect(prisma.assetTagAssignment.createMany).toHaveBeenCalledWith({
+      data: [{ assetId: "asset_1", tagId: "tag_1" }],
+      skipDuplicates: true,
+    });
+    expect(result.assets[0]).toMatchObject({ tags: [{ id: "tag_1" }] });
+  });
+
+  it("applies asset analysis captions and merged classifications to metadata", async () => {
+    prisma.asset.findMany
+      .mockResolvedValueOnce([{ id: "asset_1" }])
+      .mockResolvedValueOnce([asset({ metadataJson: { caption: "Hero caption", classifications: ["existing", "hero"] } })]);
+    prisma.asset.findFirst.mockResolvedValue(
+      asset({ metadataJson: { previewKind: "image", classifications: ["existing"] } }),
+    );
+
+    const result = await service.applyAssetAnalysis("project_1", {
+      operation: "asset_caption",
+      provider: "mock-vision",
+      model: "mock-vision-v1",
+      overwrite: false,
+      results: [
+        {
+          assetId: "asset_1",
+          caption: "Hero caption",
+          classifications: ["hero"],
+        },
+      ],
+      completedAt: "2026-06-14T00:00:00.000Z",
+    });
+
+    expect(prisma.asset.update).toHaveBeenCalledWith({
+      where: { id: "asset_1" },
+      data: {
+        metadataJson: expect.objectContaining({
+          caption: "Hero caption",
+          classifications: ["existing", "hero"],
+          analysisProvider: "mock-vision",
+          analysisModel: "mock-vision-v1",
+          analyzedAt: "2026-06-14T00:00:00.000Z",
+        }),
+      },
+    });
+    expect(result[0]).toMatchObject({ id: "asset_1", previewKind: "image" });
+  });
+
+  it("creates derived image assets for crop edits with lineage metadata", async () => {
+    prisma.asset.findFirst.mockResolvedValue(asset({ width: 100, height: 80 }));
+    prisma.asset.create.mockResolvedValue(
+      asset({
+        id: "asset_edit_1",
+        storageKey: "project_1/asset-edits/edit.png",
+        originalFilename: "edit.png",
+        metadataJson: {
+          previewKind: "image",
+          editAction: "crop",
+          derivedFromAssetId: "asset_1",
+        },
+      }),
+    );
+
+    const result = await service.editAsset("project_1", "asset_1", {
+      action: "crop",
+      crop: { x: 0, y: 0, width: 50, height: 50 },
+    });
+
+    expect(storage.readObject).toHaveBeenCalledWith("project_1/hero.png");
+    expect(storage.writeObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storageKey: expect.stringContaining("project_1/asset-edits/asset_1-crop-1-"),
+      }),
+    );
+    expect(prisma.asset.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        type: "image",
+        purpose: "uploaded",
+        metadataJson: expect.objectContaining({
+          editAction: "crop",
+          derivedFromAssetId: "asset_1",
+          crop: { x: 0, y: 0, width: 50, height: 50 },
+        }),
+      }),
+    });
+    expect(result.assets[0]).toMatchObject({ id: "asset_edit_1" });
+  });
+
   it("returns text previews for document assets", async () => {
     prisma.asset.findFirst.mockResolvedValue(
       asset({
@@ -513,6 +732,23 @@ describe("AssetsService", () => {
 
     expect(storage.deleteObject).toHaveBeenCalledWith("project_1/hero.png");
     expect(prisma.asset.delete).toHaveBeenCalledWith({ where: { id: "asset_1" } });
+  });
+
+  it("blocks deletion while an asset is referenced by canvas data", async () => {
+    prisma.asset.findFirst.mockResolvedValue(asset());
+    prisma.canvasNode.findMany.mockResolvedValue([
+      {
+        id: "node_1",
+        dataJson: { referenceAssetIds: ["asset_1"] },
+      },
+    ]);
+
+    await expect(service.deleteAsset("project_1", "asset_1")).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+
+    expect(storage.deleteObject).not.toHaveBeenCalled();
+    expect(prisma.asset.delete).not.toHaveBeenCalled();
   });
 
   it("reports missing projects and assets", async () => {

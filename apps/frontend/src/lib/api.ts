@@ -1,7 +1,12 @@
 import type {
   AssetDetail,
+  AssetBatchInput,
+  AssetBatchResult,
+  AssetCollectionRecord,
+  AssetListFilters,
   AssetListItem,
   AssetPurpose,
+  AssetTagRecord,
   CanvasLoadResult,
   CreateCanvasEdgeInput,
   CreateCanvasEdgeResult,
@@ -22,6 +27,18 @@ import type {
   CreateEditorExportResult,
   CreateGenerationJobInput,
   CreateGenerationJobResult,
+  CreateAssetAnalysisJobInput,
+  CreateAssetAnalysisJobResult,
+  CreateWorkflowDefinitionInput,
+  CreateWorkflowVersionInput,
+  CreateWorkflowRunInput,
+  WorkflowDefinitionResult,
+  WorkflowListResult,
+  WorkflowRunResult,
+  ExportCanvasFragmentInput,
+  ExportCanvasFragmentResult,
+  ImportCanvasFragmentInput,
+  ImportCanvasFragmentResult,
   CreateNovelDocumentInput,
   CreateNovelDocumentResult,
   CreateProjectInput,
@@ -48,6 +65,8 @@ import type {
   ProviderConnectionTestInput,
   ProviderConnectionTestResult,
   ProviderManagementResult,
+  ProviderModelDiscoveryInput,
+  ProviderModelDiscoveryResult,
   ProgrammableProviderDefinitionResult,
   ProgrammableProviderDefinitionSummary,
   ImportNovelSourceInput,
@@ -184,8 +203,39 @@ export function deleteProject(projectId: string): Promise<{ deleted: true }> {
   });
 }
 
-export function listAssets(projectId: string): Promise<AssetListItem[]> {
-  return requestJson<AssetListItem[]>(`/projects/${projectId}/assets`);
+function assetFiltersQuery(filters?: AssetListFilters): string {
+  if (!filters) {
+    return "";
+  }
+
+  const params = new URLSearchParams();
+  if (filters.query) {
+    params.set("query", filters.query);
+  }
+  if (filters.type) {
+    params.set("type", filters.type);
+  }
+  if (filters.purpose) {
+    params.set("purpose", filters.purpose);
+  }
+  if (filters.collectionId) {
+    params.set("collectionId", filters.collectionId);
+  }
+  if (filters.tagIds?.length) {
+    params.set("tagIds", filters.tagIds.join(","));
+  }
+
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export function listAssets(
+  projectId: string,
+  filters?: AssetListFilters,
+): Promise<AssetListItem[]> {
+  return requestJson<AssetListItem[]>(
+    `/projects/${projectId}/assets${assetFiltersQuery(filters)}`,
+  );
 }
 
 export function getAsset(projectId: string, assetId: string): Promise<AssetDetail> {
@@ -211,6 +261,54 @@ export function uploadAsset(
 export function deleteAsset(projectId: string, assetId: string): Promise<{ deleted: true }> {
   return requestJson<{ deleted: true }>(`/projects/${projectId}/assets/${assetId}`, {
     method: "DELETE",
+  });
+}
+
+export function listAssetCollections(projectId: string): Promise<AssetCollectionRecord[]> {
+  return requestJson<AssetCollectionRecord[]>(`/projects/${projectId}/assets/collections`);
+}
+
+export function createAssetCollection(
+  projectId: string,
+  input: Pick<AssetCollectionRecord, "name"> & Partial<Pick<AssetCollectionRecord, "kind" | "parentId" | "sortOrder">>,
+): Promise<AssetCollectionRecord> {
+  return requestJson<AssetCollectionRecord>(`/projects/${projectId}/assets/collections`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function listAssetTags(projectId: string): Promise<AssetTagRecord[]> {
+  return requestJson<AssetTagRecord[]>(`/projects/${projectId}/assets/tags`);
+}
+
+export function createAssetTag(
+  projectId: string,
+  input: Pick<AssetTagRecord, "name"> & Partial<Pick<AssetTagRecord, "color">>,
+): Promise<AssetTagRecord> {
+  return requestJson<AssetTagRecord>(`/projects/${projectId}/assets/tags`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function batchAssets(
+  projectId: string,
+  input: AssetBatchInput,
+): Promise<AssetBatchResult> {
+  return requestJson<AssetBatchResult>(`/projects/${projectId}/assets/batch`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function createAssetAnalysisJob(
+  projectId: string,
+  input: CreateAssetAnalysisJobInput,
+): Promise<CreateAssetAnalysisJobResult> {
+  return requestJson<CreateAssetAnalysisJobResult>(`/projects/${projectId}/generation/jobs/asset-analysis`, {
+    method: "POST",
+    body: JSON.stringify(input),
   });
 }
 
@@ -403,6 +501,30 @@ export function importStoryboardToCanvas(
   );
 }
 
+export function exportCanvasFragment(
+  projectId: string,
+  input: ExportCanvasFragmentInput,
+): Promise<ExportCanvasFragmentResult> {
+  return requestJson<ExportCanvasFragmentResult>(`/projects/${projectId}/canvas/fragments/export`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function importCanvasFragment(
+  projectId: string,
+  input: ImportCanvasFragmentInput,
+): Promise<ImportCanvasFragmentResult> {
+  return requestJson<ImportCanvasFragmentResult>(`/projects/${projectId}/canvas/fragments/import`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function generationEventsUrl(projectId: string): string {
+  return apiUrl(`/projects/${projectId}/generation/events`);
+}
+
 export function createAgentCanvasAction(
   projectId: string,
   input: CreateAgentCanvasActionInput,
@@ -591,6 +713,53 @@ export function getProviderManagement(projectId: string): Promise<ProviderManage
   return requestJson<ProviderManagementResult>(`/projects/${projectId}/providers`);
 }
 
+export function listWorkflows(projectId: string): Promise<WorkflowListResult> {
+  return requestJson<WorkflowListResult>(`/projects/${projectId}/workflows`);
+}
+
+export function createWorkflowDefinition(
+  projectId: string,
+  input: CreateWorkflowDefinitionInput,
+): Promise<WorkflowDefinitionResult> {
+  return requestJson<WorkflowDefinitionResult>(`/projects/${projectId}/workflows`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function createWorkflowVersion(
+  projectId: string,
+  workflowId: string,
+  input: CreateWorkflowVersionInput,
+): Promise<WorkflowDefinitionResult> {
+  return requestJson<WorkflowDefinitionResult>(`/projects/${projectId}/workflows/${workflowId}/versions`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function activateWorkflowVersion(
+  projectId: string,
+  workflowId: string,
+  versionId: string,
+): Promise<WorkflowDefinitionResult> {
+  return requestJson<WorkflowDefinitionResult>(
+    `/projects/${projectId}/workflows/${workflowId}/versions/${versionId}/activate`,
+    { method: "POST" },
+  );
+}
+
+export function runWorkflow(
+  projectId: string,
+  workflowId: string,
+  input: CreateWorkflowRunInput,
+): Promise<WorkflowRunResult> {
+  return requestJson<WorkflowRunResult>(`/projects/${projectId}/workflows/${workflowId}/run`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function listProgrammableProviders(
   projectId: string,
 ): Promise<{ providers: ProgrammableProviderDefinitionSummary[] }> {
@@ -707,6 +876,19 @@ export function updateProviderConfig(
     `/projects/${projectId}/providers/${kind}/${provider}`,
     {
       method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function discoverProviderModels(
+  projectId: string,
+  input: ProviderModelDiscoveryInput,
+): Promise<ProviderModelDiscoveryResult> {
+  return requestJson<ProviderModelDiscoveryResult>(
+    `/projects/${projectId}/providers/discover-models`,
+    {
+      method: "POST",
       body: JSON.stringify(input),
     },
   );

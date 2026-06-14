@@ -22,12 +22,15 @@ export type GenerationJobStatus = (typeof GENERATION_JOB_STATUSES)[number];
 
 export const GENERATION_OPERATIONS = [
   "novel_to_storyboard",
+  "asset_caption",
+  "asset_classification",
   "shot_to_image",
   "character_to_image",
   "location_to_image",
   "image_refinement",
   "image_to_video",
   "shot_to_video",
+  "workflow_run",
   "batch_shots_to_images",
   "batch_images_to_videos",
   "editor_export",
@@ -44,13 +47,13 @@ export const PHASE_8_GENERATION_OPERATIONS = [
 ] as const;
 export type Phase8GenerationOperation = (typeof PHASE_8_GENERATION_OPERATIONS)[number];
 
-export const IMAGE_PROVIDER_IDS = ["mock-image", "image2", "banana"] as const;
+export const IMAGE_PROVIDER_IDS = ["mock-image", "image2", "banana", "generic-image"] as const;
 export type ImageProviderId = (typeof IMAGE_PROVIDER_IDS)[number];
 
 export const IMAGE_PROVIDER_MODES = ["text_to_image", "image_to_image", "multi_reference"] as const;
 export type ImageProviderMode = (typeof IMAGE_PROVIDER_MODES)[number];
 
-export const VIDEO_PROVIDER_IDS = ["mock-video", "seedance", "happyhorse"] as const;
+export const VIDEO_PROVIDER_IDS = ["mock-video", "seedance", "happyhorse", "generic-video"] as const;
 export type VideoProviderId = (typeof VIDEO_PROVIDER_IDS)[number];
 
 export type ProgrammableProviderId = `custom:${string}`;
@@ -71,6 +74,30 @@ export const VIDEO_PROVIDER_TASK_STATUSES = [
 ] as const;
 export type VideoProviderTaskStatus = (typeof VIDEO_PROVIDER_TASK_STATUSES)[number];
 
+export const VIDEO_REFERENCE_MEDIA_ROLES = [
+  "first_frame",
+  "last_frame",
+  "reference_image",
+  "reference_video",
+  "reference_audio",
+] as const;
+export type VideoReferenceMediaRole = (typeof VIDEO_REFERENCE_MEDIA_ROLES)[number];
+
+export interface VideoReferenceMediaInput {
+  assetId: string;
+  role: VideoReferenceMediaRole;
+  sourceNodeId?: string;
+}
+
+export const WORKFLOW_RUN_KINDS = ["comfyui", "runninghub"] as const;
+export type WorkflowRunKind = (typeof WORKFLOW_RUN_KINDS)[number];
+
+export const WORKFLOW_OUTPUT_KINDS = ["image", "video", "audio", "document"] as const;
+export type WorkflowOutputKind = (typeof WORKFLOW_OUTPUT_KINDS)[number];
+
+export const ASSET_ANALYSIS_OPERATIONS = ["asset_caption", "asset_classification"] as const;
+export type AssetAnalysisOperation = (typeof ASSET_ANALYSIS_OPERATIONS)[number];
+
 export const PROVIDER_KINDS = ["llm", "image", "video", "editor"] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
@@ -85,8 +112,17 @@ export type ProviderCredentialUpdateAction = (typeof PROVIDER_CREDENTIAL_UPDATE_
 export const PROVIDER_TEST_STATUSES = ["untested", "succeeded", "failed"] as const;
 export type ProviderTestStatus = (typeof PROVIDER_TEST_STATUSES)[number];
 
-export const PROVIDER_CREDENTIAL_SOURCES = ["environment", "stored"] as const;
+export const PROVIDER_CREDENTIAL_SOURCES = ["environment", "stored", "temporary"] as const;
 export type ProviderCredentialSource = (typeof PROVIDER_CREDENTIAL_SOURCES)[number];
+
+export const PROVIDER_PROTOCOLS = ["openai_compatible", "gemini", "ark", "mock"] as const;
+export type ProviderProtocol = (typeof PROVIDER_PROTOCOLS)[number];
+
+export const PROVIDER_IMAGE_REQUEST_MODES = ["openai", "gemini", "ark"] as const;
+export type ProviderImageRequestMode = (typeof PROVIDER_IMAGE_REQUEST_MODES)[number];
+
+export const PROVIDER_VIDEO_REQUEST_MODES = ["task", "sync", "mock"] as const;
+export type ProviderVideoRequestMode = (typeof PROVIDER_VIDEO_REQUEST_MODES)[number];
 
 export const PROGRAMMABLE_PROVIDER_VERSION_STATUSES = ["valid", "invalid"] as const;
 export type ProgrammableProviderVersionStatus = (typeof PROGRAMMABLE_PROVIDER_VERSION_STATUSES)[number];
@@ -552,6 +588,10 @@ export interface VideoProviderCatalogItem {
   supportsLastFrame: boolean;
   supportsReferenceImages: boolean;
   maxReferenceImages: number;
+  supportsReferenceVideo?: boolean;
+  maxReferenceVideos?: number;
+  supportsReferenceAudio?: boolean;
+  maxReferenceAudios?: number;
   supportsCancel: boolean;
   defaultDurationSeconds: number;
   supportedDurationSeconds: number[];
@@ -569,6 +609,14 @@ export interface VideoProviderCatalogResult {
 export interface ProviderCredentialUpdate {
   action: ProviderCredentialUpdateAction;
   value?: string;
+}
+
+export interface ProviderConfigParams {
+  protocol?: ProviderProtocol;
+  baseUrl?: string;
+  imageRequestMode?: ProviderImageRequestMode;
+  videoRequestMode?: ProviderVideoRequestMode;
+  safeParams?: CanvasSnapshotJson;
 }
 
 export interface ProgrammableProviderCredentialDefinition {
@@ -699,7 +747,37 @@ export interface ProgrammableProviderRuntimeConfig {
 export interface UpdateProviderConfigInput {
   enabled?: boolean;
   defaultModel?: string;
+  params?: ProviderConfigParams;
   credential?: ProviderCredentialUpdate;
+}
+
+export interface ProviderDiscoveryCredentialInput {
+  source?: ProviderCredentialSource;
+  value?: string;
+}
+
+export interface ProviderModelDiscoveryInput {
+  kind: ManagedProviderKind;
+  provider?: ManagedProviderId;
+  protocol?: ProviderProtocol;
+  baseUrl?: string;
+  imageRequestMode?: ProviderImageRequestMode;
+  videoRequestMode?: ProviderVideoRequestMode;
+  credential?: ProviderDiscoveryCredentialInput;
+}
+
+export interface ProviderModelGroups {
+  image: string[];
+  video: string[];
+  chat: string[];
+}
+
+export interface ProviderModelDiscoveryResult {
+  ok: boolean;
+  detectedProtocol?: ProviderProtocol;
+  message: string;
+  modelGroups: ProviderModelGroups;
+  rawCount: number;
 }
 
 export interface ProviderConnectionTestInput {
@@ -718,6 +796,7 @@ export interface ProviderManagementMetadata {
   credentialConfigured: boolean;
   credentialSource?: ProviderCredentialSource;
   configuredDefaultModel?: string;
+  params?: ProviderConfigParams;
   lastTest?: ProviderConnectionTestSummary;
 }
 
@@ -756,6 +835,7 @@ export interface ProviderRuntimeConfig {
   kind: ManagedProviderKind;
   provider: ManagedProviderId;
   env: Record<string, string | undefined>;
+  params?: ProviderConfigParams;
   programmableProvider?: ProgrammableProviderRuntimeConfig;
 }
 
@@ -779,15 +859,18 @@ export interface VideoGenerationSettings {
   videoAspectRatio?: ProjectAspectRatio;
   durationSeconds?: number;
   resolution?: VideoProviderResolution;
+  referenceMedia?: VideoReferenceMediaInput[];
   videoProviderParams?: CanvasSnapshotJson;
 }
 
 export function normalizeUpdateProviderConfigInput(input: unknown): UpdateProviderConfigInput {
   const raw = dataObject(input);
   const credential = normalizeProviderCredentialUpdate(raw.credential);
+  const params = normalizeProviderConfigParams(raw.params);
   return compactObject({
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : undefined,
     defaultModel: optionalString(raw.defaultModel),
+    params,
     credential,
   });
 }
@@ -799,9 +882,41 @@ export function normalizeProviderConnectionTestInput(input: unknown): ProviderCo
   });
 }
 
+export function normalizeProviderModelDiscoveryInput(input: unknown): ProviderModelDiscoveryInput {
+  const raw = dataObject(input);
+  const kind = managedProviderKind(raw.kind) ?? "image";
+  return compactObject({
+    kind,
+    provider: managedProviderId(kind, raw.provider),
+    protocol: providerProtocol(raw.protocol),
+    baseUrl: optionalString(raw.baseUrl),
+    imageRequestMode: providerImageRequestMode(raw.imageRequestMode),
+    videoRequestMode: providerVideoRequestMode(raw.videoRequestMode),
+    credential: normalizeProviderDiscoveryCredential(raw.credential),
+  });
+}
+
 export function managedProviderKind(value: unknown): ManagedProviderKind | undefined {
   return MANAGED_PROVIDER_KINDS.includes(value as ManagedProviderKind)
     ? (value as ManagedProviderKind)
+    : undefined;
+}
+
+export function providerProtocol(value: unknown): ProviderProtocol | undefined {
+  return PROVIDER_PROTOCOLS.includes(value as ProviderProtocol)
+    ? (value as ProviderProtocol)
+    : undefined;
+}
+
+export function providerImageRequestMode(value: unknown): ProviderImageRequestMode | undefined {
+  return PROVIDER_IMAGE_REQUEST_MODES.includes(value as ProviderImageRequestMode)
+    ? (value as ProviderImageRequestMode)
+    : undefined;
+}
+
+export function providerVideoRequestMode(value: unknown): ProviderVideoRequestMode | undefined {
+  return PROVIDER_VIDEO_REQUEST_MODES.includes(value as ProviderVideoRequestMode)
+    ? (value as ProviderVideoRequestMode)
     : undefined;
 }
 
@@ -961,6 +1076,7 @@ export interface WorkerGenerationJobSucceedInput {
   providerOutput?: GeneratedMediaProviderOutput;
   providerOutputs?: GeneratedMediaProviderOutput[];
   packageOutput?: EditorExportPackageOutput;
+  assetAnalysisOutput?: AssetAnalysisJobOutput;
 }
 
 export interface WorkerEditorExportJobSucceedInput {
@@ -986,11 +1102,13 @@ export interface WorkerGenerationJobCancelInput {
 export type GenerationJobInput =
   | NovelToStoryboardJobInput
   | AgentCanvasActionJobInput
+  | AssetAnalysisJobInput
   | ShotToImageJobInput
   | CharacterToImageJobInput
   | LocationToImageJobInput
   | ImageRefinementJobInput
   | ImageToVideoJobInput
+  | WorkflowRunJobInput
   | EditorExportJobInput;
 
 export interface NovelToStoryboardJobInput {
@@ -1088,6 +1206,49 @@ export interface AgentCanvasActionJobOutput {
   undo?: AgentCanvasActionUndoMetadata;
 }
 
+export interface AssetAnalysisJobInput {
+  operation: AssetAnalysisOperation;
+  projectId: string;
+  assetIds: string[];
+  provider: "mock-vision" | string;
+  model?: string;
+  overwrite?: boolean;
+  prompt?: string;
+  forceFailure?: boolean;
+}
+
+export interface CreateAssetAnalysisJobInput {
+  operation: AssetAnalysisOperation;
+  assetIds: string[];
+  provider?: string;
+  model?: string;
+  overwrite?: boolean;
+  prompt?: string;
+  forceFailure?: boolean;
+}
+
+export interface CreateAssetAnalysisJobResult {
+  job: GenerationJobRecord<AssetAnalysisJobInput>;
+  queueSummary: GenerationQueueSummary;
+}
+
+export interface AssetAnalysisItemOutput {
+  assetId: string;
+  caption?: string;
+  classifications?: string[];
+  skipped?: boolean;
+  errorMessage?: string;
+}
+
+export interface AssetAnalysisJobOutput {
+  operation: AssetAnalysisOperation;
+  provider: string;
+  model?: string;
+  overwrite: boolean;
+  results: AssetAnalysisItemOutput[];
+  completedAt: string;
+}
+
 export interface CreateAgentCanvasActionResult {
   job: GenerationJobRecord<AgentCanvasActionJobInput, AgentCanvasActionJobOutput>;
   nodes: CanvasNodeRecord[];
@@ -1172,12 +1333,30 @@ export interface ImageToVideoJobInput {
   parentShotNodeId?: string;
   parentShotTitle?: string;
   referenceAssetIds: string[];
+  referenceMedia?: VideoReferenceMediaInput[];
   sourceNodeIds: string[];
   provider: string;
   providerVersionId?: string;
   model?: string;
   providerParams?: CanvasSnapshotJson;
   generationSettings?: ResolvedGenerationSettings;
+  forceFailure?: boolean;
+}
+
+export interface WorkflowRunJobInput {
+  operation: "workflow_run";
+  projectId: string;
+  workflowDefinitionId: string;
+  workflowVersionId: string;
+  workflowKind: WorkflowRunKind;
+  provider: string;
+  model?: string;
+  sourceNodeId?: string;
+  prompt?: string;
+  outputKind: WorkflowOutputKind;
+  fieldValues?: CanvasSnapshotJson;
+  referenceAssetIds: string[];
+  providerParams?: CanvasSnapshotJson;
   forceFailure?: boolean;
 }
 
@@ -1441,7 +1620,7 @@ export interface GeneratedMediaJobTargetOutput {
 }
 
 export interface GeneratedMediaJobOutput {
-  operation: "shot_to_image" | "image_refinement" | "image_to_video";
+  operation: "shot_to_image" | "image_refinement" | "image_to_video" | "workflow_run";
   sourceNodeId: string;
   targetNodeId: string;
   assetId: string;
@@ -1454,6 +1633,25 @@ export interface GeneratedMediaJobOutput {
   providerOutput: GeneratedMediaProviderOutput;
   targets?: GeneratedMediaJobTargetOutput[];
   completedAt: string;
+}
+
+export const GENERATION_EVENT_TYPES = [
+  "job.created",
+  "job.updated",
+  "asset.created",
+  "canvas.updated",
+] as const;
+export type GenerationEventType = (typeof GENERATION_EVENT_TYPES)[number];
+
+export interface GenerationEvent {
+  type: GenerationEventType;
+  projectId: string;
+  jobId?: string;
+  assetId?: string;
+  canvasDocumentId?: string;
+  status?: GenerationJobStatus;
+  updatedAt: string;
+  payload?: CanvasSnapshotJson;
 }
 
 export interface ReferenceAssetJobOutput {
@@ -1627,4 +1825,43 @@ function normalizeProviderCredentialUpdate(input: unknown): ProviderCredentialUp
     return undefined;
   }
   return { action, value };
+}
+
+function normalizeProviderConfigParams(input: unknown): ProviderConfigParams | undefined {
+  const raw = dataObject(input);
+  const params = compactObject({
+    protocol: providerProtocol(raw.protocol),
+    baseUrl: optionalString(raw.baseUrl),
+    imageRequestMode: providerImageRequestMode(raw.imageRequestMode),
+    videoRequestMode: providerVideoRequestMode(raw.videoRequestMode),
+    safeParams: safeJsonObject(raw.safeParams),
+  });
+  return Object.keys(params).length ? params : undefined;
+}
+
+function normalizeProviderDiscoveryCredential(input: unknown): ProviderDiscoveryCredentialInput | undefined {
+  const raw = dataObject(input);
+  const source = PROVIDER_CREDENTIAL_SOURCES.includes(raw.source as ProviderCredentialSource)
+    ? (raw.source as ProviderCredentialSource)
+    : undefined;
+  const value = optionalString(raw.value);
+  const credential = compactObject({ source, value });
+  return Object.keys(credential).length ? credential : undefined;
+}
+
+function safeJsonObject(input: unknown): CanvasSnapshotJson | undefined {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return undefined;
+  }
+  const entries = Object.entries(input as Record<string, unknown>).filter(([key, value]) => {
+    const normalizedKey = key.toLowerCase();
+    return (
+      !normalizedKey.includes("key") &&
+      !normalizedKey.includes("secret") &&
+      !normalizedKey.includes("token") &&
+      !normalizedKey.includes("authorization") &&
+      value !== undefined
+    );
+  });
+  return entries.length ? Object.fromEntries(entries) as CanvasSnapshotJson : undefined;
 }

@@ -1,8 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import React from "react";
+import type { TLShapeId } from "tldraw";
 import { describe, expect, it, vi } from "vitest";
 
-import { CanvasEditor } from "./canvas-editor";
+import { CanvasEditor, focusCanvasContent, focusCanvasSelection } from "./canvas-editor";
 import { CanvasSaveStatusBadge } from "./canvas-save-status";
 
 vi.mock("tldraw", () => ({
@@ -56,5 +57,62 @@ describe("CanvasEditor", () => {
     expect(
       renderToStaticMarkup(<CanvasSaveStatusBadge status="failed" error="offline" />),
     ).toContain("Save failed");
+  });
+
+  it("brings the selected card into view and returns focus to the canvas", () => {
+    const focus = vi.fn();
+    const zoomToSelectionIfOffscreen = vi.fn();
+    const scheduledFrames: Array<() => void> = [];
+
+    focusCanvasSelection(
+      {
+        getContainer: () => ({ focus }) as unknown as HTMLElement,
+        zoomToSelectionIfOffscreen,
+      },
+      (callback) => scheduledFrames.push(callback),
+      (callback) => callback(),
+    );
+
+    expect(zoomToSelectionIfOffscreen).not.toHaveBeenCalled();
+
+    scheduledFrames[0]?.();
+
+    expect(zoomToSelectionIfOffscreen).toHaveBeenCalledWith(256, { inset: 0 });
+    expect(focus).toHaveBeenCalledTimes(2);
+  });
+
+  it("fits existing project canvas content after mount", () => {
+    const zoomToFit = vi.fn();
+    const scheduledFrames: Array<() => void> = [];
+
+    focusCanvasContent(
+      {
+        getCurrentPageShapeIds: () => new Set(["shape:shot_1" as TLShapeId]),
+        zoomToFit,
+      },
+      (callback) => scheduledFrames.push(callback),
+    );
+
+    expect(zoomToFit).not.toHaveBeenCalled();
+
+    scheduledFrames[0]?.();
+
+    expect(zoomToFit).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves an empty project canvas alone after mount", () => {
+    const zoomToFit = vi.fn();
+
+    focusCanvasContent(
+      {
+        getCurrentPageShapeIds: () => new Set(),
+        zoomToFit,
+      },
+      () => {
+        throw new Error("empty canvas should not schedule a camera move");
+      },
+    );
+
+    expect(zoomToFit).not.toHaveBeenCalled();
   });
 });

@@ -196,6 +196,7 @@ describe("CanvasInspector", () => {
     expect(html).toContain("Prompt preview");
     expect(html).toContain("Generate Image");
     expect(html).toContain("Assets");
+    expect(html.indexOf("Visual Description")).toBeLessThan(html.indexOf("Project defaults"));
   });
 
   it("renders project generation defaults and Shot-level overrides", () => {

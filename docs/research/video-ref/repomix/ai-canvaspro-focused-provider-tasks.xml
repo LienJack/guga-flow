@@ -1,0 +1,272 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files and files not matching ignore patterns, combined into a single document by Repomix.
+The content has been processed where comments have been removed, empty lines have been removed, line numbers have been added, content has been compressed (code blocks are separated by ⋮---- delimiter).
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: api/requester.js, api/apiBase.js, api/index.js, api/aiImageApi.js, api/aiTextApi.js, api/aiVideoApi.js, api/aiAudioApi.js, api/providerConnectionTestApi.js, api/dreaminaGenApi.js, api/runninghubTaskApi.js, api/runninghubWorkflowApi.js, api/adapters/*.js, api/adapters/modelApiResolvers/index.js, api/adapters/runninghubWorkflowResolvers/index.js, api/errors/**/*.js, src/core/generationTaskRuntime.js, src/components/aigenImage/taskOrchestrationModule.js, src/components/aigenImage/taskOrchestrationModule.impl.js, src/components/aigenText/taskOrchestrationModule.js, src/components/aigenVideo/taskOrchestrationMixin.js, src/components/audio-node/audioGenerationResultRenderer.js, src/modules/TaskCenterManager.js, src/modules/modelInputPolicy.js, src/modules/imageModelCapabilities.js, src/services/mediaTaskService.js, src/manifests/modelRegistry.js
+- Files matching these patterns are excluded: **/*.test.js, **/*.spec.js, vendor/**, images/**, assets/**, build/**, docs/**, native/**, package-lock.json
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Code comments have been removed from supported file types
+- Empty lines have been removed from all files
+- Line numbers have been added to the beginning of each line
+- Content has been compressed - code blocks are separated by ⋮---- delimiter
+- Long base64 data strings (e.g., data:image/png;base64,...) have been truncated to reduce token count
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+api/
+  adapters/
+    modelApiResolvers/
+      index.js
+    runninghubWorkflowResolvers/
+      index.js
+    ApimartAdapter.js
+    apimartPrivateAvatarAssetResolver.js
+    GeminiAdapter.js
+    ModelApiManifestNormalizer.js
+    modelApiMappingEngine.js
+    PpioAdapter.js
+    RunningHubAdapter.js
+  errors/
+    parsers/
+      AgnesErrorParser.js
+      ApimartErrorParser.js
+      GrsaiErrorParser.js
+      PpioErrorParser.js
+      RunningHubErrorParser.js
+      RunningHubModelErrorParser.js
+    ApiError.js
+    ErrorParser.js
+    index.js
+  aiAudioApi.js
+  aiImageApi.js
+  aiTextApi.js
+  aiVideoApi.js
+  apiBase.js
+  dreaminaGenApi.js
+  index.js
+  providerConnectionTestApi.js
+  requester.js
+  runninghubTaskApi.js
+  runninghubWorkflowApi.js
+src/
+  components/
+    aigenImage/
+      taskOrchestrationModule.impl.js
+      taskOrchestrationModule.js
+    aigenText/
+      taskOrchestrationModule.js
+    aigenVideo/
+      taskOrchestrationMixin.js
+    audio-node/
+      audioGenerationResultRenderer.js
+  core/
+    generationTaskRuntime.js
+  manifests/
+    modelRegistry.js
+  modules/
+    imageModelCapabilities.js
+    modelInputPolicy.js
+    TaskCenterManager.js
+  services/
+    mediaTaskService.js
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="api/adapters/modelApiResolvers/index.js">
+const a7_0x4e97bc=a7_0x52b6;(function(_0x5b7334,_0x2fadc)
+</file>
+
+<file path="api/adapters/runninghubWorkflowResolvers/index.js">
+const a12_0x3567e3=a12_0x2359;(function(_0x5aa17e,_0x3d048a)
+</file>
+
+<file path="api/adapters/ApimartAdapter.js">
+function a0_0x2880()
+</file>
+
+<file path="api/adapters/apimartPrivateAvatarAssetResolver.js">
+(function(_0x22997a,_0xe79919)
+</file>
+
+<file path="api/adapters/GeminiAdapter.js">
+function a3_0x5ecc()
+</file>
+
+<file path="api/adapters/ModelApiManifestNormalizer.js">
+const a4_0x3c9b7c=a4_0x574e;(function(_0x435076,_0x20604a)
+</file>
+
+<file path="api/adapters/modelApiMappingEngine.js">
+(function(_0x233406,_0x9b501e)
+</file>
+
+<file path="api/adapters/PpioAdapter.js">
+const a8_0x37023e=a8_0x50da;(function(_0x4b8294,_0x4a2bc7)
+</file>
+
+<file path="api/adapters/RunningHubAdapter.js">
+const a10_0x342e73=a10_0x1e9d;(function(_0x387615,_0x5372d4)
+</file>
+
+<file path="api/errors/parsers/AgnesErrorParser.js">
+const a42_0x4aebb6=a42_0xbe5c;(function(_0x199d09,_0x54ef59)
+</file>
+
+<file path="api/errors/parsers/ApimartErrorParser.js">
+const a43_0x267165=a43_0x5673;(function(_0x1b34da,_0x550740)
+</file>
+
+<file path="api/errors/parsers/GrsaiErrorParser.js">
+function a44_0x372c()
+</file>
+
+<file path="api/errors/parsers/PpioErrorParser.js">
+const a45_0x2e7d61=a45_0x333a;function a45_0x5a89()
+</file>
+
+<file path="api/errors/parsers/RunningHubErrorParser.js">
+const a46_0x33962f=a46_0x504e;(function(_0x50c9f3,_0x2e601d)
+</file>
+
+<file path="api/errors/parsers/RunningHubModelErrorParser.js">
+const a47_0x538b72=a47_0x38bb;function a47_0x3fd8()
+</file>
+
+<file path="api/errors/ApiError.js">
+const a38_0x563e5a=a38_0x323b;function a38_0x392a()
+</file>
+
+<file path="api/errors/ErrorParser.js">
+(function(_0x537866,_0x555744)
+</file>
+
+<file path="api/errors/index.js">
+(function(_0x594898,_0x5387f4)
+</file>
+
+<file path="api/aiAudioApi.js">
+const a13_0x300c07=a13_0x892d;(function(_0x28112b,_0x2ba417)
+</file>
+
+<file path="api/aiImageApi.js">
+(function(_0x564da2,_0x38860a)
+</file>
+
+<file path="api/aiTextApi.js">
+const a18_0x54e3cd=a18_0x588a;(function(_0x42d935,_0x96368b)
+</file>
+
+<file path="api/aiVideoApi.js">
+const a20_0x14f078=a20_0x1884;(function(_0x23a0d4,_0x48a527)
+</file>
+
+<file path="api/apiBase.js">
+(function(_0x525d40,_0x4762ed)
+</file>
+
+<file path="api/dreaminaGenApi.js">
+const a36_0x3e7ef7=a36_0x2b84;(function(_0x5a1f39,_0x49f307)
+</file>
+
+<file path="api/index.js">
+(function(_0x5626ba,_0x13d508)
+</file>
+
+<file path="api/providerConnectionTestApi.js">
+const a61_0xa60831=a61_0x1e3f;(function(_0x3f7e18,_0xf1555)
+</file>
+
+<file path="api/requester.js">
+(function(_0x5718c6,_0x29943a)
+</file>
+
+<file path="api/runninghubTaskApi.js">
+(function(_0x14da5a,_0x1acc6d)
+</file>
+
+<file path="api/runninghubWorkflowApi.js">
+const a66_0x3aa70f=a66_0x16a8;(function(_0x50d9a7,_0x530f0c)
+</file>
+
+<file path="src/components/aigenImage/taskOrchestrationModule.impl.js">
+const a152_0x2ef4bf=a152_0x2132;(function(_0x209505,_0x282976)
+</file>
+
+<file path="src/components/aigenImage/taskOrchestrationModule.js">
+(function(_0x321fae,_0x334403)
+</file>
+
+<file path="src/components/aigenText/taskOrchestrationModule.js">
+const a169_0x1c542a=a169_0x1fcb;(function(_0x3423b5,_0x40106d)
+</file>
+
+<file path="src/components/aigenVideo/taskOrchestrationMixin.js">
+function a177_0x3fc2()
+</file>
+
+<file path="src/components/audio-node/audioGenerationResultRenderer.js">
+(function(_0x4017f2,_0x4063a0)
+</file>
+
+<file path="src/core/generationTaskRuntime.js">
+const a339_0x23738f=a339_0x35db;(function(_0x551966,_0x3ed34b)
+</file>
+
+<file path="src/manifests/modelRegistry.js">
+const a405_0x3d3b64=a405_0x252c;(function(_0x78f357,_0x30ea1c)
+</file>
+
+<file path="src/modules/imageModelCapabilities.js">
+const a495_0x497781=a495_0x1add;(function(_0x38124b,_0x196f44)
+</file>
+
+<file path="src/modules/modelInputPolicy.js">
+const a521_0x12ec98=a521_0x54c4;(function(_0x5b60d6,_0x4e2de4)
+</file>
+
+<file path="src/modules/TaskCenterManager.js">
+const a585_0xa7dba7=a585_0x404b;(function(_0x5ab848,_0x46ddb6)
+</file>
+
+<file path="src/services/mediaTaskService.js">
+function a644_0x674d()
+</file>
+
+</files>
