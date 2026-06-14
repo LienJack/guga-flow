@@ -60,6 +60,7 @@ import type {
   ClearAgentMemoriesInput,
   ClearAgentMemoriesResult,
   ImageProviderCatalogResult,
+  LlmProviderCatalogResult,
   VideoProviderCatalogResult,
   ProviderConfigUpdateResult,
   ProviderConnectionTestInput,
@@ -705,6 +706,10 @@ export function getImageProviderCatalog(): Promise<ImageProviderCatalogResult> {
   return requestJson<ImageProviderCatalogResult>("/providers/image");
 }
 
+export function getLlmProviderCatalog(): Promise<LlmProviderCatalogResult> {
+  return requestJson<LlmProviderCatalogResult>("/providers/llm");
+}
+
 export function getVideoProviderCatalog(): Promise<VideoProviderCatalogResult> {
   return requestJson<VideoProviderCatalogResult>("/providers/video");
 }
@@ -860,6 +865,10 @@ export function activateSkillTemplateVersion(
 
 export function getProjectImageProviderCatalog(projectId: string): Promise<ImageProviderCatalogResult> {
   return requestJson<ImageProviderCatalogResult>(`/projects/${projectId}/providers/image`);
+}
+
+export function getProjectLlmProviderCatalog(projectId: string): Promise<LlmProviderCatalogResult> {
+  return requestJson<LlmProviderCatalogResult>(`/projects/${projectId}/providers/llm`);
 }
 
 export function getProjectVideoProviderCatalog(projectId: string): Promise<VideoProviderCatalogResult> {

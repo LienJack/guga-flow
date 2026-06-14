@@ -106,6 +106,7 @@ const settingsSummary: ProjectSettingsSummaryResult = {
 };
 
 const providerManagement: ProviderManagementResult = {
+  llm: [],
   image: [
     {
       id: "image2",

@@ -22,13 +22,17 @@ import {
   GENERATION_PACKAGING_REFERENCE_STATUSES,
   IMAGE_PROVIDER_IDS,
   IMAGE_PROVIDER_MODES,
+  LLM_PROVIDER_IDS,
+  LLM_PROVIDER_MODES,
   MANAGED_PROVIDER_KINDS,
   NOVEL_LANGUAGES,
   NOVEL_SOURCE_TYPES,
   PHASE_8_GENERATION_OPERATIONS,
   PHASE_3_CANVAS_NODE_TYPES,
   PROVIDER_CREDENTIAL_UPDATE_ACTIONS,
+  PROVIDER_ERROR_CATEGORIES,
   PROVIDER_KINDS,
+  PROVIDER_PROTOCOLS,
   PROGRAMMABLE_PROVIDER_CREDENTIAL_INPUT_TYPES,
   PROGRAMMABLE_PROVIDER_HTTP_METHODS,
   PROGRAMMABLE_PROVIDER_OUTPUT_SOURCES,
@@ -56,6 +60,7 @@ import {
   managedProviderKind,
   normalizeGenerationCreativeSettings,
   normalizeProviderConnectionTestInput,
+  normalizeProviderErrorCategory,
   normalizeUpdateProviderConfigInput,
   programmableProviderId,
   resolveGenerationSettings,
@@ -178,6 +183,8 @@ describe("shared domain constants", () => {
     ]);
     expect(IMAGE_PROVIDER_IDS).toEqual(["mock-image", "image2", "banana", "generic-image"]);
     expect(IMAGE_PROVIDER_MODES).toEqual(["text_to_image", "image_to_image", "multi_reference"]);
+    expect(LLM_PROVIDER_IDS).toEqual(["mock-llm", "generic-llm", "gemini-llm", "anthropic", "ark-llm"]);
+    expect(LLM_PROVIDER_MODES).toEqual(["chat", "text", "json"]);
     expect(VIDEO_PROVIDER_IDS).toEqual(["mock-video", "seedance", "happyhorse", "generic-video"]);
     expect(VIDEO_PROVIDER_MODES).toEqual([
       "text_to_video",
@@ -193,8 +200,19 @@ describe("shared domain constants", () => {
       "cancelled",
     ]);
     expect(PROVIDER_KINDS).toEqual(["llm", "image", "video", "editor"]);
-    expect(MANAGED_PROVIDER_KINDS).toEqual(["image", "video"]);
+    expect(MANAGED_PROVIDER_KINDS).toEqual(["llm", "image", "video"]);
+    expect(PROVIDER_PROTOCOLS).toEqual(["openai_compatible", "gemini", "anthropic", "ark", "mock"]);
     expect(PROVIDER_CREDENTIAL_UPDATE_ACTIONS).toEqual(["unchanged", "set", "clear"]);
+    expect(PROVIDER_ERROR_CATEGORIES).toEqual([
+      "auth",
+      "quota",
+      "rate_limit",
+      "bad_input",
+      "unsupported_model",
+      "timeout",
+      "safety_block",
+      "unknown",
+    ]);
     expect(PROVIDER_TEST_STATUSES).toEqual(["untested", "succeeded", "failed"]);
     expect(PROGRAMMABLE_PROVIDER_VERSION_STATUSES).toEqual(["valid", "invalid"]);
     expect(PROGRAMMABLE_PROVIDER_CREDENTIAL_INPUT_TYPES).toEqual(["password", "text", "url"]);
@@ -1732,6 +1750,29 @@ describe("shared domain constants", () => {
       defaultModel: "gemini-2.5-flash-image",
       credential: { action: "set", value: "sk-secret-provider-key" },
     });
+    const modelConfigInput = normalizeUpdateProviderConfigInput({
+      defaultModel: "claude-sonnet-4-5",
+      params: {
+        protocol: "anthropic",
+        models: [
+          {
+            id: "claude-sonnet-4-5",
+            displayName: "Claude Sonnet 4.5",
+            kind: "llm",
+            modes: ["chat", "json", "not-real"],
+            contextWindowTokens: 200000,
+            supportsJsonMode: true,
+            apiKey: "should-be-dropped",
+          },
+          { id: "claude-sonnet-4-5", displayName: "Duplicate ignored" },
+          { id: "custom-vision-model", displayName: "Vision", kind: "multimodal", supportsVision: true },
+        ],
+        safeParams: {
+          temperature: 0.2,
+          authorization: "Bearer should-be-dropped",
+        },
+      },
+    });
     const clearProviderConfigInput = normalizeUpdateProviderConfigInput({
       credential: { action: "clear", value: "ignored" },
     });
@@ -2103,19 +2144,51 @@ describe("shared domain constants", () => {
       defaultModel: "gemini-2.5-flash-image",
       credential: { action: "set", value: "sk-secret-provider-key" },
     });
+    expect(modelConfigInput).toEqual({
+      defaultModel: "claude-sonnet-4-5",
+      params: {
+        protocol: "anthropic",
+        models: [
+          {
+            id: "claude-sonnet-4-5",
+            displayName: "Claude Sonnet 4.5",
+            kind: "llm",
+            modes: ["chat", "json"],
+            contextWindowTokens: 200000,
+            supportsJsonMode: true,
+          },
+          {
+            id: "custom-vision-model",
+            displayName: "Vision",
+            kind: "multimodal",
+            supportsVision: true,
+          },
+        ],
+        safeParams: {
+          temperature: 0.2,
+        },
+      },
+    });
     expect(clearProviderConfigInput).toEqual({ credential: { action: "clear" } });
     expect(normalizeUpdateProviderConfigInput({ credential: { action: "set", value: " " } })).toEqual(
       {},
     );
     expect(testProviderInput).toEqual({ model: "gemini-2.5-flash-image" });
     expect(managedProviderKind("image")).toBe("image");
-    expect(managedProviderKind("llm")).toBeUndefined();
+    expect(managedProviderKind("llm")).toBe("llm");
+    expect(managedProviderId("llm", "mock-llm")).toBe("mock-llm");
     expect(managedProviderId("image", "banana")).toBe("banana");
     expect(managedProviderId("video", "banana")).toBeUndefined();
     expect(programmableProviderId("CUSTOM:atlas-cloud")).toBe("custom:atlas-cloud");
     expect(programmableProviderId("custom:image2")).toBeUndefined();
+    expect(programmableProviderId("custom:mock-llm")).toBeUndefined();
     expect(programmableProviderId("custom:bad/path")).toBeUndefined();
     expect(managedProviderId("image", "custom:atlas-cloud")).toBe("custom:atlas-cloud");
+    expect(managedProviderId("llm", "custom:atlas-cloud")).toBeUndefined();
+    expect(normalizeProviderErrorCategory({ status: 429, message: "Too many requests" })).toBe("rate_limit");
+    expect(normalizeProviderErrorCategory({ code: "model_not_found", message: "Unknown model" })).toBe(
+      "unsupported_model",
+    );
     expect(JSON.stringify([imageManagementProvider, videoManagementProvider])).not.toContain(
       "sk-secret-provider-key",
     );

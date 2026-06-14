@@ -16,6 +16,12 @@ export class HealthController {
           selected: config.llmProvider,
           mockAvailable: true,
           realKeyConfigured: config.realProviderKeysConfigured.llm,
+          configuredProviders: {
+            generic: config.llmProviderKeysConfigured.generic,
+            gemini: config.llmProviderKeysConfigured.gemini,
+            anthropic: config.llmProviderKeysConfigured.anthropic,
+            ark: config.llmProviderKeysConfigured.ark,
+          },
         },
         image: {
           selected: config.imageProvider,

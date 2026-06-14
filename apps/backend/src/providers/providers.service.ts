@@ -5,6 +5,10 @@ import type {
   ImageProviderCatalogResult,
   ImageProviderId,
   ImageProviderManagementItem,
+  LlmProviderCatalogItem,
+  LlmProviderCatalogResult,
+  LlmProviderId,
+  LlmProviderManagementItem,
   ManagedProviderKind,
   ManagedProviderId,
   ProgrammableProviderDefinitionResult,
@@ -17,6 +21,7 @@ import type {
   ProviderConnectionTestResult,
   ProviderConnectionTestSummary,
   ProviderCredentialSource,
+  ProviderConfigModelOption,
   ProviderConfigParams,
   ProviderConfigUpdateResult,
   ProviderManagementItem,
@@ -104,7 +109,7 @@ type PrismaWithProgrammableProviders = PrismaService & {
   programmableProviderVersion: ProgrammableProviderVersionDelegate;
 };
 
-type ProviderMetadata = ImageProviderCatalogItem | VideoProviderCatalogItem;
+type ProviderMetadata = LlmProviderCatalogItem | ImageProviderCatalogItem | VideoProviderCatalogItem;
 
 type SecretEnvelope = {
   v: 1;
@@ -116,6 +121,155 @@ type SecretEnvelope = {
 
 function disabledReason(displayName: string): string {
   return `${displayName} server-side key is not configured`;
+}
+
+function llmProviderCatalog(config: AppConfig): LlmProviderCatalogItem[] {
+  return [
+    {
+      id: "mock-llm",
+      displayName: "Mock LLM",
+      enabled: true,
+      requiresApiKey: false,
+      defaultModel: "mock-storyboard",
+      models: [
+        {
+          id: "mock-storyboard",
+          displayName: "Mock Storyboard",
+          default: true,
+          kind: "llm",
+          modes: ["chat", "json"],
+          supportsJsonMode: true,
+        },
+      ],
+      supportedModes: ["chat", "json"],
+      supportsJsonMode: true,
+      supportsToolCalls: false,
+      supportsVision: false,
+      defaultContextWindowTokens: 32000,
+      maxOutputTokens: 4096,
+      parameters: [],
+    },
+    {
+      id: "generic-llm",
+      displayName: "Generic LLM Provider",
+      enabled: config.llmProviderKeysConfigured.generic,
+      disabledReason: config.llmProviderKeysConfigured.generic
+        ? undefined
+        : disabledReason("Generic LLM Provider"),
+      requiresApiKey: true,
+      defaultModel: "chat-model",
+      models: [
+        {
+          id: "chat-model",
+          displayName: "Chat model",
+          default: true,
+          kind: "llm",
+          modes: ["chat", "json"],
+          supportsJsonMode: true,
+        },
+      ],
+      supportedModes: ["chat", "text", "json"],
+      supportsJsonMode: true,
+      supportsToolCalls: true,
+      supportsVision: false,
+      parameters: [
+        {
+          id: "temperature",
+          label: "Temperature",
+          type: "number",
+          defaultValue: 0.7,
+          min: 0,
+          max: 2,
+        },
+      ],
+    },
+    {
+      id: "gemini-llm",
+      displayName: "Gemini LLM",
+      enabled: config.llmProviderKeysConfigured.gemini,
+      disabledReason: config.llmProviderKeysConfigured.gemini
+        ? undefined
+        : disabledReason("Gemini LLM"),
+      requiresApiKey: true,
+      defaultModel: "gemini-2.5-flash",
+      models: [
+        {
+          id: "gemini-2.5-flash",
+          displayName: "Gemini 2.5 Flash",
+          default: true,
+          kind: "llm",
+          modes: ["chat", "json"],
+          supportsJsonMode: true,
+          supportsVision: true,
+        },
+        {
+          id: "gemini-2.5-pro",
+          displayName: "Gemini 2.5 Pro",
+          kind: "llm",
+          modes: ["chat", "json"],
+          supportsJsonMode: true,
+          supportsVision: true,
+        },
+      ],
+      supportedModes: ["chat", "text", "json"],
+      supportsJsonMode: true,
+      supportsToolCalls: true,
+      supportsVision: true,
+      defaultContextWindowTokens: 1000000,
+      parameters: [],
+    },
+    {
+      id: "anthropic",
+      displayName: "Anthropic",
+      enabled: config.llmProviderKeysConfigured.anthropic,
+      disabledReason: config.llmProviderKeysConfigured.anthropic
+        ? undefined
+        : disabledReason("Anthropic"),
+      requiresApiKey: true,
+      defaultModel: "claude-sonnet-4-5",
+      models: [
+        {
+          id: "claude-sonnet-4-5",
+          displayName: "Claude Sonnet 4.5",
+          default: true,
+          kind: "llm",
+          modes: ["chat", "json"],
+          supportsJsonMode: true,
+          supportsVision: true,
+        },
+      ],
+      supportedModes: ["chat", "text", "json"],
+      supportsJsonMode: true,
+      supportsToolCalls: true,
+      supportsVision: true,
+      parameters: [],
+    },
+    {
+      id: "ark-llm",
+      displayName: "Ark LLM",
+      enabled: config.llmProviderKeysConfigured.ark,
+      disabledReason: config.llmProviderKeysConfigured.ark
+        ? undefined
+        : disabledReason("Ark LLM"),
+      requiresApiKey: true,
+      defaultModel: "doubao-seed-1-6",
+      models: [
+        {
+          id: "doubao-seed-1-6",
+          displayName: "Doubao Seed 1.6",
+          default: true,
+          kind: "llm",
+          modes: ["chat", "json"],
+          supportsJsonMode: true,
+        },
+      ],
+      supportedModes: ["chat", "text", "json"],
+      supportsJsonMode: true,
+      supportsToolCalls: true,
+      supportsVision: false,
+      parameters: [],
+    },
+  ];
 }
 
 function imageProviderCatalog(config: AppConfig): ImageProviderCatalogItem[] {
@@ -365,6 +519,12 @@ export function buildImageProviderCatalog(config: AppConfig): ImageProviderCatal
   };
 }
 
+export function buildLlmProviderCatalog(config: AppConfig): LlmProviderCatalogResult {
+  return {
+    providers: llmProviderCatalog(config),
+  };
+}
+
 export function buildVideoProviderCatalog(config: AppConfig): VideoProviderCatalogResult {
   return {
     providers: videoProviderCatalog(config),
@@ -374,6 +534,10 @@ export function buildVideoProviderCatalog(config: AppConfig): VideoProviderCatal
 @Injectable()
 export class ProvidersService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  getLlmProviders(): LlmProviderCatalogResult {
+    return buildLlmProviderCatalog(readAppConfig());
+  }
 
   getImageProviders(): ImageProviderCatalogResult {
     return buildImageProviderCatalog(readAppConfig());
@@ -449,7 +613,7 @@ export class ProvidersService {
     input: { sourceCode: string },
   ): Promise<ProgrammableProviderDefinitionResult> {
     await this.ensureProject(projectId);
-    const kind = this.requireManagedKind(kindValue);
+    const kind = this.requireProgrammableKind(kindValue);
     const providerId = this.requireProgrammableProviderId(providerValue);
     const existing = await this.requireProgrammableProvider(projectId, kind, providerId);
     const nextVersion = Math.max(0, ...(existing.versions ?? []).map((version) => version.version)) + 1;
@@ -493,7 +657,7 @@ export class ProvidersService {
     versionId: string,
   ): Promise<ProgrammableProviderDefinitionResult> {
     await this.ensureProject(projectId);
-    const kind = this.requireManagedKind(kindValue);
+    const kind = this.requireProgrammableKind(kindValue);
     const providerId = this.requireProgrammableProviderId(providerValue);
     const provider = await this.requireProgrammableProvider(projectId, kind, providerId);
     const version = (provider.versions ?? []).find((candidate) => candidate.id === versionId);
@@ -544,7 +708,7 @@ export class ProvidersService {
     providerValue: string,
   ): Promise<ProgrammableProviderDefinitionResult> {
     await this.ensureProject(projectId);
-    const kind = this.requireManagedKind(kindValue);
+    const kind = this.requireProgrammableKind(kindValue);
     const providerId = this.requireProgrammableProviderId(providerValue);
     const provider = await this.requireProgrammableProvider(projectId, kind, providerId);
     await this.prisma.providerConfig.upsert({
@@ -574,6 +738,13 @@ export class ProvidersService {
     };
   }
 
+  async getProjectLlmProviders(projectId: string): Promise<LlmProviderCatalogResult> {
+    const result = await this.getProviderManagement(projectId);
+    return {
+      providers: result.llm.map(stripLlmManagementMetadata),
+    };
+  }
+
   async getProjectImageProviders(projectId: string): Promise<ImageProviderCatalogResult> {
     const result = await this.getProviderManagement(projectId);
     return {
@@ -594,6 +765,9 @@ export class ProvidersService {
     const rows = await this.providerConfigs(projectId);
     const programmable = await this.activeProgrammableProviderMetadata(projectId);
     return {
+      llm: llmProviderCatalog(config).map((provider) =>
+        this.toLlmManagementItem(provider, rows.get(configKey("llm", provider.id)), config),
+      ),
       image: [...imageProviderCatalog(config), ...programmable.image].map((provider) =>
         this.toImageManagementItem(provider, rows.get(configKey("image", provider.id)), config),
       ),
@@ -606,15 +780,17 @@ export class ProvidersService {
   async discoverModels(projectId: string, input: unknown): Promise<ProviderModelDiscoveryResult> {
     await this.ensureProject(projectId);
     const normalized = normalizeProviderModelDiscoveryInput(input);
-    const protocol = normalized.protocol ?? "openai_compatible";
-    if (protocol === "mock") {
-      return mockDiscoveryResult(normalized.kind);
-    }
-
     const saved = normalized.provider
       ? await this.providerConfig(projectId, normalized.kind, normalized.provider)
       : undefined;
     const savedParams = providerConfigParams(saved?.paramsJson);
+    const protocol = normalized.protocol
+      ?? savedParams?.protocol
+      ?? defaultDiscoveryProtocol(normalized.provider)
+      ?? "openai_compatible";
+    if (protocol === "mock") {
+      return mockDiscoveryResult(normalized.kind);
+    }
     const baseUrl = normalized.baseUrl ?? savedParams?.baseUrl;
     if (!baseUrl) {
       throw new BadRequestException("Provider base URL is required for model discovery");
@@ -667,11 +843,6 @@ export class ProvidersService {
     const providerId = this.requireManagedProviderId(kind, providerValue);
     const metadata = await this.requireMetadata(projectId, kind, providerId);
     const normalized = normalizeUpdateProviderConfigInput(input);
-    const defaultModel = normalized.defaultModel ?? undefined;
-    if (defaultModel && !metadata.models.some((model) => model.id === defaultModel) && !isGenericProvider(providerId)) {
-      throw new BadRequestException(`Model ${defaultModel} is not available for ${metadata.displayName}`);
-    }
-
     const current = await this.prisma.providerConfig.findUnique({
       where: {
         projectId_kind_provider: {
@@ -681,6 +852,16 @@ export class ProvidersService {
         },
       },
     });
+    const currentParams = providerConfigParams((current as ProviderConfigModel | null)?.paramsJson);
+    const validationMetadata = {
+      ...metadata,
+      models: configuredProviderModels(metadata.models, normalized.params?.models ?? currentParams?.models),
+    };
+    const defaultModel = normalized.defaultModel ?? undefined;
+    if (defaultModel && !modelAvailable(validationMetadata, defaultModel) && !isGenericProvider(providerId)) {
+      throw new BadRequestException(`Model ${defaultModel} is not available for ${metadata.displayName}`);
+    }
+
     const nextSecretJson = this.nextSecretJson(current as ProviderConfigModel | null, normalized);
     const data = {
       enabled: normalized.enabled ?? current?.enabled ?? defaultConfiguredEnabled(metadata),
@@ -765,11 +946,6 @@ export class ProvidersService {
     const providerId = this.requireManagedProviderId(kind, providerValue);
     const metadata = await this.requireMetadata(projectId, kind, providerId);
     const normalized = normalizeProviderConnectionTestInput(input);
-    const model = normalized.model ?? metadata.defaultModel;
-    if (!metadata.models.some((candidate) => candidate.id === model)) {
-      throw new BadRequestException(`Model ${model} is not available for ${metadata.displayName}`);
-    }
-
     const row = (await this.prisma.providerConfig.findUnique({
       where: {
         projectId_kind_provider: {
@@ -779,6 +955,17 @@ export class ProvidersService {
         },
       },
     })) as ProviderConfigModel | null;
+    const params = providerConfigParams(row?.paramsJson);
+    const configuredMetadata = {
+      ...metadata,
+      models: configuredProviderModels(metadata.models, params?.models),
+      defaultModel: row?.defaultModel ?? metadata.defaultModel,
+    };
+    const model = normalized.model ?? configuredMetadata.defaultModel;
+    if (!modelAvailable(configuredMetadata, model) && !isGenericProvider(providerId)) {
+      throw new BadRequestException(`Model ${model} is not available for ${metadata.displayName}`);
+    }
+
     const credentialConfigured =
       !metadata.requiresApiKey || Boolean(credentialSourceForProvider(kind, providerId, row ?? undefined, readAppConfig()));
     const status = credentialConfigured ? "succeeded" : "failed";
@@ -946,7 +1133,7 @@ export class ProvidersService {
     const active = activeManifest(row);
     return {
       id: row.id,
-      kind: this.requireManagedKind(row.kind),
+      kind: this.requireProgrammableKind(row.kind),
       provider: this.requireProgrammableProviderId(row.provider),
       displayName: active?.displayName ?? row.displayName,
       description: active?.description ?? row.description ?? undefined,
@@ -962,6 +1149,17 @@ export class ProvidersService {
       enabled: config?.enabled ?? false,
       credentialConfigured: Boolean(config?.secretJson),
       lastTest: lastTestSummary(config),
+    };
+  }
+
+  private toLlmManagementItem(
+    provider: LlmProviderCatalogItem,
+    row: ProviderConfigModel | undefined,
+    config: AppConfig,
+  ): LlmProviderManagementItem {
+    return {
+      ...this.applyProjectConfig("llm", provider, row, config),
+      kind: "llm",
     };
   }
 
@@ -993,6 +1191,9 @@ export class ProvidersService {
     row: ProviderConfigModel | undefined,
     config: AppConfig,
   ): ProviderManagementItem {
+    if (kind === "llm") {
+      return this.toLlmManagementItem(provider as LlmProviderCatalogItem, row, config);
+    }
     return kind === "image"
       ? this.toImageManagementItem(provider as ImageProviderCatalogItem, row, config)
       : this.toVideoManagementItem(provider as VideoProviderCatalogItem, row, config);
@@ -1008,18 +1209,23 @@ export class ProvidersService {
     credentialConfigured: boolean;
     credentialSource?: ProviderCredentialSource;
     configuredDefaultModel?: string;
+    params?: ProviderConfigParams;
     lastTest?: ProviderConnectionTestSummary;
   } {
     const configuredDefaultModel = row?.defaultModel ?? undefined;
     const params = providerConfigParams(row?.paramsJson);
+    const configuredModels = configuredProviderModels(provider.models, params?.models);
     const providerModels =
-      configuredDefaultModel && !provider.models.some((model) => model.id === configuredDefaultModel)
-        ? [{ id: configuredDefaultModel, displayName: configuredDefaultModel, default: true }, ...provider.models]
-        : provider.models;
+      configuredDefaultModel && !configuredModels.some((model) => model.id === configuredDefaultModel)
+        ? [{ id: configuredDefaultModel, displayName: configuredDefaultModel, default: true }, ...configuredModels]
+        : configuredModels;
+    const selectableModels = providerModels.filter((model) => !model.disabled);
     const defaultModel =
-      configuredDefaultModel && providerModels.some((model) => model.id === configuredDefaultModel)
+      configuredDefaultModel && selectableModels.some((model) => model.id === configuredDefaultModel)
         ? configuredDefaultModel
-        : provider.defaultModel;
+        : selectableModels.some((model) => model.id === provider.defaultModel)
+          ? provider.defaultModel
+          : selectableModels[0]?.id ?? provider.defaultModel;
     const credentialSource = credentialSourceForProvider(kind, provider.id, row, config);
     const credentialConfigured = provider.requiresApiKey ? Boolean(credentialSource) : true;
     const configuredEnabled = row?.enabled ?? defaultConfiguredEnabled(provider);
@@ -1063,6 +1269,14 @@ export class ProvidersService {
     return kind;
   }
 
+  private requireProgrammableKind(value: string): "image" | "video" {
+    const kind = this.requireManagedKind(value);
+    if (kind !== "image" && kind !== "video") {
+      throw new BadRequestException(`Unsupported programmable provider kind: ${value}`);
+    }
+    return kind;
+  }
+
   private requireManagedProviderId(kind: ManagedProviderKind, value: string): ManagedProviderId {
     const providerId = managedProviderId(kind, value);
     if (!providerId) {
@@ -1084,11 +1298,12 @@ export class ProvidersService {
     kind: ManagedProviderKind,
     providerId: ManagedProviderId,
   ): Promise<ProviderMetadata> {
-    const providers = kind === "image"
-      ? imageProviderCatalog(readAppConfig())
-      : videoProviderCatalog(readAppConfig());
+    const providers = providerCatalogByKind(kind, readAppConfig());
     const provider = providers.find((candidate) => candidate.id === providerId);
     if (!provider) {
+      if (kind === "llm") {
+        throw new BadRequestException(`Unknown ${kind} provider: ${providerId}`);
+      }
       const programmable = await this.activeProgrammableProviderMetadata(projectId);
       const programmableProvider = kind === "image"
         ? programmable.image.find((candidate) => candidate.id === providerId)
@@ -1126,6 +1341,50 @@ function defaultConfiguredEnabled(provider: ProviderMetadata): boolean {
   return provider.requiresApiKey ? true : provider.enabled;
 }
 
+function providerCatalogByKind(kind: ManagedProviderKind, config: AppConfig): ProviderMetadata[] {
+  if (kind === "llm") {
+    return llmProviderCatalog(config);
+  }
+  if (kind === "image") {
+    return imageProviderCatalog(config);
+  }
+  return videoProviderCatalog(config);
+}
+
+function configuredProviderModels(
+  baseModels: readonly ProviderConfigModelOption[],
+  configuredModels: ProviderConfigModelOption[] | undefined,
+): ProviderConfigModelOption[] {
+  if (!configuredModels?.length) {
+    return [...baseModels];
+  }
+  const byId = new Map<string, ProviderConfigModelOption>();
+  const order: string[] = [];
+  for (const model of baseModels) {
+    byId.set(model.id, model);
+    order.push(model.id);
+  }
+  for (const model of configuredModels) {
+    const existing = byId.get(model.id);
+    byId.set(model.id, {
+      ...existing,
+      ...model,
+      displayName: model.displayName || existing?.displayName || model.id,
+    });
+    if (!order.includes(model.id)) {
+      order.push(model.id);
+    }
+  }
+  return order.flatMap((id) => {
+    const model = byId.get(id);
+    return model ? [model] : [];
+  });
+}
+
+function modelAvailable(provider: { models: readonly ProviderConfigModelOption[] }, modelId: string): boolean {
+  return provider.models.some((model) => model.id === modelId && !model.disabled);
+}
+
 function activeManifest(row: ProgrammableProviderModel): ProgrammableProviderManifest | undefined {
   const activeVersion = (row.versions ?? []).find((version) => version.id === row.activeVersionId);
   return activeVersion && isProgrammableManifest(activeVersion.manifestJson)
@@ -1139,7 +1398,8 @@ function isProgrammableManifest(value: unknown): value is ProgrammableProviderMa
     value !== null &&
     typeof (value as ProgrammableProviderManifest).id === "string" &&
     Boolean(programmableProviderId((value as ProgrammableProviderManifest).id)) &&
-    managedProviderKind((value as ProgrammableProviderManifest).kind) !== undefined &&
+    ((value as ProgrammableProviderManifest).kind === "image" ||
+      (value as ProgrammableProviderManifest).kind === "video") &&
     typeof (value as ProgrammableProviderManifest).displayName === "string" &&
     Array.isArray((value as ProgrammableProviderManifest).models)
   );
@@ -1159,7 +1419,7 @@ function imageMetadataFromProgrammableManifest(
     enabled: true,
     requiresApiKey: manifest.credentials.some((credential) => credential.required),
     defaultModel: manifest.defaultModel,
-    models: manifest.models,
+    models: manifest.models as ImageProviderCatalogItem["models"],
     supportedModes: manifest.supportedModes as ImageProviderCatalogItem["supportedModes"],
     supportsReferenceImages: manifest.image.supportsReferenceImages,
     maxReferenceImages: manifest.image.maxReferenceImages,
@@ -1185,7 +1445,7 @@ function videoMetadataFromProgrammableManifest(
     enabled: true,
     requiresApiKey: manifest.credentials.some((credential) => credential.required),
     defaultModel: manifest.defaultModel,
-    models: manifest.models,
+    models: manifest.models as VideoProviderCatalogItem["models"],
     supportedModes: manifest.supportedModes as VideoProviderCatalogItem["supportedModes"],
     supportsFirstFrame: manifest.video.supportsFirstFrame,
     supportsLastFrame: manifest.video.supportsLastFrame,
@@ -1246,6 +1506,21 @@ function stripImageManagementMetadata(provider: ImageProviderManagementItem): Im
     credentialConfigured: _credentialConfigured,
     credentialSource: _credentialSource,
     configuredDefaultModel: _configuredDefaultModel,
+    params: _params,
+    lastTest: _lastTest,
+    ...catalog
+  } = provider;
+  return catalog;
+}
+
+function stripLlmManagementMetadata(provider: LlmProviderManagementItem): LlmProviderCatalogItem {
+  const {
+    kind: _kind,
+    configuredEnabled: _configuredEnabled,
+    credentialConfigured: _credentialConfigured,
+    credentialSource: _credentialSource,
+    configuredDefaultModel: _configuredDefaultModel,
+    params: _params,
     lastTest: _lastTest,
     ...catalog
   } = provider;
@@ -1259,6 +1534,7 @@ function stripVideoManagementMetadata(provider: VideoProviderManagementItem): Vi
     credentialConfigured: _credentialConfigured,
     credentialSource: _credentialSource,
     configuredDefaultModel: _configuredDefaultModel,
+    params: _params,
     lastTest: _lastTest,
     ...catalog
   } = provider;
@@ -1279,6 +1555,24 @@ function credentialSourceForProvider(
 
 function hasEnvCredential(kind: ManagedProviderKind, providerId: string, config: AppConfig): boolean {
   if (programmableProviderId(providerId)) {
+    return false;
+  }
+  if (kind === "llm") {
+    if (providerId === "mock-llm") {
+      return true;
+    }
+    if (providerId === "generic-llm") {
+      return config.llmProviderKeysConfigured.generic;
+    }
+    if (providerId === "gemini-llm") {
+      return config.llmProviderKeysConfigured.gemini;
+    }
+    if (providerId === "anthropic") {
+      return config.llmProviderKeysConfigured.anthropic;
+    }
+    if (providerId === "ark-llm") {
+      return config.llmProviderKeysConfigured.ark;
+    }
     return false;
   }
   if (isGenericProvider(providerId)) {
@@ -1310,6 +1604,18 @@ function runtimeEnvForProvider(
   if (!storedCredential) {
     return {};
   }
+  if (kind === "llm" && providerId === "generic-llm") {
+    return { LLM_API_KEY: storedCredential, OPENAI_API_KEY: storedCredential };
+  }
+  if (kind === "llm" && providerId === "gemini-llm") {
+    return { GEMINI_API_KEY: storedCredential, GOOGLE_API_KEY: storedCredential };
+  }
+  if (kind === "llm" && providerId === "anthropic") {
+    return { ANTHROPIC_API_KEY: storedCredential };
+  }
+  if (kind === "llm" && providerId === "ark-llm") {
+    return { ARK_API_KEY: storedCredential, MODELARK_API_KEY: storedCredential };
+  }
   if (kind === "image" && providerId === "image2") {
     return { IMAGE2_API_KEY: storedCredential, OPENAI_API_KEY: storedCredential };
   }
@@ -1332,7 +1638,7 @@ function runtimeEnvForProvider(
 }
 
 function isGenericProvider(providerId: string): boolean {
-  return providerId === "generic-image" || providerId === "generic-video";
+  return providerId === "generic-llm" || providerId === "generic-image" || providerId === "generic-video";
 }
 
 function providerConfigParams(value: unknown): ProviderConfigParams | undefined {
@@ -1344,12 +1650,13 @@ function providerConfigParams(value: unknown): ProviderConfigParams | undefined 
   const baseUrl = typeof raw.baseUrl === "string" ? raw.baseUrl : undefined;
   const imageRequestMode = typeof raw.imageRequestMode === "string" ? raw.imageRequestMode : undefined;
   const videoRequestMode = typeof raw.videoRequestMode === "string" ? raw.videoRequestMode : undefined;
+  const models = providerConfigModels(raw.models);
   const safeParams =
     typeof raw.safeParams === "object" && raw.safeParams !== null && !Array.isArray(raw.safeParams)
       ? raw.safeParams as ProviderConfigParams["safeParams"]
       : undefined;
   return {
-    ...(protocol === "openai_compatible" || protocol === "gemini" || protocol === "ark" || protocol === "mock"
+    ...(protocol === "openai_compatible" || protocol === "gemini" || protocol === "anthropic" || protocol === "ark" || protocol === "mock"
       ? { protocol }
       : {}),
     ...(baseUrl ? { baseUrl } : {}),
@@ -1359,8 +1666,44 @@ function providerConfigParams(value: unknown): ProviderConfigParams | undefined 
     ...(videoRequestMode === "task" || videoRequestMode === "sync" || videoRequestMode === "mock"
       ? { videoRequestMode }
       : {}),
+    ...(models ? { models } : {}),
     ...(safeParams ? { safeParams } : {}),
   };
+}
+
+function providerConfigModels(value: unknown): ProviderConfigModelOption[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const models = value.flatMap((item): ProviderConfigModelOption[] => {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      return [];
+    }
+    const raw = item as Record<string, unknown>;
+    const id = typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : undefined;
+    if (!id || seen.has(id)) {
+      return [];
+    }
+    seen.add(id);
+    return [
+      {
+        id,
+        displayName: typeof raw.displayName === "string" && raw.displayName.trim()
+          ? raw.displayName.trim()
+          : id,
+        ...(typeof raw.disabled === "boolean" ? { disabled: raw.disabled } : {}),
+        ...(typeof raw.kind === "string" ? { kind: raw.kind as ProviderConfigModelOption["kind"] } : {}),
+        ...(Array.isArray(raw.modes) ? { modes: raw.modes as ProviderConfigModelOption["modes"] } : {}),
+        ...(typeof raw.contextWindowTokens === "number" ? { contextWindowTokens: raw.contextWindowTokens } : {}),
+        ...(typeof raw.outputTokenLimit === "number" ? { outputTokenLimit: raw.outputTokenLimit } : {}),
+        ...(typeof raw.supportsJsonMode === "boolean" ? { supportsJsonMode: raw.supportsJsonMode } : {}),
+        ...(typeof raw.supportsToolCalls === "boolean" ? { supportsToolCalls: raw.supportsToolCalls } : {}),
+        ...(typeof raw.supportsVision === "boolean" ? { supportsVision: raw.supportsVision } : {}),
+      },
+    ];
+  });
+  return models.length ? models : undefined;
 }
 
 function parseHttpBaseUrl(value: string): string {
@@ -1376,9 +1719,28 @@ function parseHttpBaseUrl(value: string): string {
   return value.replace(/\/+$/g, "");
 }
 
+function defaultDiscoveryProtocol(providerId: ManagedProviderId | undefined): ProviderProtocol | undefined {
+  if (providerId === "gemini-llm" || providerId === "banana") {
+    return "gemini";
+  }
+  if (providerId === "anthropic") {
+    return "anthropic";
+  }
+  if (providerId === "ark-llm" || providerId === "seedance") {
+    return "ark";
+  }
+  if (providerId === "mock-llm" || providerId === "mock-image" || providerId === "mock-video") {
+    return "mock";
+  }
+  return undefined;
+}
+
 function modelDiscoveryUrl(baseUrl: string, protocol: ProviderProtocol): string {
   if (protocol === "gemini") {
     return `${baseUrl}${baseUrl.endsWith("/models") ? "" : "/models"}`;
+  }
+  if (protocol === "anthropic") {
+    return `${baseUrl}${baseUrl.endsWith("/models") ? "" : baseUrl.endsWith("/v1") ? "/models" : "/v1/models"}`;
   }
   if (protocol === "ark") {
     return `${baseUrl}${baseUrl.endsWith("/models") ? "" : baseUrl.endsWith("/api/v3") ? "/models" : "/api/v3/models"}`;
@@ -1389,6 +1751,9 @@ function modelDiscoveryUrl(baseUrl: string, protocol: ProviderProtocol): string 
 function modelDiscoveryHeaders(credential: string, protocol: ProviderProtocol): Record<string, string> {
   if (protocol === "gemini") {
     return { "x-goog-api-key": credential, accept: "application/json" };
+  }
+  if (protocol === "anthropic") {
+    return { "x-api-key": credential, "anthropic-version": "2023-06-01", accept: "application/json" };
   }
   return { authorization: `Bearer ${credential}`, accept: "application/json" };
 }
@@ -1439,7 +1804,7 @@ function normalizeModelId(value: string): string {
   return value.trim().replace(/^models\//, "");
 }
 
-function groupModelIds(ids: string[]): { image: string[]; video: string[]; chat: string[] } {
+function groupModelIds(ids: string[]): { llm: string[]; image: string[]; video: string[]; chat: string[] } {
   return ids.reduce(
     (groups, id) => {
       const normalized = id.toLowerCase();
@@ -1448,11 +1813,12 @@ function groupModelIds(ids: string[]): { image: string[]; video: string[]; chat:
       } else if (/video|veo|seedance|wan|runway|kling|sora|ltx/.test(normalized)) {
         groups.video.push(id);
       } else {
+        groups.llm.push(id);
         groups.chat.push(id);
       }
       return groups;
     },
-    { image: [] as string[], video: [] as string[], chat: [] as string[] },
+    { llm: [] as string[], image: [] as string[], video: [] as string[], chat: [] as string[] },
   );
 }
 
@@ -1461,21 +1827,27 @@ function failedDiscovery(protocol: ProviderProtocol, status: number, message: st
     ok: false,
     detectedProtocol: protocol,
     message,
-    modelGroups: { image: [], video: [], chat: [] },
+    modelGroups: { llm: [], image: [], video: [], chat: [] },
     rawCount: 0,
   };
 }
 
 function mockDiscoveryResult(kind: ManagedProviderKind): ProviderModelDiscoveryResult {
-  const modelGroups = kind === "image"
-    ? { image: ["mock-image-v1"], video: [], chat: [] }
-    : { image: [], video: ["mock-video-v1"], chat: [] };
+  const modelGroups = kind === "llm"
+    ? { llm: ["mock-storyboard"], image: [], video: [], chat: ["mock-storyboard"] }
+    : kind === "image"
+      ? { llm: [], image: ["mock-image-v1"], video: [], chat: [] }
+      : { llm: [], image: [], video: ["mock-video-v1"], chat: [] };
   return {
     ok: true,
     detectedProtocol: "mock",
     message: "Mock provider models are available",
     modelGroups,
-    rawCount: kind === "image" ? modelGroups.image.length : modelGroups.video.length,
+    rawCount: kind === "llm"
+      ? modelGroups.llm.length
+      : kind === "image"
+        ? modelGroups.image.length
+        : modelGroups.video.length,
   };
 }
 

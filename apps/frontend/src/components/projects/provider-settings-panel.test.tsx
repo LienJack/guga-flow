@@ -6,6 +6,34 @@ import { describe, expect, it } from "vitest";
 import { ProviderSettingsPanel } from "./provider-settings-panel";
 
 const providerManagementFixture: ProviderManagementResult = {
+  llm: [
+    {
+      id: "mock-llm",
+      kind: "llm",
+      displayName: "Mock LLM",
+      enabled: true,
+      requiresApiKey: false,
+      defaultModel: "mock-storyboard",
+      models: [
+        {
+          id: "mock-storyboard",
+          displayName: "Mock Storyboard",
+          default: true,
+          kind: "llm",
+          modes: ["chat", "json"],
+          supportsJsonMode: true,
+        },
+      ],
+      supportedModes: ["chat", "json"],
+      supportsJsonMode: true,
+      supportsToolCalls: false,
+      supportsVision: false,
+      parameters: [],
+      configuredEnabled: true,
+      credentialConfigured: true,
+      configuredDefaultModel: "mock-storyboard",
+    },
+  ],
   image: [
     {
       id: "image2",
@@ -106,7 +134,10 @@ describe("ProviderSettingsPanel", () => {
     );
 
     expect(html).toContain("Image Providers");
+    expect(html).toContain("LLM Providers");
     expect(html).toContain("Video Providers");
+    expect(html).toContain("Mock LLM");
+    expect(html).toContain("mock-storyboard");
     expect(html).toContain("Image 2");
     expect(html).toContain("Seedance");
     expect(html).toContain("Clear stored key");

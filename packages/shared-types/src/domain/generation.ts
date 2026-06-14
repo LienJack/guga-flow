@@ -8,7 +8,7 @@ import type {
   Phase3CanvasNodeType,
 } from "./canvas";
 import type { PromptDebugPart, PromptMissingContext, ShotPromptSourceNodeIds } from "./prompt-composer";
-import type { ProjectAspectRatio } from "./project";
+import { PROJECT_ASPECT_RATIOS, type ProjectAspectRatio } from "./project";
 
 export const GENERATION_JOB_STATUSES = [
   "queued",
@@ -56,9 +56,16 @@ export type ImageProviderMode = (typeof IMAGE_PROVIDER_MODES)[number];
 export const VIDEO_PROVIDER_IDS = ["mock-video", "seedance", "happyhorse", "generic-video"] as const;
 export type VideoProviderId = (typeof VIDEO_PROVIDER_IDS)[number];
 
+export const LLM_PROVIDER_IDS = ["mock-llm", "generic-llm", "gemini-llm", "anthropic", "ark-llm"] as const;
+export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number];
+
+export const LLM_PROVIDER_MODES = ["chat", "text", "json"] as const;
+export type LlmProviderMode = (typeof LLM_PROVIDER_MODES)[number];
+
 export type ProgrammableProviderId = `custom:${string}`;
 export type AnyImageProviderId = ImageProviderId | ProgrammableProviderId;
 export type AnyVideoProviderId = VideoProviderId | ProgrammableProviderId;
+export type AnyLlmProviderId = LlmProviderId;
 
 export const VIDEO_PROVIDER_MODES = ["text_to_video", "image_to_video", "reference_to_video", "video_edit"] as const;
 export type VideoProviderMode = (typeof VIDEO_PROVIDER_MODES)[number];
@@ -101,10 +108,11 @@ export type AssetAnalysisOperation = (typeof ASSET_ANALYSIS_OPERATIONS)[number];
 export const PROVIDER_KINDS = ["llm", "image", "video", "editor"] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
-export const MANAGED_PROVIDER_KINDS = ["image", "video"] as const;
+export const MANAGED_PROVIDER_KINDS = ["llm", "image", "video"] as const;
 export type ManagedProviderKind = (typeof MANAGED_PROVIDER_KINDS)[number];
+export type ProgrammableProviderKind = Extract<ManagedProviderKind, "image" | "video">;
 
-export type ManagedProviderId = ImageProviderId | VideoProviderId | ProgrammableProviderId;
+export type ManagedProviderId = LlmProviderId | ImageProviderId | VideoProviderId | ProgrammableProviderId;
 
 export const PROVIDER_CREDENTIAL_UPDATE_ACTIONS = ["unchanged", "set", "clear"] as const;
 export type ProviderCredentialUpdateAction = (typeof PROVIDER_CREDENTIAL_UPDATE_ACTIONS)[number];
@@ -115,8 +123,30 @@ export type ProviderTestStatus = (typeof PROVIDER_TEST_STATUSES)[number];
 export const PROVIDER_CREDENTIAL_SOURCES = ["environment", "stored", "temporary"] as const;
 export type ProviderCredentialSource = (typeof PROVIDER_CREDENTIAL_SOURCES)[number];
 
-export const PROVIDER_PROTOCOLS = ["openai_compatible", "gemini", "ark", "mock"] as const;
+export const PROVIDER_PROTOCOLS = ["openai_compatible", "gemini", "anthropic", "ark", "mock"] as const;
 export type ProviderProtocol = (typeof PROVIDER_PROTOCOLS)[number];
+
+export const PROVIDER_MODEL_KINDS = ["llm", "image", "video", "audio", "multimodal"] as const;
+export type ProviderModelKind = (typeof PROVIDER_MODEL_KINDS)[number];
+
+export const PROVIDER_MODEL_MODES = [
+  ...LLM_PROVIDER_MODES,
+  ...IMAGE_PROVIDER_MODES,
+  ...VIDEO_PROVIDER_MODES,
+] as const;
+export type ProviderModelMode = (typeof PROVIDER_MODEL_MODES)[number];
+
+export const PROVIDER_ERROR_CATEGORIES = [
+  "auth",
+  "quota",
+  "rate_limit",
+  "bad_input",
+  "unsupported_model",
+  "timeout",
+  "safety_block",
+  "unknown",
+] as const;
+export type ProviderErrorCategory = (typeof PROVIDER_ERROR_CATEGORIES)[number];
 
 export const PROVIDER_IMAGE_REQUEST_MODES = ["openai", "gemini", "ark"] as const;
 export type ProviderImageRequestMode = (typeof PROVIDER_IMAGE_REQUEST_MODES)[number];
@@ -525,10 +555,37 @@ export function normalizeGenerationMarketingSettings(input: unknown): Generation
   });
 }
 
-export interface ImageProviderModelOption {
+export interface ProviderModelOption {
   id: string;
   displayName: string;
   default?: boolean;
+  disabled?: boolean;
+  kind?: ProviderModelKind;
+  modes?: ProviderModelMode[];
+  contextWindowTokens?: number;
+  outputTokenLimit?: number;
+  supportsJsonMode?: boolean;
+  supportsToolCalls?: boolean;
+  supportsVision?: boolean;
+  durationSeconds?: number[];
+  aspectRatios?: ProjectAspectRatio[];
+  supportsReferenceImages?: boolean;
+  maxReferenceImages?: number;
+  supportsReferenceVideo?: boolean;
+  maxReferenceVideos?: number;
+  supportsReferenceAudio?: boolean;
+  maxReferenceAudios?: number;
+  promptTemplateBinding?: string;
+}
+
+export interface LlmProviderModelOption extends ProviderModelOption {
+  kind?: "llm" | "multimodal";
+  modes?: LlmProviderMode[];
+}
+
+export interface ImageProviderModelOption extends ProviderModelOption {
+  kind?: "image" | "multimodal";
+  modes?: ImageProviderMode[];
 }
 
 export interface ImageProviderParameterOption {
@@ -570,7 +627,11 @@ export interface ImageProviderCatalogResult {
   providers: ImageProviderCatalogItem[];
 }
 
-export type VideoProviderModelOption = ImageProviderModelOption;
+export interface VideoProviderModelOption extends ProviderModelOption {
+  kind?: "video" | "multimodal";
+  modes?: VideoProviderMode[];
+}
+
 export type VideoProviderParameterOption = ImageProviderParameterOption;
 export type VideoProviderParameterDefinition = ImageProviderParameterDefinition;
 
@@ -606,16 +667,43 @@ export interface VideoProviderCatalogResult {
   providers: VideoProviderCatalogItem[];
 }
 
+export type LlmProviderParameterOption = ImageProviderParameterOption;
+export type LlmProviderParameterDefinition = ImageProviderParameterDefinition;
+
+export interface LlmProviderCatalogItem {
+  id: AnyLlmProviderId;
+  displayName: string;
+  enabled: boolean;
+  disabledReason?: string;
+  requiresApiKey: boolean;
+  defaultModel: string;
+  models: LlmProviderModelOption[];
+  supportedModes: LlmProviderMode[];
+  supportsJsonMode: boolean;
+  supportsToolCalls: boolean;
+  supportsVision: boolean;
+  defaultContextWindowTokens?: number;
+  maxOutputTokens?: number;
+  parameters: LlmProviderParameterDefinition[];
+}
+
+export interface LlmProviderCatalogResult {
+  providers: LlmProviderCatalogItem[];
+}
+
 export interface ProviderCredentialUpdate {
   action: ProviderCredentialUpdateAction;
   value?: string;
 }
+
+export type ProviderConfigModelOption = ProviderModelOption;
 
 export interface ProviderConfigParams {
   protocol?: ProviderProtocol;
   baseUrl?: string;
   imageRequestMode?: ProviderImageRequestMode;
   videoRequestMode?: ProviderVideoRequestMode;
+  models?: ProviderConfigModelOption[];
   safeParams?: CanvasSnapshotJson;
 }
 
@@ -663,7 +751,7 @@ export interface ProgrammableProviderActionManifest {
 
 export interface ProgrammableProviderManifest {
   id: ProgrammableProviderId;
-  kind: ManagedProviderKind;
+  kind: ProgrammableProviderKind;
   displayName: string;
   description?: string;
   credentials: ProgrammableProviderCredentialDefinition[];
@@ -710,7 +798,7 @@ export interface ProgrammableProviderVersionSummary {
 
 export interface ProgrammableProviderDefinitionSummary {
   id: string;
-  kind: ManagedProviderKind;
+  kind: ProgrammableProviderKind;
   provider: ProgrammableProviderId;
   displayName: string;
   description?: string;
@@ -767,6 +855,7 @@ export interface ProviderModelDiscoveryInput {
 }
 
 export interface ProviderModelGroups {
+  llm: string[];
   image: string[];
   video: string[];
   chat: string[];
@@ -810,9 +899,18 @@ export type VideoProviderManagementItem = VideoProviderCatalogItem &
     kind: "video";
   };
 
-export type ProviderManagementItem = ImageProviderManagementItem | VideoProviderManagementItem;
+export type LlmProviderManagementItem = LlmProviderCatalogItem &
+  ProviderManagementMetadata & {
+    kind: "llm";
+  };
+
+export type ProviderManagementItem =
+  | LlmProviderManagementItem
+  | ImageProviderManagementItem
+  | VideoProviderManagementItem;
 
 export interface ProviderManagementResult {
+  llm: LlmProviderManagementItem[];
   image: ImageProviderManagementItem[];
   video: VideoProviderManagementItem[];
 }
@@ -920,6 +1018,48 @@ export function providerVideoRequestMode(value: unknown): ProviderVideoRequestMo
     : undefined;
 }
 
+export function providerErrorCategory(value: unknown): ProviderErrorCategory | undefined {
+  return PROVIDER_ERROR_CATEGORIES.includes(value as ProviderErrorCategory)
+    ? (value as ProviderErrorCategory)
+    : undefined;
+}
+
+export function normalizeProviderErrorCategory(input: unknown): ProviderErrorCategory {
+  const raw = dataObject(input);
+  const explicit = providerErrorCategory(raw.category);
+  if (explicit) {
+    return explicit;
+  }
+
+  const code = optionalString(raw.code)?.toLowerCase() ?? "";
+  const message = optionalString(raw.message)?.toLowerCase() ?? "";
+  const status = typeof raw.status === "number" ? raw.status : undefined;
+  const signal = `${code} ${message}`;
+
+  if (status === 401 || status === 403 || /auth|unauthori[sz]ed|forbidden|credential|api key/.test(signal)) {
+    return "auth";
+  }
+  if (status === 402 || /quota|insufficient[_ -]?credits|billing|balance/.test(signal)) {
+    return "quota";
+  }
+  if (status === 408 || /timeout|timed out|deadline|aborted/.test(signal)) {
+    return "timeout";
+  }
+  if (status === 429 || /rate[_ -]?limit|too many requests|throttle/.test(signal)) {
+    return "rate_limit";
+  }
+  if (/model.*(not found|unsupported|unavailable)|unsupported.*model|unknown model/.test(signal)) {
+    return "unsupported_model";
+  }
+  if (/safety|moderation|blocked|policy|content filter/.test(signal)) {
+    return "safety_block";
+  }
+  if (status === 400 || /bad request|invalid|schema|missing|required|malformed/.test(signal)) {
+    return "bad_input";
+  }
+  return "unknown";
+}
+
 export function programmableProviderId(value: unknown): ProgrammableProviderId | undefined {
   if (typeof value !== "string") {
     return undefined;
@@ -930,6 +1070,7 @@ export function programmableProviderId(value: unknown): ProgrammableProviderId |
   }
   const builtinId = normalized.replace(/^custom:/, "");
   if (
+    LLM_PROVIDER_IDS.includes(builtinId as LlmProviderId) ||
     IMAGE_PROVIDER_IDS.includes(builtinId as ImageProviderId) ||
     VIDEO_PROVIDER_IDS.includes(builtinId as VideoProviderId)
   ) {
@@ -939,11 +1080,17 @@ export function programmableProviderId(value: unknown): ProgrammableProviderId |
 }
 
 export function managedProviderId(kind: ManagedProviderKind, value: unknown): ManagedProviderId | undefined {
+  if (kind === "llm" && LLM_PROVIDER_IDS.includes(value as LlmProviderId)) {
+    return value as LlmProviderId;
+  }
   if (kind === "image" && IMAGE_PROVIDER_IDS.includes(value as ImageProviderId)) {
     return value as ImageProviderId;
   }
   if (kind === "video" && VIDEO_PROVIDER_IDS.includes(value as VideoProviderId)) {
     return value as VideoProviderId;
+  }
+  if (kind === "llm") {
+    return undefined;
   }
   return programmableProviderId(value);
 }
@@ -1834,9 +1981,93 @@ function normalizeProviderConfigParams(input: unknown): ProviderConfigParams | u
     baseUrl: optionalString(raw.baseUrl),
     imageRequestMode: providerImageRequestMode(raw.imageRequestMode),
     videoRequestMode: providerVideoRequestMode(raw.videoRequestMode),
+    models: normalizeProviderConfigModels(raw.models),
     safeParams: safeJsonObject(raw.safeParams),
   });
   return Object.keys(params).length ? params : undefined;
+}
+
+function normalizeProviderConfigModels(input: unknown): ProviderConfigModelOption[] | undefined {
+  if (!Array.isArray(input)) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const models = input.flatMap((item): ProviderConfigModelOption[] => {
+    const raw = dataObject(item);
+    const id = optionalString(raw.id);
+    if (!id || seen.has(id)) {
+      return [];
+    }
+    seen.add(id);
+    return [
+      compactObject({
+        id,
+        displayName: optionalString(raw.displayName) ?? id,
+        disabled: typeof raw.disabled === "boolean" ? raw.disabled : undefined,
+        kind: providerModelKind(raw.kind),
+        modes: providerModelModes(raw.modes),
+        contextWindowTokens: positiveInteger(raw.contextWindowTokens),
+        outputTokenLimit: positiveInteger(raw.outputTokenLimit),
+        supportsJsonMode: typeof raw.supportsJsonMode === "boolean" ? raw.supportsJsonMode : undefined,
+        supportsToolCalls: typeof raw.supportsToolCalls === "boolean" ? raw.supportsToolCalls : undefined,
+        supportsVision: typeof raw.supportsVision === "boolean" ? raw.supportsVision : undefined,
+        durationSeconds: positiveIntegerArray(raw.durationSeconds),
+        aspectRatios: providerAspectRatios(raw.aspectRatios),
+        supportsReferenceImages: typeof raw.supportsReferenceImages === "boolean"
+          ? raw.supportsReferenceImages
+          : undefined,
+        maxReferenceImages: positiveInteger(raw.maxReferenceImages),
+        supportsReferenceVideo: typeof raw.supportsReferenceVideo === "boolean"
+          ? raw.supportsReferenceVideo
+          : undefined,
+        maxReferenceVideos: positiveInteger(raw.maxReferenceVideos),
+        supportsReferenceAudio: typeof raw.supportsReferenceAudio === "boolean"
+          ? raw.supportsReferenceAudio
+          : undefined,
+        maxReferenceAudios: positiveInteger(raw.maxReferenceAudios),
+        promptTemplateBinding: optionalString(raw.promptTemplateBinding),
+      }),
+    ];
+  });
+  return models.length ? models : undefined;
+}
+
+function providerModelKind(value: unknown): ProviderModelKind | undefined {
+  return PROVIDER_MODEL_KINDS.includes(value as ProviderModelKind)
+    ? (value as ProviderModelKind)
+    : undefined;
+}
+
+function providerModelModes(value: unknown): ProviderModelMode[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const modes = value.filter((mode): mode is ProviderModelMode =>
+    PROVIDER_MODEL_MODES.includes(mode as ProviderModelMode),
+  );
+  return modes.length ? [...new Set(modes)] : undefined;
+}
+
+function providerAspectRatios(value: unknown): ProjectAspectRatio[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const ratios = value.filter((ratio): ratio is ProjectAspectRatio =>
+    PROJECT_ASPECT_RATIOS.includes(ratio as ProjectAspectRatio),
+  );
+  return ratios.length ? [...new Set(ratios)] : undefined;
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  return Number.isInteger(value) && Number(value) > 0 ? Number(value) : undefined;
+}
+
+function positiveIntegerArray(value: unknown): number[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const numbers = value.filter((item): item is number => Number.isInteger(item) && item > 0);
+  return numbers.length ? [...new Set(numbers)] : undefined;
 }
 
 function normalizeProviderDiscoveryCredential(input: unknown): ProviderDiscoveryCredentialInput | undefined {

@@ -30,10 +30,12 @@ import {
   getActiveStoryboardDraft,
   getEditorExport,
   getImageProviderCatalog,
+  getLlmProviderCatalog,
   getNovelEventGraph,
   getProviderManagement,
   getProjectSettingsSummary,
   getProjectImageProviderCatalog,
+  getProjectLlmProviderCatalog,
   getProjectVideoProviderCatalog,
   batchAssets,
   createAssetCollection,
@@ -770,7 +772,9 @@ describe("frontend api client", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
+    await getLlmProviderCatalog();
     await getProviderManagement("project_1");
+    await getProjectLlmProviderCatalog("project_1");
     await getProjectImageProviderCatalog("project_1");
     await getProjectVideoProviderCatalog("project_1");
     await updateProviderConfig("project_1", "image", "image2", {
@@ -804,21 +808,31 @@ describe("frontend api client", () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "http://localhost:3002/api/v1/projects/project_1/providers",
+      "http://localhost:3002/api/v1/providers/llm",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "http://localhost:3002/api/v1/projects/project_1/providers/image",
+      "http://localhost:3002/api/v1/projects/project_1/providers",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      "http://localhost:3002/api/v1/projects/project_1/providers/video",
+      "http://localhost:3002/api/v1/projects/project_1/providers/llm",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
+      "http://localhost:3002/api/v1/projects/project_1/providers/image",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "http://localhost:3002/api/v1/projects/project_1/providers/video",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
       "http://localhost:3002/api/v1/projects/project_1/providers/image/image2",
       expect.objectContaining({
         method: "PATCH",
@@ -834,7 +848,7 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      5,
+      7,
       "http://localhost:3002/api/v1/projects/project_1/providers/discover-models",
       expect.objectContaining({
         method: "POST",
@@ -848,7 +862,7 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      6,
+      8,
       "http://localhost:3002/api/v1/projects/project_1/providers/image/image2/test",
       expect.objectContaining({
         method: "POST",
@@ -856,12 +870,12 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      7,
+      9,
       "http://localhost:3002/api/v1/projects/project_1/providers/programmable",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      8,
+      10,
       "http://localhost:3002/api/v1/projects/project_1/providers/programmable",
       expect.objectContaining({
         method: "POST",
@@ -869,7 +883,7 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      9,
+      11,
       "http://localhost:3002/api/v1/projects/project_1/providers/programmable/image/custom%3Aatlas-cloud/source",
       expect.objectContaining({
         method: "PATCH",
@@ -877,7 +891,7 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      10,
+      12,
       "http://localhost:3002/api/v1/projects/project_1/providers/programmable/image/custom%3Aatlas-cloud/activate",
       expect.objectContaining({
         method: "POST",
@@ -885,7 +899,7 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      11,
+      13,
       "http://localhost:3002/api/v1/projects/project_1/providers/programmable/image/custom%3Aatlas-cloud/disable",
       expect.objectContaining({ method: "POST" }),
     );

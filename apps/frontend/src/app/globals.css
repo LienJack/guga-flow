@@ -3453,6 +3453,70 @@ select:focus-visible {
   grid-column: 1 / -1;
 }
 
+.provider-model-matrix {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcfd;
+  padding: 10px;
+}
+
+.provider-model-heading,
+.provider-model-row,
+.provider-model-row label {
+  display: flex;
+  align-items: center;
+}
+
+.provider-model-heading {
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.provider-model-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(140px, 1.1fr) minmax(120px, 0.7fr) minmax(86px, auto) auto;
+  gap: 7px;
+  min-width: 0;
+}
+
+.provider-model-row.add {
+  grid-template-columns: minmax(120px, 1fr) minmax(140px, 1.1fr) auto;
+}
+
+.provider-model-row input,
+.provider-model-row select {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid #dddddd;
+  border-radius: 6px;
+  background: #fff;
+  color: #111;
+  padding: 7px 8px;
+  font-size: 12px;
+}
+
+.provider-model-row input[readonly] {
+  background: #f4f6f8;
+  color: var(--muted);
+}
+
+.provider-model-row label {
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.provider-model-row label input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
 .provider-programmable-form {
   display: grid;
   gap: 10px;
@@ -3672,6 +3736,8 @@ select:focus-visible {
   }
 
   .provider-config-grid.programmable,
+  .provider-model-row,
+  .provider-model-row.add,
   .provider-version-row {
     grid-template-columns: 1fr;
   }

@@ -12,6 +12,11 @@ import { ProvidersService } from "./providers.service";
 export class ProvidersController {
   constructor(@Inject(ProvidersService) private readonly providersService: ProvidersService) {}
 
+  @Get("llm")
+  listLlmProviders() {
+    return this.providersService.getLlmProviders();
+  }
+
   @Get("image")
   listImageProviders() {
     return this.providersService.getImageProviders();
@@ -30,6 +35,11 @@ export class ProjectProvidersController {
   @Get()
   listProviderManagement(@Param("projectId") projectId: string) {
     return this.providersService.getProviderManagement(projectId);
+  }
+
+  @Get("llm")
+  listProjectLlmProviders(@Param("projectId") projectId: string) {
+    return this.providersService.getProjectLlmProviders(projectId);
   }
 
   @Get("image")

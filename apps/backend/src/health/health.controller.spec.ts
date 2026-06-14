@@ -16,14 +16,23 @@ describe("HealthController", () => {
 
   it("reports image provider key availability without exposing key values", () => {
     const config = readAppConfig({
+      LLM_API_KEY: "sk-test-llm",
+      ANTHROPIC_API_KEY: "sk-test-anthropic",
       OPENAI_API_KEY: "sk-test-openai",
       GEMINI_API_KEY: "sk-test-gemini",
       SEEDANCE_API_KEY: "sk-test-seedance",
       FAL_KEY: "sk-test-fal",
     });
 
+    expect(config.realProviderKeysConfigured.llm).toBe(true);
     expect(config.realProviderKeysConfigured.image).toBe(true);
     expect(config.realProviderKeysConfigured.video).toBe(true);
+    expect(config.llmProviderKeysConfigured).toEqual({
+      generic: true,
+      gemini: true,
+      anthropic: true,
+      ark: false,
+    });
     expect(config.imageProviderKeysConfigured).toEqual({
       image2: true,
       banana: true,
@@ -32,6 +41,8 @@ describe("HealthController", () => {
       seedance: true,
       happyhorse: true,
     });
+    expect(JSON.stringify(config)).not.toContain("sk-test-llm");
+    expect(JSON.stringify(config)).not.toContain("sk-test-anthropic");
     expect(JSON.stringify(config)).not.toContain("sk-test-openai");
     expect(JSON.stringify(config)).not.toContain("sk-test-gemini");
     expect(JSON.stringify(config)).not.toContain("sk-test-seedance");

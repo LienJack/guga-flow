@@ -1,13 +1,15 @@
 "use client";
 
 import type {
+  ProviderConfigModelOption,
   ProviderConnectionTestResult,
   ProviderManagementItem,
   ProviderManagementResult,
+  ProviderModelKind,
   ProviderProtocol,
   ProgrammableProviderDefinitionSummary,
 } from "@guga-flow/shared-types";
-import { CheckCircle2, Code2, KeyRound, Power, RefreshCw, Save, ShieldAlert } from "lucide-react";
+import { CheckCircle2, Code2, KeyRound, Plus, Power, RefreshCw, Save, ShieldAlert, Trash2 } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 
 import {
@@ -34,6 +36,9 @@ interface ProviderDraft {
   clearCredential: boolean;
   defaultModel: string;
   enabled: boolean;
+  models: ProviderConfigModelOption[];
+  newModelDisplayName: string;
+  newModelId: string;
   protocol: ProviderProtocol;
 }
 
@@ -122,6 +127,7 @@ export function ProviderSettingsPanel({
 
   const providerGroups = useMemo(
     () => [
+      { label: "LLM Providers", providers: providers?.llm ?? [] },
       { label: "Image Providers", providers: providers?.image ?? [] },
       { label: "Video Providers", providers: providers?.video ?? [] },
     ],
@@ -213,6 +219,7 @@ export function ProviderSettingsPanel({
         params: {
           protocol: draft.protocol,
           baseUrl: draft.baseUrl,
+          models: normalizedDraftModels(draft.models),
         },
         credential: draft.clearCredential
           ? { action: "clear" }
@@ -284,11 +291,12 @@ export function ProviderSettingsPanel({
           ? { source: "temporary", value: draft.credential.trim() }
           : undefined,
       });
-      const discoveredModels = provider.kind === "image"
-        ? result.modelGroups.image
-        : result.modelGroups.video;
+      const discoveredModels = discoveredModelIds(provider, result);
       const nextModel = discoveredModels[0] ?? result.modelGroups.chat[0] ?? draft.defaultModel;
-      setDraft(provider, { defaultModel: nextModel });
+      setDraft(provider, {
+        defaultModel: nextModel,
+        models: discoveredModels.length ? modelOptionsForKind(provider.kind, discoveredModels) : draft.models,
+      });
       setProviders((current) => mergeProviderModels(current, provider, discoveredModels));
       setRowState((current) => ({
         ...current,
@@ -304,6 +312,52 @@ export function ProviderSettingsPanel({
         },
       }));
     }
+  }
+
+  function handleAddModel(provider: ProviderManagementItem) {
+    const key = providerKey(provider);
+    const draft = drafts[key] ?? draftForProvider(provider);
+    const id = draft.newModelId.trim();
+    if (!id || draft.models.some((model) => model.id === id)) {
+      return;
+    }
+    const model = modelOptionForKind(provider.kind, id, draft.newModelDisplayName.trim() || id);
+    setDraft(provider, {
+      defaultModel: draft.defaultModel || id,
+      models: [...draft.models, model],
+      newModelDisplayName: "",
+      newModelId: "",
+    });
+  }
+
+  function handleUpdateModel(
+    provider: ProviderManagementItem,
+    modelId: string,
+    next: Partial<ProviderConfigModelOption>,
+  ) {
+    const key = providerKey(provider);
+    const draft = drafts[key] ?? draftForProvider(provider);
+    setDraft(provider, {
+      models: draft.models.map((model) =>
+        model.id === modelId
+          ? {
+              ...model,
+              ...next,
+              displayName: next.displayName ?? model.displayName ?? model.id,
+            }
+          : model,
+      ),
+    });
+  }
+
+  function handleRemoveModel(provider: ProviderManagementItem, modelId: string) {
+    const key = providerKey(provider);
+    const draft = drafts[key] ?? draftForProvider(provider);
+    const models = draft.models.filter((model) => model.id !== modelId);
+    setDraft(provider, {
+      defaultModel: draft.defaultModel === modelId ? models.find((model) => !model.disabled)?.id ?? "" : draft.defaultModel,
+      models,
+    });
   }
 
   if (loading && !providers) {
@@ -393,7 +447,7 @@ export function ProviderSettingsPanel({
                         value={draft.defaultModel}
                         onChange={(event) => setDraft(provider, { defaultModel: event.target.value })}
                       >
-                        {provider.models.map((model) => (
+                        {draft.models.filter((model) => !model.disabled).map((model) => (
                           <option key={model.id} value={model.id}>
                             {model.displayName}
                           </option>
@@ -410,6 +464,7 @@ export function ProviderSettingsPanel({
                       >
                         <option value="openai_compatible">OpenAI compatible</option>
                         <option value="gemini">Gemini</option>
+                        <option value="anthropic">Anthropic</option>
                         <option value="ark">Ark</option>
                         <option value="mock">Mock</option>
                       </select>
@@ -454,6 +509,91 @@ export function ProviderSettingsPanel({
                       />
                       <span>Clear stored key</span>
                     </label>
+                  </div>
+
+                  <div className="provider-model-matrix" aria-label={`${provider.displayName} models`}>
+                    <div className="provider-model-heading">
+                      <span>Models</span>
+                      <span>{draft.models.length}</span>
+                    </div>
+                    {draft.models.map((model) => (
+                      <div className="provider-model-row" key={model.id}>
+                        <input
+                          aria-label={`${model.id} id`}
+                          name={`${key}:model:${model.id}:id`}
+                          readOnly
+                          value={model.id}
+                        />
+                        <input
+                          aria-label={`${model.id} display name`}
+                          name={`${key}:model:${model.id}:displayName`}
+                          onChange={(event) =>
+                            handleUpdateModel(provider, model.id, { displayName: event.target.value })
+                          }
+                          value={model.displayName}
+                        />
+                        <select
+                          aria-label={`${model.id} kind`}
+                          name={`${key}:model:${model.id}:kind`}
+                          onChange={(event) =>
+                            handleUpdateModel(provider, model.id, {
+                              kind: event.target.value as ProviderModelKind,
+                            })
+                          }
+                          value={model.kind ?? provider.kind}
+                        >
+                          <option value="llm">LLM</option>
+                          <option value="image">Image</option>
+                          <option value="video">Video</option>
+                          <option value="audio">Audio</option>
+                          <option value="multimodal">Multimodal</option>
+                        </select>
+                        <label>
+                          <input
+                            checked={!model.disabled}
+                            name={`${key}:model:${model.id}:active`}
+                            onChange={(event) =>
+                              handleUpdateModel(provider, model.id, { disabled: !event.target.checked })
+                            }
+                            type="checkbox"
+                          />
+                          <span>Active</span>
+                        </label>
+                        <button
+                          aria-label={`Remove ${model.id}`}
+                          className="ghost-action compact"
+                          onClick={() => handleRemoveModel(provider, model.id)}
+                          type="button"
+                        >
+                          <Trash2 size={14} aria-hidden="true" />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="provider-model-row add">
+                      <input
+                        aria-label={`${provider.id} new model id`}
+                        name={`${key}:newModelId`}
+                        onChange={(event) => setDraft(provider, { newModelId: event.target.value })}
+                        placeholder="model-id"
+                        value={draft.newModelId}
+                      />
+                      <input
+                        aria-label={`${provider.id} new model display name`}
+                        name={`${key}:newModelDisplayName`}
+                        onChange={(event) => setDraft(provider, { newModelDisplayName: event.target.value })}
+                        placeholder="Display name"
+                        value={draft.newModelDisplayName}
+                      />
+                      <button
+                        className="ghost-action compact"
+                        disabled={!draft.newModelId.trim()}
+                        onClick={() => handleAddModel(provider)}
+                        type="button"
+                      >
+                        <Plus size={14} aria-hidden="true" />
+                        Add
+                      </button>
+                    </div>
                   </div>
 
                   <div className="provider-row-actions">
@@ -515,6 +655,7 @@ export function ProviderSettingsPanel({
             <label className="generation-field">
               <span>Target</span>
               <select
+                name="programmableProviderTarget"
                 value={selectedProgrammableKey}
                 onChange={(event) => setSelectedProgrammableKey(event.target.value)}
               >
@@ -530,6 +671,7 @@ export function ProviderSettingsPanel({
               <span>Source</span>
               <textarea
                 className="provider-source-editor"
+                name="programmableProviderSource"
                 value={programmableSource}
                 onChange={(event) => setProgrammableSource(event.target.value)}
               />
@@ -638,22 +780,48 @@ function draftForProvider(provider: ProviderManagementItem): ProviderDraft {
     clearCredential: false,
     defaultModel: provider.defaultModel,
     enabled: provider.configuredEnabled,
-    protocol: provider.params?.protocol ?? (provider.id.startsWith("mock-") ? "mock" : "openai_compatible"),
+    models: provider.models.map((model) => ({ ...model })),
+    newModelDisplayName: "",
+    newModelId: "",
+    protocol: provider.params?.protocol ?? defaultProtocolForProvider(provider),
   };
 }
 
 function draftsForProviders(result: ProviderManagementResult): Record<string, ProviderDraft> {
-  return [...result.image, ...result.video].reduce<Record<string, ProviderDraft>>((drafts, provider) => {
+  return managedProviders(result).reduce<Record<string, ProviderDraft>>((drafts, provider) => {
     drafts[providerKey(provider)] = draftForProvider(provider);
     return drafts;
   }, {});
+}
+
+function managedProviders(result: ProviderManagementResult): ProviderManagementItem[] {
+  return [...result.llm, ...result.image, ...result.video];
+}
+
+function defaultProtocolForProvider(provider: ProviderManagementItem): ProviderProtocol {
+  if (provider.id.startsWith("mock-")) {
+    return "mock";
+  }
+  if (provider.id === "gemini-llm" || provider.id === "banana") {
+    return "gemini";
+  }
+  if (provider.id === "anthropic") {
+    return "anthropic";
+  }
+  if (provider.id === "ark-llm" || provider.id === "seedance") {
+    return "ark";
+  }
+  return "openai_compatible";
 }
 
 function mergeProvider(
   current: ProviderManagementResult | null,
   provider: ProviderManagementItem,
 ): ProviderManagementResult {
-  const base = current ?? { image: [], video: [] };
+  const base = current ?? { llm: [], image: [], video: [] };
+  if (provider.kind === "llm") {
+    return { ...base, llm: replaceProvider(base.llm, provider) };
+  }
   return provider.kind === "image"
     ? { ...base, image: replaceProvider(base.image, provider) }
     : { ...base, video: replaceProvider(base.video, provider) };
@@ -673,6 +841,20 @@ function mergeProviderTest(
     model: result.model,
     message: result.message,
   };
+
+  if (result.kind === "llm") {
+    return {
+      ...current,
+      llm: current.llm.map((provider) =>
+        provider.id === result.provider
+          ? {
+              ...provider,
+              lastTest,
+            }
+          : provider,
+      ),
+    };
+  }
 
   if (result.kind === "image") {
     return {
@@ -709,12 +891,67 @@ function mergeProviderModels(
   if (!current || modelIds.length === 0) {
     return current;
   }
-  const models = modelIds.map((id, index) => ({ id, displayName: id, default: index === 0 }));
+  const models = modelOptionsForKind(provider.kind, modelIds);
   return mergeProvider(current, {
     ...provider,
     defaultModel: models[0]?.id ?? provider.defaultModel,
     models,
   } as ProviderManagementItem);
+}
+
+function discoveredModelIds(
+  provider: ProviderManagementItem,
+  result: { modelGroups: { llm: string[]; image: string[]; video: string[]; chat: string[] } },
+): string[] {
+  if (provider.kind === "llm") {
+    return result.modelGroups.llm.length ? result.modelGroups.llm : result.modelGroups.chat;
+  }
+  if (provider.kind === "image") {
+    return result.modelGroups.image;
+  }
+  return result.modelGroups.video;
+}
+
+function modelOptionsForKind(
+  kind: ProviderManagementItem["kind"],
+  ids: string[],
+): ProviderConfigModelOption[] {
+  return ids.map((id, index) => ({
+    ...modelOptionForKind(kind, id, id),
+    default: index === 0,
+  }));
+}
+
+function modelOptionForKind(
+  kind: ProviderManagementItem["kind"],
+  id: string,
+  displayName: string,
+): ProviderConfigModelOption {
+  if (kind === "llm") {
+    return { id, displayName, kind: "llm", modes: ["chat", "json"], supportsJsonMode: true };
+  }
+  if (kind === "image") {
+    return { id, displayName, kind: "image", modes: ["text_to_image"] };
+  }
+  return { id, displayName, kind: "video", modes: ["image_to_video"] };
+}
+
+function normalizedDraftModels(models: ProviderConfigModelOption[]): ProviderConfigModelOption[] {
+  const seen = new Set<string>();
+  return models.flatMap((model) => {
+    const id = model.id.trim();
+    if (!id || seen.has(id)) {
+      return [];
+    }
+    seen.add(id);
+    return [
+      {
+        ...model,
+        id,
+        displayName: model.displayName.trim() || id,
+      },
+    ];
+  });
 }
 
 function replaceProvider<TProvider extends ProviderManagementItem>(

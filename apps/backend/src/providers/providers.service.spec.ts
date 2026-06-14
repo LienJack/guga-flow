@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ManagedProviderKind } from "@guga-flow/shared-types";
 
 import { readAppConfig } from "../config/app-config";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   buildImageProviderCatalog,
+  buildLlmProviderCatalog,
   buildVideoProviderCatalog,
   ProvidersService,
 } from "./providers.service";
@@ -11,7 +13,7 @@ import {
 type ProviderConfigRow = {
   id: string;
   projectId: string;
-  kind: "image" | "video";
+  kind: ManagedProviderKind;
   provider: string;
   enabled: boolean;
   displayName: string | null;
@@ -27,7 +29,7 @@ type ProviderConfigRow = {
 type ProviderConfigWhere = {
   projectId_kind_provider: {
     projectId: string;
-    kind: "image" | "video";
+    kind: ManagedProviderKind;
     provider: string;
   };
 };
@@ -100,7 +102,7 @@ function createPrismaMock() {
         where: ProviderConfigWhere;
         create: Partial<ProviderConfigRow> & {
           projectId: string;
-          kind: "image" | "video";
+          kind: ManagedProviderKind;
           provider: string;
         };
         update: Partial<ProviderConfigRow>;
@@ -218,7 +220,9 @@ describe("ProvidersService", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+    vi.stubEnv("LLM_API_KEY", "");
     vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
     vi.stubEnv("IMAGE2_API_KEY", "");
     vi.stubEnv("GEMINI_API_KEY", "");
     vi.stubEnv("GOOGLE_API_KEY", "");
@@ -233,6 +237,62 @@ describe("ProvidersService", () => {
     vi.stubEnv("RUNWARE_API_KEY", "");
     vi.stubEnv("PROVIDER_CONFIG_ENCRYPTION_KEY", "provider-config-test-key");
     vi.stubEnv("WORKER_API_TOKEN", "worker-secret");
+  });
+
+  it("returns mock LLM enabled and real LLM providers disabled without keys", () => {
+    const catalog = buildLlmProviderCatalog(readAppConfig({}));
+
+    expect(catalog.providers.map((provider) => provider.id)).toEqual([
+      "mock-llm",
+      "generic-llm",
+      "gemini-llm",
+      "anthropic",
+      "ark-llm",
+    ]);
+    expect(catalog.providers.find((provider) => provider.id === "mock-llm")).toMatchObject({
+      enabled: true,
+      requiresApiKey: false,
+      defaultModel: "mock-storyboard",
+      supportsJsonMode: true,
+    });
+    expect(catalog.providers.find((provider) => provider.id === "anthropic")).toMatchObject({
+      enabled: false,
+      requiresApiKey: true,
+      disabledReason: "Anthropic server-side key is not configured",
+    });
+    expect(JSON.stringify(catalog)).not.toContain("API_KEY");
+    expect(JSON.stringify(catalog)).not.toContain("sk-test");
+  });
+
+  it("enables real LLM providers when their server-side keys are configured", () => {
+    const catalog = buildLlmProviderCatalog(
+      readAppConfig({
+        LLM_API_KEY: "sk-test-llm",
+        ANTHROPIC_API_KEY: "sk-test-anthropic",
+        GEMINI_API_KEY: "sk-test-gemini",
+        ARK_API_KEY: "sk-test-ark",
+      }),
+    );
+
+    expect(catalog.providers.find((provider) => provider.id === "generic-llm")).toMatchObject({
+      enabled: true,
+      defaultModel: "chat-model",
+    });
+    expect(catalog.providers.find((provider) => provider.id === "gemini-llm")).toMatchObject({
+      enabled: true,
+      defaultModel: "gemini-2.5-flash",
+      supportsVision: true,
+    });
+    expect(catalog.providers.find((provider) => provider.id === "anthropic")).toMatchObject({
+      enabled: true,
+      defaultModel: "claude-sonnet-4-5",
+      supportsToolCalls: true,
+    });
+    expect(catalog.providers.find((provider) => provider.id === "ark-llm")).toMatchObject({
+      enabled: true,
+      defaultModel: "doubao-seed-1-6",
+    });
+    expect(JSON.stringify(catalog)).not.toContain("sk-test");
   });
 
   it("returns mock image enabled and real image providers disabled without keys", () => {
@@ -352,6 +412,11 @@ describe("ProvidersService", () => {
     const service = new ProvidersService(prisma as unknown as PrismaService);
 
     const initial = await service.getProviderManagement("project_1");
+    expect(initial.llm.find((provider) => provider.id === "mock-llm")).toMatchObject({
+      enabled: true,
+      credentialConfigured: true,
+      defaultModel: "mock-storyboard",
+    });
     expect(initial.image.find((provider) => provider.id === "mock-image")).toMatchObject({
       enabled: true,
       credentialConfigured: true,
@@ -426,6 +491,85 @@ describe("ProvidersService", () => {
     await expect(
       service.getRuntimeProviderConfig("project_1", "image", "image2", "wrong-token"),
     ).rejects.toThrow("Worker runtime config token is invalid");
+  });
+
+  it("stores project LLM provider model overrides without exposing credentials", async () => {
+    const prisma = createPrismaMock();
+    const service = new ProvidersService(prisma as unknown as PrismaService);
+
+    const updated = await service.updateProviderConfig("project_1", "llm", "generic-llm", {
+      enabled: true,
+      defaultModel: "team-chat-model",
+      params: {
+        protocol: "openai_compatible",
+        baseUrl: "https://llm.example.test",
+        models: [
+          {
+            id: "team-chat-model",
+            displayName: "Team Chat Model",
+            kind: "llm",
+            modes: ["chat", "json"],
+            supportsJsonMode: true,
+            contextWindowTokens: 128000,
+          },
+        ],
+      },
+      credential: { action: "set", value: "sk-secret-llm-key" },
+    });
+
+    expect(updated.provider).toMatchObject({
+      id: "generic-llm",
+      kind: "llm",
+      enabled: true,
+      credentialConfigured: true,
+      credentialSource: "stored",
+      defaultModel: "team-chat-model",
+      params: {
+        protocol: "openai_compatible",
+        baseUrl: "https://llm.example.test",
+        models: [
+          expect.objectContaining({
+            id: "team-chat-model",
+            displayName: "Team Chat Model",
+            kind: "llm",
+            supportsJsonMode: true,
+          }),
+        ],
+      },
+    });
+    expect(updated.provider.models.find((model) => model.id === "team-chat-model")).toMatchObject({
+      default: true,
+      contextWindowTokens: 128000,
+    });
+    expect(JSON.stringify(updated)).not.toContain("sk-secret-llm-key");
+
+    const testResult = await service.testProviderConfig("project_1", "llm", "generic-llm", {
+      model: "team-chat-model",
+    });
+    expect(testResult).toMatchObject({
+      kind: "llm",
+      provider: "generic-llm",
+      status: "succeeded",
+      model: "team-chat-model",
+    });
+
+    const projectCatalog = await service.getProjectLlmProviders("project_1");
+    expect(projectCatalog.providers.find((provider) => provider.id === "generic-llm")).toMatchObject({
+      enabled: true,
+      defaultModel: "team-chat-model",
+    });
+    expect(JSON.stringify(projectCatalog)).not.toContain("credentialSource");
+
+    const runtime = await service.getRuntimeProviderConfig(
+      "project_1",
+      "llm",
+      "generic-llm",
+      "worker-secret",
+    );
+    expect(runtime.env).toEqual({
+      LLM_API_KEY: "sk-secret-llm-key",
+      OPENAI_API_KEY: "sk-secret-llm-key",
+    });
   });
 
   it("rejects project provider defaults that are not in the provider catalog", async () => {
@@ -503,6 +647,7 @@ describe("ProvidersService", () => {
       detectedProtocol: "openai_compatible",
       message: "Model endpoint reachable",
       modelGroups: {
+        llm: ["gpt-4.1-mini"],
         image: ["gpt-image-1"],
         video: ["seedance-1-0-pro"],
         chat: ["gpt-4.1-mini"],
@@ -511,6 +656,51 @@ describe("ProvidersService", () => {
     });
     expect(JSON.stringify(result)).not.toContain("sk-temporary-key");
     expect(prisma.providerConfig.upsert).not.toHaveBeenCalled();
+  });
+
+  it("discovers Anthropic LLM models with the provider-specific header shape", async () => {
+    const prisma = createPrismaMock();
+    const service = new ProvidersService(prisma as unknown as PrismaService);
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            { id: "claude-sonnet-4-5" },
+            { id: "claude-haiku-4-5" },
+          ],
+        }),
+        { headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await service.discoverModels("project_1", {
+      kind: "llm",
+      provider: "anthropic",
+      baseUrl: "https://api.anthropic.test/v1",
+      credential: { source: "temporary", value: "sk-ant-temporary-key" },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.anthropic.test/v1/models",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "x-api-key": "sk-ant-temporary-key",
+          "anthropic-version": "2023-06-01",
+        }),
+        redirect: "manual",
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      detectedProtocol: "anthropic",
+      modelGroups: {
+        llm: ["claude-haiku-4-5", "claude-sonnet-4-5"],
+        chat: ["claude-haiku-4-5", "claude-sonnet-4-5"],
+      },
+      rawCount: 2,
+    });
+    expect(JSON.stringify(result)).not.toContain("sk-ant-temporary-key");
   });
 
   it("maps HTML model discovery responses to a safe API base URL error", async () => {

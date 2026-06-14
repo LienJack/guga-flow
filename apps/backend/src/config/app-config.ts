@@ -19,6 +19,12 @@ export interface AppConfig {
     image: boolean;
     video: boolean;
   };
+  llmProviderKeysConfigured: {
+    generic: boolean;
+    gemini: boolean;
+    anthropic: boolean;
+    ark: boolean;
+  };
   imageProviderKeysConfigured: {
     image2: boolean;
     banana: boolean;
@@ -56,6 +62,10 @@ function readList(value: string | undefined, fallback: string[]): string[] {
 }
 
 export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const genericLlmKeyConfigured = Boolean(env.LLM_API_KEY || env.OPENAI_API_KEY);
+  const geminiLlmKeyConfigured = Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY);
+  const anthropicLlmKeyConfigured = Boolean(env.ANTHROPIC_API_KEY);
+  const arkLlmKeyConfigured = Boolean(env.ARK_API_KEY || env.MODELARK_API_KEY);
   const image2KeyConfigured = Boolean(env.OPENAI_API_KEY || env.IMAGE2_API_KEY);
   const bananaKeyConfigured = Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY || env.BANANA_API_KEY);
   const seedanceKeyConfigured = Boolean(
@@ -85,9 +95,15 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     providerConfigEncryptionKey: env.PROVIDER_CONFIG_ENCRYPTION_KEY || undefined,
     workerApiToken: env.WORKER_API_TOKEN || undefined,
     realProviderKeysConfigured: {
-      llm: Boolean(env.LLM_API_KEY),
+      llm: genericLlmKeyConfigured || geminiLlmKeyConfigured || anthropicLlmKeyConfigured || arkLlmKeyConfigured,
       image: Boolean(env.IMAGE_API_KEY || image2KeyConfigured || bananaKeyConfigured),
       video: Boolean(env.VIDEO_API_KEY || seedanceKeyConfigured || happyhorseKeyConfigured),
+    },
+    llmProviderKeysConfigured: {
+      generic: genericLlmKeyConfigured,
+      gemini: geminiLlmKeyConfigured,
+      anthropic: anthropicLlmKeyConfigured,
+      ark: arkLlmKeyConfigured,
     },
     imageProviderKeysConfigured: {
       image2: image2KeyConfigured,

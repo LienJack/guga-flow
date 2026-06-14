@@ -3,6 +3,7 @@ import type {
   ImageProviderMode,
   EditorExportSortMode,
   TimelineManifest,
+  ProviderErrorCategory,
   ProjectAspectRatio,
   VideoReferenceMediaInput,
   StoryboardResult,
@@ -10,6 +11,7 @@ import type {
   VideoProviderResolution,
   VideoProviderTaskStatus,
 } from "@guga-flow/shared-types";
+import { normalizeProviderErrorCategory } from "@guga-flow/shared-types";
 
 export interface ProviderCapability {
   id: string;
@@ -22,12 +24,14 @@ export interface ProviderErrorShape {
   code: string;
   message: string;
   retryable: boolean;
+  category?: ProviderErrorCategory;
 }
 
 export class ProviderError extends Error {
   readonly provider: string;
   readonly code: string;
   readonly retryable: boolean;
+  readonly category: ProviderErrorCategory;
 
   constructor(input: ProviderErrorShape) {
     super(input.message);
@@ -35,6 +39,7 @@ export class ProviderError extends Error {
     this.provider = input.provider;
     this.code = input.code;
     this.retryable = input.retryable;
+    this.category = input.category ?? normalizeProviderErrorCategory(input);
   }
 
   toJSON(): ProviderErrorShape {
@@ -43,6 +48,7 @@ export class ProviderError extends Error {
       code: this.code,
       message: this.message,
       retryable: this.retryable,
+      category: this.category,
     };
   }
 }
