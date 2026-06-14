@@ -1,4 +1,5 @@
 import type {
+  AiAudioNodeData,
   AiTextNodeData,
   CanvasNodeRecord,
   GenerationJobRecord,
@@ -135,6 +136,24 @@ describe("GenerationActions", () => {
     expect(html).toContain("Generate Text");
     expect(html).toContain("Text prompt");
     expect(html).toContain("Write a two-beat sequence.");
+    expect(html).not.toContain("Provider");
+  });
+
+  it("renders AI Audio generation controls with the node prompt", () => {
+    const html = renderToStaticMarkup(
+      <GenerationActions
+        generationJobs={[]}
+        projectId="project_1"
+        node={node<AiAudioNodeData>("ai_audio_1", "ai_audio", {
+          prompt: "Read Ari's line as a tense whisper.",
+          voiceReferenceAssetIds: ["asset_voice_1"],
+        })}
+      />,
+    );
+
+    expect(html).toContain("Generate Audio");
+    expect(html).toContain("Audio prompt");
+    expect(html).toContain("Read Ari&#x27;s line as a tense whisper.");
     expect(html).not.toContain("Provider");
   });
 
@@ -283,6 +302,26 @@ describe("GenerationActions", () => {
       sourceNodeId: "ai_text_1",
       textPrompt: "Write a two-beat sequence.",
       skillTemplateIds: ["skill_ai_text"],
+    });
+
+    expect(
+      buildGenerationJobInputForOperation(
+        "ai_audio_generation",
+        "ai_audio_1",
+        undefined,
+        undefined,
+        "",
+        ["skill_ai_audio"],
+        "",
+        "Read Ari's line as a tense whisper.",
+      ),
+    ).toEqual({
+      operation: "ai_audio_generation",
+      sourceNodeId: "ai_audio_1",
+      audioPrompt: "Read Ari's line as a tense whisper.",
+      audioProvider: "mock-audio",
+      audioModel: "mock-tts-v1",
+      skillTemplateIds: ["skill_ai_audio"],
     });
   });
 

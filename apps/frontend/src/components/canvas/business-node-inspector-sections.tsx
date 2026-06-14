@@ -92,6 +92,15 @@ export const BUSINESS_NODE_FIELDS = {
     { key: "provider", label: "Provider" },
     { key: "model", label: "Model" },
   ],
+  ai_audio: [
+    { key: "prompt", label: "Prompt", multiline: true },
+    { key: "scriptText", label: "Script Text", multiline: true },
+    { key: "assetId", label: "Audio Asset ID" },
+    { key: "durationSeconds", label: "Duration", inputType: "number" },
+    { key: "contextSummary", label: "Context Summary", multiline: true },
+    { key: "provider", label: "Provider" },
+    { key: "model", label: "Model" },
+  ],
   image: [
     { key: "description", label: "Description", multiline: true },
     { key: "prompt", label: "Prompt", multiline: true },

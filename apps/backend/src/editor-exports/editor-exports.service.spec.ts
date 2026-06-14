@@ -50,7 +50,16 @@ function createPrismaMock() {
               characterAssetIds: ["character_1"],
             }),
             shotNode("shot_2", { aspectRatio: "9:16" }),
-            shotNode("shot_3", {}),
+            shotNode("shot_3", {
+              audioAssetIds: ["asset_ai_audio_1"],
+              audioReferences: [
+                {
+                  assetId: "asset_ai_audio_1",
+                  role: "narration",
+                  label: "Generated Ari narration",
+                },
+              ],
+            }),
           ];
           return ids ? shots.filter((node) => ids.includes(node.id)) : shots;
         }
@@ -96,6 +105,7 @@ function createPrismaMock() {
           asset("asset_ambience_1", "launch-room.wav", 7000, "audio/wav"),
           asset("asset_voice_1", "ari-voice.mp3", 9000, "audio/mpeg"),
           asset("asset_clip_audio_1", "needle-drop.ogg", 11000, "audio/ogg"),
+          asset("asset_ai_audio_1", "ari-generated-tts.mp3", 6500, "audio/mpeg"),
           asset("asset_bgm_1", "main-cue.mp3", 120000, "audio/mpeg"),
           asset("asset_cover_1", "episode-cover.png", 180000, "image/png"),
         ];
@@ -275,6 +285,17 @@ describe("EditorExportsService", () => {
         label: "Needle drop",
         mimeType: "audio/ogg",
         durationMs: 11000,
+      }),
+    ]);
+    expect(jobInput.clips[2]?.audioReferences).toEqual([
+      expect.objectContaining({
+        assetId: "asset_ai_audio_1",
+        sourceNodeId: "shot_3",
+        sourceNodeType: "shot",
+        role: "narration",
+        label: "Generated Ari narration",
+        mimeType: "audio/mpeg",
+        durationMs: 6500,
       }),
     ]);
     expect(jobInput.clips[0]?.generationSettings?.effective.visualStyle).toBe("generated clip style");

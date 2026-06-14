@@ -1,5 +1,6 @@
 import type {
   AiTextGenerationJobOutput,
+  AnyAudioProviderId,
   AnyLlmProviderId,
   CreateGenerationJobInput,
   CreateAssetAnalysisJobInput,
@@ -67,6 +68,11 @@ export class CreateGenerationJobDto implements CreateGenerationJobInput {
   textPrompt?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  audioPrompt?: string;
+
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(8)
   @IsString({ each: true })
@@ -92,6 +98,26 @@ export class CreateGenerationJobDto implements CreateGenerationJobInput {
   @IsString()
   @MaxLength(120)
   llmModel?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  audioProvider?: AnyAudioProviderId;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  audioModel?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(900)
+  audioDurationSeconds?: number;
+
+  @IsOptional()
+  @IsObject()
+  audioProviderParams?: CanvasSnapshotJson;
 
   @IsOptional()
   @IsIn(PROJECT_ASPECT_RATIOS)

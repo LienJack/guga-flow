@@ -116,7 +116,7 @@ export interface CreateGeneratedAssetInput {
   providerOutput: GeneratedMediaProviderOutput;
   purpose: Extract<
     AssetPurpose,
-    "shot_keyframe" | "shot_clip" | "character_reference" | "location_reference"
+    "shot_keyframe" | "shot_clip" | "shot_audio" | "character_reference" | "location_reference"
   >;
   metadataJson?: Record<string, unknown>;
 }
@@ -152,14 +152,17 @@ function assetTypeForMime(mimeType: UploadableAssetMimeType): AssetType {
   return "document";
 }
 
-function assetTypeForGeneratedMime(mimeType: string): Extract<AssetType, "image" | "video"> {
+function assetTypeForGeneratedMime(mimeType: string): Extract<AssetType, "image" | "video" | "audio"> {
   if (mimeType.startsWith("image/")) {
     return "image";
   }
   if (mimeType.startsWith("video/")) {
     return "video";
   }
-  throw new BadRequestException("Generated asset must be an image or video");
+  if (mimeType.startsWith("audio/")) {
+    return "audio";
+  }
+  throw new BadRequestException("Generated asset must be an image, video, or audio");
 }
 
 function previewKindForMime(mimeType: string): AssetPreviewKind {

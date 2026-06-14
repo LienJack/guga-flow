@@ -38,6 +38,7 @@ export const CANVAS_EDGE_RELATION_LABELS = {
   references_prop: "Prop reference",
   generated_image: "Generated image",
   generated_video: "Generated video",
+  generated_audio: "Generated audio",
   first_frame_for: "First frame",
   selected_version_for: "Selected version",
   sent_to_editor: "Sent to editor",
@@ -71,6 +72,9 @@ export function getSemanticBindingRelation(
   }
   if (sourceNode.type === "character_asset" && targetNode.type === "shot") {
     return "references_character";
+  }
+  if (sourceNode.type === "character_asset" && targetNode.type === "ai_audio") {
+    return "derived_from";
   }
   if (
     sourceNode.type === "location_asset" &&

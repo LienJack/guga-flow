@@ -1,4 +1,5 @@
 import type {
+  AiAudioGenerationJobInput,
   AiTextGenerationJobInput,
   GenerationJobRecord,
   ProgrammableProviderManifest,
@@ -88,6 +89,31 @@ describe("generation executors", () => {
       },
     });
   });
+
+  it("executes AI audio generation jobs with deterministic mock audio output", async () => {
+    const input = aiAudioInput();
+    const result = await executeGenerationJob(jobRecord(input));
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      providerOutput: {
+        assetId: "mock-audio-job_1",
+        storageKey: "project_1/mock/audio/job_1.mp3",
+        mimeType: "audio/mpeg",
+        provider: "mock-audio",
+        model: "mock-tts-v1",
+        prompt: "Read Ari's line as a tense whisper.",
+        referenceAssetIds: ["asset_voice_1"],
+        rawJson: {
+          operation: "ai_audio_generation",
+          scriptText: "Read Ari's line as a tense whisper.",
+          durationSeconds: 8,
+          contextCount: 1,
+          skillTemplateIds: ["preset_audio_1"],
+        },
+      },
+    });
+  });
 });
 
 function shotInput(): ShotToImageJobInput {
@@ -134,7 +160,33 @@ function aiTextInput(): AiTextGenerationJobInput {
   };
 }
 
-function jobRecord<TInput extends ShotToImageJobInput | AiTextGenerationJobInput>(
+function aiAudioInput(): AiAudioGenerationJobInput {
+  return {
+    operation: "ai_audio_generation",
+    projectId: "project_1",
+    sourceNodeId: "ai_audio_1",
+    aiAudioNodeId: "ai_audio_1",
+    prompt: "Read Ari's line as a tense whisper.",
+    scriptText: "Read Ari's line as a tense whisper.",
+    context: [
+      {
+        nodeId: "shot_1",
+        nodeType: "shot",
+        title: "Shot 01",
+        text: "Dialogue: We move now.",
+      },
+    ],
+    sourceNodeIds: ["ai_audio_1", "shot_1"],
+    referenceAssetIds: ["asset_voice_1"],
+    provider: "mock-audio",
+    model: "mock-tts-v1",
+    durationSeconds: 8,
+    providerParams: {},
+    skillTemplateIds: ["preset_audio_1"],
+  };
+}
+
+function jobRecord<TInput extends ShotToImageJobInput | AiTextGenerationJobInput | AiAudioGenerationJobInput>(
   input: TInput,
 ): GenerationJobRecord<TInput> {
   return {

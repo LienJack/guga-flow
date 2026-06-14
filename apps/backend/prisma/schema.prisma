@@ -23,6 +23,7 @@ enum CanvasNodeType {
   style_asset
   prop_asset
   ai_text
+  ai_audio
   image
   video
   editor_package
@@ -39,6 +40,7 @@ enum CanvasEdgeRelation {
   references_prop
   generated_image
   generated_video
+  generated_audio
   first_frame_for
   selected_version_for
   sent_to_editor
@@ -97,6 +99,7 @@ enum GenerationOperation {
   image_to_video
   shot_to_video
   ai_text_generation
+  ai_audio_generation
   workflow_run
   batch_shots_to_images
   batch_images_to_videos

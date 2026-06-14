@@ -15,6 +15,7 @@ export const CANVAS_NODE_TYPES = [
   "style_asset",
   "prop_asset",
   "ai_text",
+  "ai_audio",
   "image",
   "video",
   "editor_package",
@@ -174,6 +175,14 @@ export const CANVAS_NODE_REGISTRY = {
     description: "Task-backed text generation node that consumes upstream canvas context.",
     capabilities: ["accepts_text", "produces_text", "has_preview", "has_task"],
   },
+  ai_audio: {
+    type: "ai_audio",
+    family: "ai_generation",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.ai_generation,
+    label: "AI Audio",
+    description: "Task-backed audio generation node for TTS, narration, and voice-reference output.",
+    capabilities: ["accepts_text", "accepts_audio", "produces_asset", "has_preview", "has_task"],
+  },
   image: {
     type: "image",
     family: "ai_generation",
@@ -247,6 +256,7 @@ export const PHASE_3_CANVAS_NODE_TYPES = [
   "character_asset",
   "location_asset",
   "ai_text",
+  "ai_audio",
   "image",
   "video",
   "editor_package",
@@ -263,6 +273,7 @@ export const CANVAS_EDGE_RELATIONS = [
   "references_prop",
   "generated_image",
   "generated_video",
+  "generated_audio",
   "first_frame_for",
   "selected_version_for",
   "sent_to_editor",
@@ -329,6 +340,7 @@ export const CANVAS_NODE_OUTPUT_KINDS = {
   character_asset: ["text", "image", "audio"],
   location_asset: ["text", "image", "video"],
   ai_text: ["text"],
+  ai_audio: ["audio"],
   image: ["image"],
   video: ["video", "audio"],
 } as const satisfies Partial<Record<CanvasNodeType, readonly CanvasInputKind[]>>;
@@ -464,6 +476,24 @@ export const CANVAS_NODE_INPUT_SLOTS = {
       inputRole: "prompt_context",
       required: false,
       maxConnections: 8,
+    },
+  ],
+  ai_audio: [
+    {
+      id: "prompt_text",
+      label: "Prompt context",
+      inputKind: "text",
+      inputRole: "prompt_context",
+      required: false,
+      maxConnections: 8,
+    },
+    {
+      id: "voice_reference",
+      label: "Voice reference",
+      inputKind: "audio",
+      inputRole: "voice_reference",
+      required: false,
+      maxConnections: 4,
     },
   ],
 } as const satisfies Partial<Record<CanvasNodeType, readonly CanvasNodeInputSlotDefinition[]>>;
@@ -674,7 +704,13 @@ export interface SourceMediaNodeData {
 
 export interface GeneratedMediaNodeData {
   generationJobId?: string;
-  generationOperation?: "shot_to_image" | "image_refinement" | "image_to_video" | "workflow_run" | "ai_text_generation";
+  generationOperation?:
+    | "shot_to_image"
+    | "image_refinement"
+    | "image_to_video"
+    | "workflow_run"
+    | "ai_text_generation"
+    | "ai_audio_generation";
   generatedFromNodeId?: string;
   sourceNodeIds?: string[];
   referenceAssetIds?: string[];
@@ -689,6 +725,18 @@ export interface AiTextNodeData extends GeneratedMediaNodeData {
   prompt?: string;
   outputText?: string;
   contextSummary?: string;
+}
+
+export interface AiAudioNodeData extends GeneratedMediaNodeData {
+  prompt?: string;
+  scriptText?: string;
+  assetId?: string;
+  durationSeconds?: number;
+  durationMs?: number;
+  description?: string;
+  contextSummary?: string;
+  voiceReferenceAssetIds?: string[];
+  voiceReferences?: AudioReferenceData[];
 }
 
 export interface ImageNodeData extends GeneratedMediaNodeData {
@@ -738,6 +786,7 @@ export interface Phase3CanvasNodeDataByType {
   character_asset: CharacterAssetNodeData;
   location_asset: LocationAssetNodeData;
   ai_text: AiTextNodeData;
+  ai_audio: AiAudioNodeData;
   image: ImageNodeData;
   video: VideoNodeData;
   editor_package: EditorPackageNodeData;
@@ -822,6 +871,13 @@ export function resolveCanvasInputSlot(input: {
   const slots = getCanvasNodeInputSlots(input.targetType).filter((slot) =>
     outputKinds.has(slot.inputKind),
   );
+
+  if (input.targetType === "ai_audio" && outputKinds.has("audio")) {
+    const voiceReference = slots.find((slot) => slot.id === "voice_reference");
+    if (voiceReference) {
+      return voiceReference;
+    }
+  }
 
   if (input.preferredSlotId) {
     const preferred = slots.find((slot) => slot.id === input.preferredSlotId);

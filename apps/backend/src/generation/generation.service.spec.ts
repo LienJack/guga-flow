@@ -1,5 +1,7 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type {
+  AiAudioGenerationJobInput,
+  AiAudioNodeData,
   AiTextGenerationJobInput,
   AiTextGenerationJobOutput,
   AiTextNodeData,
@@ -12,6 +14,7 @@ import type {
   CharacterToImageJobInput,
   EditorExportJobInput,
   EditorExportPackageOutput,
+  GeneratedMediaProviderOutput,
   ImageProviderCatalogResult,
   ImageRefinementJobInput,
   ImageNodeData,
@@ -141,39 +144,58 @@ function createPromptServiceMock() {
   };
 }
 
+function assetTypeForId(assetId: string): "image" | "video" | "audio" {
+  if (/audio|voice|bgm|music/i.test(assetId)) {
+    return "audio";
+  }
+  return assetId.includes("video") ? "video" : "image";
+}
+
+function assetMimeTypeForId(assetId: string): "image/png" | "video/mp4" | "audio/mpeg" {
+  const type = assetTypeForId(assetId);
+  if (type === "audio") {
+    return "audio/mpeg";
+  }
+  return type === "video" ? "video/mp4" : "image/png";
+}
+
 function createAssetsServiceMock() {
   let assetSequence = 1;
   return {
     getAsset: vi.fn(async (_projectId: string, assetId: string) => ({
       id: assetId,
       projectId: "project_1",
-      type: assetId.includes("video") ? "video" : "image",
-      purpose: "uploaded",
-      storageKey: `project_1/${assetId}.png`,
-      mimeType: assetId.includes("video") ? "video/mp4" : "image/png",
-      originalFilename: `${assetId}.png`,
+      type: assetTypeForId(assetId),
+      purpose: assetTypeForId(assetId) === "audio" ? "voice_reference" : "uploaded",
+      storageKey: `project_1/${assetId}.${assetTypeForId(assetId) === "audio" ? "mp3" : assetId.includes("video") ? "mp4" : "png"}`,
+      mimeType: assetMimeTypeForId(assetId),
+      originalFilename: `${assetId}.${assetTypeForId(assetId) === "audio" ? "mp3" : assetId.includes("video") ? "mp4" : "png"}`,
       sizeBytes: 68,
       metadataJson: {},
-      previewKind: assetId.includes("video") ? "video" : "image",
+      previewKind: assetTypeForId(assetId),
       previewUrl: `/api/v1/projects/project_1/assets/${assetId}/preview`,
       createdAt: createdAt.toISOString(),
     })),
     createGeneratedAsset: vi.fn(
-      async (_projectId: string, input: { providerOutput: { storageKey: string; mimeType: string } }) => {
+      async (
+        _projectId: string,
+        input: { providerOutput: { storageKey: string; mimeType: string }; purpose?: string },
+      ) => {
         const id = `asset_generated_${assetSequence}`;
         assetSequence += 1;
         const isImage = input.providerOutput.mimeType.startsWith("image/");
+        const isAudio = input.providerOutput.mimeType.startsWith("audio/");
         return {
           id,
           projectId: "project_1",
-          type: isImage ? "image" : "video",
-          purpose: isImage ? "shot_keyframe" : "shot_clip",
+          type: isAudio ? "audio" : isImage ? "image" : "video",
+          purpose: input.purpose ?? (isAudio ? "shot_audio" : isImage ? "shot_keyframe" : "shot_clip"),
           storageKey: input.providerOutput.storageKey,
           mimeType: input.providerOutput.mimeType,
           originalFilename: input.providerOutput.storageKey.split("/").pop() ?? "generated",
           sizeBytes: 68,
           metadataJson: {},
-          previewKind: isImage ? "image" : "video",
+          previewKind: isAudio ? "audio" : isImage ? "image" : "video",
           previewUrl: `/api/v1/projects/project_1/assets/${id}/preview`,
           createdAt: createdAt.toISOString(),
         };
@@ -732,6 +754,94 @@ describe("GenerationService", () => {
     expect(result.job.operation).toBe("ai_text_generation");
   });
 
+  it("creates a queued AI audio generation job with voice and shot audio context", async () => {
+    canvasService.getCanvas.mockResolvedValue(
+      canvasLoadResult({
+        nodes: [
+          canvasNode<AiAudioNodeData>("ai_audio_1", "ai_audio", "Ari Narration", {
+            prompt: "Record Ari's narration.",
+            voiceReferenceAssetIds: ["asset_voice_seed"],
+            durationSeconds: 6,
+          }),
+          canvasNode<CharacterAssetNodeData>("character_1", "character_asset", "Ari", {
+            name: "Ari",
+            role: "signal analyst",
+            appearance: "rain-damp hair and a dark utility coat",
+            voiceAssetIds: ["asset_voice_1"],
+          }),
+          canvasNode<ShotNodeData>("shot_1", "shot", "Shot 01", {
+            shotNumber: "001",
+            visualDescription: "Ari watches signal lights blink out.",
+            dialogue: "We move now.",
+            audioReferences: [{ assetId: "asset_audio_1", role: "clip_audio", label: "Temp cut" }],
+          }),
+        ],
+        edges: [
+          canvasEdge("edge_character_audio", "character_1", "ai_audio_1", "derived_from"),
+          canvasEdge("edge_shot_audio", "shot_1", "ai_audio_1", "derived_from"),
+        ],
+      }),
+    );
+
+    const result = await service.createJob("project_1", {
+      operation: "ai_audio_generation",
+      sourceNodeId: "ai_audio_1",
+      audioPrompt: "Read Ari's line as a tense whisper.",
+      audioDurationSeconds: 8,
+      skillTemplateIds: ["preset_audio_1"],
+    });
+
+    expect(assetsService.getAsset).toHaveBeenCalledWith("project_1", "asset_voice_seed");
+    expect(assetsService.getAsset).toHaveBeenCalledWith("project_1", "asset_voice_1");
+    expect(assetsService.getAsset).toHaveBeenCalledWith("project_1", "asset_audio_1");
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        projectId: "project_1",
+        operation: "ai_audio_generation",
+        status: "queued",
+        provider: "mock-audio",
+        model: "mock-tts-v1",
+        sourceNodeId: "ai_audio_1",
+        inputJson: expect.objectContaining({
+          operation: "ai_audio_generation",
+          aiAudioNodeId: "ai_audio_1",
+          prompt: "Read Ari's line as a tense whisper.",
+          scriptText: "Read Ari's line as a tense whisper.",
+          durationSeconds: 8,
+          skillTemplateIds: ["preset_audio_1"],
+          sourceNodeIds: ["ai_audio_1", "character_1", "shot_1"],
+          referenceAssetIds: ["asset_voice_seed", "asset_voice_1", "asset_audio_1"],
+          context: [
+            expect.objectContaining({
+              nodeId: "character_1",
+              text: expect.stringContaining("Role: signal analyst"),
+            }),
+            expect.objectContaining({
+              nodeId: "character_1",
+              assetId: "asset_voice_1",
+              role: "voice",
+            }),
+            expect.objectContaining({
+              nodeId: "shot_1",
+              text: expect.stringContaining("Dialogue: We move now."),
+            }),
+            expect.objectContaining({
+              nodeId: "shot_1",
+              assetId: "asset_audio_1",
+              role: "clip_audio",
+              label: "Temp cut",
+            }),
+          ],
+        }),
+      }),
+    });
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "ai_audio_1" },
+      data: { status: "queued" },
+    });
+    expect(result.job.operation).toBe("ai_audio_generation");
+  });
+
   it("rejects disabled LLM providers before queuing AI text jobs", async () => {
     canvasService.getCanvas.mockResolvedValue(
       canvasLoadResult({
@@ -1044,6 +1154,7 @@ describe("GenerationService", () => {
             "image_refinement",
             "image_to_video",
             "ai_text_generation",
+            "ai_audio_generation",
             "asset_caption",
             "asset_classification",
             "workflow_run",
@@ -1460,6 +1571,103 @@ describe("GenerationService", () => {
     });
     expect(result.outputJson).toEqual(output);
     expect(result.targetNodeId).toBe("ai_text_1");
+  });
+
+  it("completes AI audio jobs by creating an audio asset and updating the source node", async () => {
+    const input = aiAudioInput();
+    const providerOutput = aiAudioProviderOutput();
+    prisma.generationJob.findUnique.mockResolvedValue(
+      generationJob({
+        operation: "ai_audio_generation",
+        status: "running",
+        provider: "mock-audio",
+        model: "mock-tts-v1",
+        sourceNodeId: "ai_audio_1",
+        inputJson: input,
+      }),
+    );
+    prisma.canvasNode.findFirst.mockResolvedValue(
+      canvasNode<AiAudioNodeData>("ai_audio_1", "ai_audio", "Ari Narration", {
+        prompt: "Read Ari's line as a tense whisper.",
+        voiceReferenceAssetIds: ["asset_voice_1"],
+      }),
+    );
+    prisma.generationJob.update.mockResolvedValue(
+      generationJob({
+        operation: "ai_audio_generation",
+        status: "succeeded",
+        provider: "mock-audio",
+        model: "mock-tts-v1",
+        sourceNodeId: "ai_audio_1",
+        targetNodeId: "ai_audio_1",
+        inputJson: input,
+        outputJson: {
+          operation: "ai_audio_generation",
+          assetId: "asset_generated_1",
+          targetNodeId: "ai_audio_1",
+        },
+      }),
+    );
+
+    const result = await service.succeedJob("job_1", providerOutput);
+
+    expect(assetsService.createGeneratedAsset).toHaveBeenCalledWith(
+      "project_1",
+      expect.objectContaining({
+        purpose: "shot_audio",
+        providerOutput,
+        metadataJson: expect.objectContaining({
+          generationJobId: "job_1",
+          operation: "ai_audio_generation",
+          sourceNodeId: "ai_audio_1",
+          context: input.context,
+        }),
+      }),
+      expect.any(Object),
+    );
+    expect(prisma.canvasNode.create).not.toHaveBeenCalled();
+    expect(prisma.canvasEdge.create).not.toHaveBeenCalled();
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "ai_audio_1" },
+      data: {
+        status: "succeeded",
+        dataJson: expect.objectContaining({
+          assetId: "asset_generated_1",
+          prompt: "Read Ari's line as a tense whisper.",
+          scriptText: "Read Ari's line as a tense whisper.",
+          durationSeconds: 8,
+          contextSummary: "Shot 01 (shot), Ari (audio:asset_voice_1)",
+          provider: "mock-audio",
+          model: "mock-tts-v1",
+          generationJobId: "job_1",
+          generationOperation: "ai_audio_generation",
+          generatedFromNodeId: "ai_audio_1",
+          sourceNodeIds: ["ai_audio_1", "shot_1", "character_1"],
+          referenceAssetIds: ["asset_voice_1"],
+          voiceReferenceAssetIds: ["asset_voice_1"],
+          inputJson: input,
+          outputJson: expect.objectContaining({
+            operation: "ai_audio_generation",
+            assetId: "asset_generated_1",
+            providerOutput,
+          }),
+        }),
+      },
+    });
+    expect(prisma.generationJob.update).toHaveBeenCalledWith({
+      where: { id: "job_1" },
+      data: {
+        status: "succeeded",
+        targetNodeId: "ai_audio_1",
+        outputJson: expect.objectContaining({
+          operation: "ai_audio_generation",
+          assetId: "asset_generated_1",
+          providerOutput,
+        }),
+        errorMessage: null,
+      },
+    });
+    expect(result.targetNodeId).toBe("ai_audio_1");
   });
 
   it("does not complete jobs that leave active state before media side effects", async () => {
@@ -2282,6 +2490,56 @@ function aiTextOutput(overrides: Partial<AiTextGenerationJobOutput> = {}): AiTex
     context: aiTextInput().context,
     sourceNodeIds: ["ai_text_1", "shot_1", "character_1"],
     completedAt: "2026-06-12T00:10:00.000Z",
+    ...overrides,
+  };
+}
+
+function aiAudioInput(overrides: Partial<AiAudioGenerationJobInput> = {}): AiAudioGenerationJobInput {
+  return {
+    operation: "ai_audio_generation",
+    projectId: "project_1",
+    sourceNodeId: "ai_audio_1",
+    aiAudioNodeId: "ai_audio_1",
+    prompt: "Read Ari's line as a tense whisper.",
+    scriptText: "Read Ari's line as a tense whisper.",
+    context: [
+      {
+        nodeId: "shot_1",
+        nodeType: "shot",
+        title: "Shot 01",
+        text: "Dialogue: We move now.",
+      },
+      {
+        nodeId: "character_1",
+        nodeType: "character_asset",
+        title: "Ari",
+        assetId: "asset_voice_1",
+        label: "Ari voice",
+        role: "voice",
+      },
+    ],
+    sourceNodeIds: ["ai_audio_1", "shot_1", "character_1"],
+    referenceAssetIds: ["asset_voice_1"],
+    provider: "mock-audio",
+    model: "mock-tts-v1",
+    durationSeconds: 8,
+    providerParams: {},
+    skillTemplateIds: ["preset_audio_1"],
+    ...overrides,
+  };
+}
+
+function aiAudioProviderOutput(
+  overrides: Partial<GeneratedMediaProviderOutput> = {},
+): GeneratedMediaProviderOutput {
+  return {
+    assetId: "provider_audio_1",
+    storageKey: "mock/audio/provider_audio_1.mp3",
+    mimeType: "audio/mpeg",
+    provider: "mock-audio",
+    model: "mock-tts-v1",
+    prompt: "Read Ari's line as a tense whisper.",
+    referenceAssetIds: ["asset_voice_1"],
     ...overrides,
   };
 }

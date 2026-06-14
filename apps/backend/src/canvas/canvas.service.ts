@@ -53,6 +53,10 @@ import {
   validateStoryboardResult,
 } from "@guga-flow/shared-types";
 
+import type {
+  CanvasEdgeRelation as PrismaCanvasEdgeRelation,
+  CanvasNodeType as PrismaCanvasNodeType,
+} from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { LocalStorageService } from "../storage/local-storage.service";
 
@@ -108,6 +112,14 @@ type StoryboardDraftModel = {
 type CanvasPrismaClient = Pick<PrismaService, "canvasEdge" | "canvasNode">;
 type CanvasEdgeDataJson = { [key: string]: CanvasSnapshotJson };
 type CanvasEdgeWriteInput = Omit<CreateCanvasEdgeInput<CanvasEdgeDataJson>, "affectedShotNodeIds">;
+
+function prismaCanvasNodeType(type: CanvasNodeType): PrismaCanvasNodeType {
+  return type as PrismaCanvasNodeType;
+}
+
+function prismaCanvasEdgeRelation(relation: CanvasEdgeRelation): PrismaCanvasEdgeRelation {
+  return relation as PrismaCanvasEdgeRelation;
+}
 
 type AssetModel = {
   id: string;
@@ -422,7 +434,7 @@ export class CanvasService {
         projectId,
         canvasDocumentId: canvasDocument.id,
         tldrawShapeId: input.tldrawShapeId,
-        type: input.type,
+        type: prismaCanvasNodeType(input.type),
         title: this.normalizeTitle(input.title),
         x: geometry.x,
         y: geometry.y,
@@ -656,7 +668,7 @@ export class CanvasService {
             projectId,
             canvasDocumentId: canvasDocument.id,
             tldrawShapeId: this.importShapeId(importBatchId, plannedNode.key),
-            type: plannedNode.type,
+            type: prismaCanvasNodeType(plannedNode.type),
             title: this.normalizeTitle(plannedNode.title),
             x: plannedNode.x,
             y: plannedNode.y,
@@ -873,7 +885,7 @@ export class CanvasService {
             projectId,
             canvasDocumentId: canvasDocument.id,
             tldrawShapeId: `shape:fragment-${nextId}`,
-            type: node.type,
+            type: prismaCanvasNodeType(node.type),
             title: this.normalizeTitle(node.title),
             x: node.x + 80,
             y: node.y + 80,
@@ -920,7 +932,7 @@ export class CanvasService {
             sourceShapeId: sourceNode.tldrawShapeId,
             targetShapeId: targetNode.tldrawShapeId,
             visualArrowShapeId: `shape:fragment-arrow-${nextId}`,
-            relation: edge.relation,
+            relation: prismaCanvasEdgeRelation(edge.relation),
             dataJson,
           },
         }));
@@ -1186,6 +1198,13 @@ export class CanvasService {
       return;
     }
 
+    if (relation === "generated_audio") {
+      if (sourceNode.type !== "ai_audio" || targetNode.type !== "ai_audio") {
+        throw new BadRequestException("Generated audio edges must resolve on an AI Audio node");
+      }
+      return;
+    }
+
     throw new BadRequestException("Canvas edge relation is not supported for semantic binding yet");
   }
 
@@ -1194,7 +1213,11 @@ export class CanvasService {
     targetNode: CanvasNodeModel,
     relation: CanvasEdgeRelation,
   ): boolean {
-    return relation === "derived_from" && sourceNode.type !== targetNode.type && isSourceMediaNodeType(sourceNode.type);
+    return (
+      relation === "derived_from" &&
+      sourceNode.type !== targetNode.type &&
+      (isSourceMediaNodeType(sourceNode.type) || targetNode.type === "ai_audio")
+    );
   }
 
   private resolveInputSlotEdgeData(input: {
@@ -1297,7 +1320,7 @@ export class CanvasService {
         canvasDocumentId,
         sourceNodeId: input.sourceNodeId,
         targetNodeId: input.targetNodeId,
-        relation: input.relation,
+        relation: prismaCanvasEdgeRelation(input.relation),
       },
     });
 
@@ -1331,7 +1354,7 @@ export class CanvasService {
         sourceShapeId: input.sourceShapeId ?? null,
         targetShapeId: input.targetShapeId ?? null,
         visualArrowShapeId: input.visualArrowShapeId ?? null,
-        relation: input.relation,
+        relation: prismaCanvasEdgeRelation(input.relation),
         ...(input.dataJson !== undefined ? { dataJson: input.dataJson } : {}),
       },
     });

@@ -1,6 +1,10 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ProviderError, createVideoProviderRegistry } from "@guga-flow/provider-contracts";
 import type {
+  AiAudioGenerationContextItem,
+  AiAudioGenerationJobInput,
+  AiAudioGenerationJobOutput,
+  AiAudioNodeData,
   AiTextGenerationContextItem,
   AiTextGenerationJobInput,
   AiTextGenerationJobOutput,
@@ -138,6 +142,7 @@ type DirectGenerationJobInput =
   | LocationToImageJobInput
   | ImageRefinementJobInput
   | ImageToVideoJobInput
+  | AiAudioGenerationJobInput
   | AiTextGenerationJobInput;
 type WorkerGenerationJobInput =
   | DirectGenerationJobInput
@@ -253,7 +258,8 @@ function assertJobInput(value: unknown): WorkerGenerationJobInput {
     input.operation === "location_to_image" ||
     input.operation === "image_refinement" ||
     input.operation === "image_to_video" ||
-    input.operation === "ai_text_generation"
+    input.operation === "ai_text_generation" ||
+    input.operation === "ai_audio_generation"
   ) {
     return value as WorkerGenerationJobInput;
   }
@@ -314,7 +320,7 @@ export class GenerationService {
       const created = await tx.generationJob.create({
         data: {
           projectId,
-          operation: jobInput.operation,
+          operation: jobInput.operation as PrismaGenerationOperation,
           status: "queued",
           provider: jobInput.provider,
           model: jobInput.model,
@@ -785,6 +791,7 @@ export class GenerationService {
       | EditorExportJobOutput
       | AssetAnalysisJobOutput
       | AiTextGenerationJobOutput
+      | AiAudioGenerationJobOutput
     >
   > {
     const existing = (await this.prisma.generationJob.findUnique({
@@ -815,6 +822,12 @@ export class GenerationService {
         throw new BadRequestException("AI text completion requires text output");
       }
       return this.succeedAiTextGenerationJob(existing, input, textGenerationOutput);
+    }
+    if (input.operation === "ai_audio_generation") {
+      if (!providerOutput) {
+        throw new BadRequestException("AI audio completion requires provider output");
+      }
+      return this.succeedAiAudioGenerationJob(existing, input, providerOutput);
     }
     if (!providerOutput) {
       throw new BadRequestException("Generated media completion requires provider output");
@@ -1041,6 +1054,115 @@ export class GenerationService {
     }
     return context
       .map((item) => `${item.title?.trim() || item.nodeId} (${item.nodeType})`)
+      .join(", ");
+  }
+
+  private async succeedAiAudioGenerationJob(
+    existing: GenerationJobModel,
+    input: AiAudioGenerationJobInput,
+    providerOutput: GeneratedMediaProviderOutput,
+  ): Promise<GenerationJobRecord<AiAudioGenerationJobInput, AiAudioGenerationJobOutput>> {
+    if (providerOutput.provider !== existing.provider) {
+      throw new BadRequestException("AI audio output provider does not match the claimed job provider");
+    }
+    if (!providerOutput.mimeType.startsWith("audio/")) {
+      throw new BadRequestException("AI audio generation must produce an audio asset");
+    }
+
+    const completed = await this.runTransaction(async (tx) => {
+      const claimed = await tx.generationJob.updateMany({
+        where: { id: existing.id, status: { in: WORKER_ACTIVE_JOB_STATUSES } },
+        data: { errorMessage: null },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException("Only active generation jobs can succeed");
+      }
+
+      const aiAudioNode = await this.findSourceNode(tx, existing);
+      if (aiAudioNode.type !== "ai_audio") {
+        throw new BadRequestException("AI audio completion requires an AI Audio node");
+      }
+
+      const asset = await this.assetsService.createGeneratedAsset(
+        existing.projectId,
+        {
+          purpose: "shot_audio",
+          providerOutput,
+          metadataJson: {
+            generationJobId: existing.id,
+            operation: input.operation,
+            sourceNodeId: aiAudioNode.id,
+            context: input.context,
+          },
+        },
+        tx,
+      );
+      const output: AiAudioGenerationJobOutput = {
+        operation: "ai_audio_generation",
+        sourceNodeId: aiAudioNode.id,
+        targetNodeId: aiAudioNode.id,
+        assetId: asset.id,
+        provider: providerOutput.provider,
+        model: providerOutput.model,
+        prompt: providerOutput.prompt,
+        scriptText: input.scriptText,
+        referenceAssetIds: providerOutput.referenceAssetIds,
+        context: input.context,
+        providerOutput,
+        completedAt: new Date().toISOString(),
+      };
+
+      const dataJson = dataObject(aiAudioNode.dataJson) as AiAudioNodeData;
+      await tx.canvasNode.update({
+        where: { id: aiAudioNode.id },
+        data: {
+          status: "succeeded",
+          dataJson: jsonValue({
+            ...dataJson,
+            assetId: asset.id,
+            prompt: output.prompt,
+            scriptText: input.scriptText,
+            description: `Generated by ${providerOutput.provider}`,
+            durationSeconds: input.durationSeconds,
+            contextSummary: this.aiAudioContextSummary(input.context),
+            provider: output.provider,
+            model: output.model,
+            generationJobId: existing.id,
+            generationOperation: "ai_audio_generation",
+            generatedFromNodeId: aiAudioNode.id,
+            sourceNodeIds: input.sourceNodeIds,
+            referenceAssetIds: providerOutput.referenceAssetIds,
+            voiceReferenceAssetIds: input.referenceAssetIds,
+            inputJson: input,
+            outputJson: output,
+          }),
+        },
+      });
+
+      return (await tx.generationJob.update({
+        where: { id: existing.id },
+        data: {
+          status: "succeeded",
+          targetNodeId: aiAudioNode.id,
+          outputJson: jsonValue(output),
+          errorMessage: null,
+        },
+      })) as GenerationJobModel;
+    });
+
+    return this.toGenerationJobRecord<AiAudioGenerationJobInput, AiAudioGenerationJobOutput>(completed);
+  }
+
+  private aiAudioContextSummary(context: readonly AiAudioGenerationContextItem[]): string | undefined {
+    if (!context.length) {
+      return undefined;
+    }
+    return context
+      .map((item) => {
+        const label = item.title?.trim() || item.label?.trim() || item.nodeId;
+        const suffix = item.assetId ? `audio:${item.assetId}` : item.nodeType;
+        return `${label} (${suffix})`;
+      })
       .join(", ");
   }
 
@@ -1300,6 +1422,8 @@ export class GenerationService {
         return this.buildImageToVideoInput(projectId, sourceNodeId, input);
       case "ai_text_generation":
         return this.buildAiTextGenerationInput(projectId, sourceNodeId, input);
+      case "ai_audio_generation":
+        return this.buildAiAudioGenerationInput(projectId, sourceNodeId, input);
       default:
         throw new BadRequestException("Generation operation is not supported yet");
     }
@@ -1749,6 +1873,179 @@ export class GenerationService {
           optionalString(node.title) ? `Title: ${optionalString(node.title)}` : undefined,
         ]);
     }
+  }
+
+  private async buildAiAudioGenerationInput(
+    projectId: string,
+    aiAudioNodeId: string,
+    input: CreateGenerationJobInput,
+  ): Promise<AiAudioGenerationJobInput> {
+    const canvas = await this.canvasService.getCanvas(projectId);
+    const aiAudioNode = canvas.nodes.find((node) => node.id === aiAudioNodeId);
+    if (!aiAudioNode || aiAudioNode.projectId !== projectId) {
+      throw new NotFoundException("AI Audio node not found");
+    }
+    if (aiAudioNode.type !== "ai_audio") {
+      throw new BadRequestException("AI audio generation requires an AI Audio node");
+    }
+
+    const dataJson = dataObject(aiAudioNode.dataJson) as AiAudioNodeData;
+    const prompt =
+      optionalString(input.audioPrompt) ??
+      optionalString(dataJson.scriptText) ??
+      optionalString(dataJson.prompt);
+    if (!prompt) {
+      throw new BadRequestException("AI audio generation prompt is required");
+    }
+
+    const context = this.aiAudioContextItems(canvas, aiAudioNode);
+    const referenceAssetIds = uniqueStrings([
+      ...stringArray(dataJson.voiceReferenceAssetIds),
+      ...context.map((item) => item.assetId),
+    ]);
+    for (const assetId of referenceAssetIds) {
+      const asset = await this.assetsService.getAsset(projectId, assetId);
+      if (!asset.mimeType.startsWith("audio/")) {
+        throw new BadRequestException("AI audio voice references must be audio assets");
+      }
+    }
+
+    return {
+      operation: "ai_audio_generation",
+      projectId,
+      sourceNodeId: aiAudioNode.id,
+      aiAudioNodeId: aiAudioNode.id,
+      prompt,
+      scriptText: prompt,
+      context,
+      sourceNodeIds: uniqueStrings([
+        aiAudioNode.id,
+        ...context.map((item) => item.nodeId),
+      ]),
+      referenceAssetIds,
+      provider: input.audioProvider ?? "mock-audio",
+      model: input.audioModel ?? "mock-tts-v1",
+      durationSeconds: input.audioDurationSeconds ?? dataJson.durationSeconds,
+      providerParams: this.normalizedAudioProviderParams(input.audioProviderParams),
+      skillTemplateIds: uniqueStrings(input.skillTemplateIds ?? []),
+      forceFailure: input.forceFailure,
+    };
+  }
+
+  private aiAudioContextItems(
+    canvas: CanvasLoadResult,
+    targetNode: CanvasNodeRecord,
+  ): AiAudioGenerationContextItem[] {
+    const sourceById = new Map(canvas.nodes.map((node) => [node.id, node]));
+    const context: AiAudioGenerationContextItem[] = [];
+    const seen = new Set<string>();
+
+    for (const edge of canvas.edges) {
+      if (edge.relation !== "derived_from" || edge.targetNodeId !== targetNode.id) {
+        continue;
+      }
+
+      const source = sourceById.get(edge.sourceNodeId);
+      if (!source) {
+        continue;
+      }
+      const title = optionalString(source.title);
+      const text = this.aiTextContextText(source);
+      if (text && !seen.has(`${source.id}:text`)) {
+        seen.add(`${source.id}:text`);
+        context.push({
+          nodeId: source.id,
+          nodeType: source.type,
+          title,
+          text,
+        });
+      }
+
+      for (const reference of this.audioContextReferences(source)) {
+        const key = `${source.id}:audio:${reference.assetId}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        context.push({
+          nodeId: source.id,
+          nodeType: source.type,
+          title,
+          assetId: reference.assetId,
+          label: reference.label,
+          role: reference.role,
+        });
+      }
+    }
+
+    return context;
+  }
+
+  private audioContextReferences(
+    source: CanvasNodeRecord,
+  ): Array<{ assetId: string; label?: string; role?: AiAudioGenerationContextItem["role"] }> {
+    const data = dataObject(source.dataJson);
+    const references: Array<{ assetId: string; label?: string; role?: AiAudioGenerationContextItem["role"] }> = [];
+
+    if (source.type === "source_audio") {
+      const assetId = optionalString(data.assetId);
+      if (assetId) {
+        references.push({
+          assetId,
+          label: optionalString(data.originalFilename),
+          role: "voice",
+        });
+      }
+    }
+
+    for (const key of ["voiceReferences", "audioReferences"]) {
+      const value = data[key];
+      if (!Array.isArray(value)) {
+        continue;
+      }
+      for (const item of value) {
+        const raw = dataObject(item);
+        const assetId = optionalString(raw.assetId);
+        if (!assetId) {
+          continue;
+        }
+        references.push({
+          assetId,
+          label: optionalString(raw.label),
+          role: this.audioReferenceRole(raw.role),
+        });
+      }
+    }
+
+    for (const assetId of uniqueStrings([
+      ...stringArray(data.voiceAssetIds),
+      ...stringArray(data.audioAssetIds),
+    ])) {
+      references.push({ assetId, role: source.type === "character_asset" ? "voice" : "clip_audio" });
+    }
+
+    return references;
+  }
+
+  private audioReferenceRole(value: unknown): AiAudioGenerationContextItem["role"] | undefined {
+    return value === "voice" ||
+      value === "narration" ||
+      value === "sound_effect" ||
+      value === "bgm" ||
+      value === "clip_audio"
+      ? value
+      : undefined;
+  }
+
+  private normalizedAudioProviderParams(providerParams: CanvasSnapshotJson | undefined): CanvasSnapshotJson {
+    const raw = dataObject(providerParams);
+    const normalized: Record<string, CanvasSnapshotJson> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (isJsonValue(value)) {
+        normalized[key] = value;
+      }
+    }
+    return normalized;
   }
 
   private async resolveProjectGenerationSettings(projectId: string): Promise<ResolvedGenerationSettings> {

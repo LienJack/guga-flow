@@ -143,6 +143,14 @@ export const BUSINESS_NODE_DEFINITIONS = {
     detailFallback: "Prompt and source context",
     tone: "media",
   }),
+  ai_audio: defineBusinessNode("ai_audio", {
+    label: "AI Audio",
+    shortLabel: "AI Audio",
+    defaultTitle: "AI Audio Node",
+    summaryFallback: "Generated audio",
+    detailFallback: "TTS script and voice reference",
+    tone: "media",
+  }),
   image: defineBusinessNode("image", {
     label: "Image",
     shortLabel: "Image",
@@ -248,6 +256,14 @@ export function createDefaultBusinessNodeData<TType extends Phase3CanvasNodeType
         prompt: "",
         outputText: "",
         contextSummary: "",
+      } as Phase3CanvasNodeData<TType>;
+    case "ai_audio":
+      return {
+        prompt: "",
+        scriptText: "",
+        assetId: "",
+        contextSummary: "",
+        voiceReferenceAssetIds: [],
       } as Phase3CanvasNodeData<TType>;
     case "image":
       return {
@@ -541,6 +557,8 @@ function summaryForNode(
       return firstText(text(data, "environment"), text(data, "visualStyle"), fallback);
     case "ai_text":
       return firstText(text(data, "outputText"), text(data, "prompt"), fallback);
+    case "ai_audio":
+      return firstText(text(data, "scriptText"), text(data, "prompt"), text(data, "assetId"), fallback);
     case "image":
       return firstText(text(data, "description"), text(data, "prompt"), fallback);
     case "video":
@@ -623,6 +641,17 @@ function detailForNode(
       return compact(
         [
           text(data, "contextSummary"),
+          text(data, "provider"),
+          text(data, "model"),
+          text(data, "generationOperation"),
+        ],
+        fallback,
+      );
+    case "ai_audio":
+      return compact(
+        [
+          text(data, "contextSummary"),
+          text(data, "assetId"),
           text(data, "provider"),
           text(data, "model"),
           text(data, "generationOperation"),

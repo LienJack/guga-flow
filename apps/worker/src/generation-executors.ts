@@ -11,6 +11,7 @@ import {
   type VideoProviderTaskResult,
 } from "@guga-flow/provider-contracts";
 import type {
+  AiAudioGenerationJobInput,
   AiTextGenerationJobOutput,
   GeneratedMediaProviderOutput,
   GenerationJobInput,
@@ -192,6 +193,21 @@ export async function executeGenerationJob(
         sourceNodeIds: input.sourceNodeIds,
         completedAt: new Date().toISOString(),
       },
+    };
+  }
+
+  if (input.operation === "ai_audio_generation") {
+    if (input.forceFailure) {
+      throw new ProviderError({
+        provider: input.provider,
+        code: "MOCK_AI_AUDIO_FAILED",
+        message: "Mock AI audio generation failure requested.",
+        retryable: false,
+      });
+    }
+    return {
+      status: "succeeded",
+      providerOutput: mockAiAudioOutput(job.id, input),
     };
   }
 
@@ -416,6 +432,30 @@ function mockAiTextOutput(input: Extract<GenerationJobInput, { operation: "ai_te
     : "";
   const contextBlock = contextLines.length ? `\n\nReferenced canvas context:\n${contextLines.join("\n")}` : "";
   return `Mock AI text for prompt: ${input.prompt}${presetLine}${contextBlock}`;
+}
+
+function mockAiAudioOutput(
+  jobId: string,
+  input: AiAudioGenerationJobInput,
+): GeneratedMediaProviderOutput {
+  const safeJobId = jobId.replace(/[^a-zA-Z0-9_-]/g, "-");
+  return {
+    assetId: `mock-audio-${safeJobId}`,
+    storageKey: `${input.projectId}/mock/audio/${safeJobId}.mp3`,
+    mimeType: "audio/mpeg",
+    provider: input.provider,
+    model: input.model,
+    prompt: input.prompt,
+    referenceAssetIds: input.referenceAssetIds,
+    rawJson: {
+      mock: true,
+      operation: input.operation,
+      scriptText: input.scriptText,
+      durationSeconds: input.durationSeconds,
+      contextCount: input.context.length,
+      skillTemplateIds: input.skillTemplateIds ?? [],
+    },
+  };
 }
 
 function isGenerationExecutorRegistryOptions(

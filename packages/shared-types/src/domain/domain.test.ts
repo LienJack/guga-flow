@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AUDIO_PROVIDER_IDS,
+  AUDIO_PROVIDER_MODES,
   ASSET_PREVIEW_KINDS,
   ASSET_PURPOSES,
   ASSET_TYPES,
@@ -204,6 +206,7 @@ describe("shared domain constants", () => {
   it("includes MVP canvas node and edge concepts", () => {
     expect(CANVAS_NODE_TYPES).toContain("shot");
     expect(CANVAS_NODE_TYPES).toContain("ai_text");
+    expect(CANVAS_NODE_TYPES).toContain("ai_audio");
     expect(CANVAS_NODE_TYPES).toContain("editor_package");
     expect(CANVAS_NODE_FAMILIES).toEqual([
       "business",
@@ -244,13 +247,14 @@ describe("shared domain constants", () => {
       "source_video",
       "source_audio",
     ]);
-    expect(canvasNodeTypesByFamily("ai_generation")).toEqual(["ai_text", "image", "video"]);
+    expect(canvasNodeTypesByFamily("ai_generation")).toEqual(["ai_text", "ai_audio", "image", "video"]);
     expect(canvasNodeHasCapability("source_image", "accepts_image")).toBe(true);
     expect(canvasNodeHasCapability("source_audio", "accepts_audio")).toBe(true);
     expect(canvasNodeHasCapability("video", "accepts_audio")).toBe(true);
     expect(canvasNodeHasCapability("note", "has_task")).toBe(false);
     expect(CANVAS_EDGE_RELATIONS).toContain("generated_image");
     expect(CANVAS_EDGE_RELATIONS).toContain("generated_video");
+    expect(CANVAS_EDGE_RELATIONS).toContain("generated_audio");
     expect(CANVAS_EDGE_RELATIONS).toContain("story_seed");
     expect(CANVAS_EDGE_RELATIONS).toContain("sent_to_editor");
   });
@@ -345,11 +349,19 @@ describe("shared domain constants", () => {
       "image_refinement",
       "image_to_video",
       "ai_text_generation",
+      "ai_audio_generation",
     ]);
     expect(IMAGE_PROVIDER_IDS).toEqual(["mock-image", "image2", "banana", "generic-image"]);
     expect(IMAGE_PROVIDER_MODES).toEqual(["text_to_image", "image_to_image", "multi_reference"]);
     expect(LLM_PROVIDER_IDS).toEqual(["mock-llm", "generic-llm", "gemini-llm", "anthropic", "ark-llm"]);
     expect(LLM_PROVIDER_MODES).toEqual(["chat", "text", "json"]);
+    expect(AUDIO_PROVIDER_IDS).toEqual(["mock-audio"]);
+    expect(AUDIO_PROVIDER_MODES).toEqual([
+      "text_to_speech",
+      "voice_reference",
+      "background_music",
+      "narration",
+    ]);
     expect(VIDEO_PROVIDER_IDS).toEqual(["mock-video", "seedance", "happyhorse", "generic-video"]);
     expect(VIDEO_PROVIDER_MODES).toEqual([
       "text_to_video",
@@ -974,6 +986,7 @@ describe("shared domain constants", () => {
       "character_asset",
       "location_asset",
       "ai_text",
+      "ai_audio",
       "image",
       "video",
       "editor_package",

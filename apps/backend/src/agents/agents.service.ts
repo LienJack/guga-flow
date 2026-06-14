@@ -59,7 +59,7 @@ import {
   PHASE_3_CANVAS_NODE_TYPES,
   SKILL_TEMPLATE_KINDS,
 } from "@guga-flow/shared-types";
-import { Prisma } from "../generated/prisma/client";
+import { Prisma, type CanvasEdgeRelation as PrismaCanvasEdgeRelation } from "../generated/prisma/client";
 
 import { CanvasService } from "../canvas/canvas.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -587,7 +587,7 @@ export class AgentsService {
         throw new BadRequestException("Link actions require source and target node ids");
       }
       const existing = await this.prisma.canvasEdge.findFirst({
-        where: { projectId, sourceNodeId, targetNodeId, relation },
+        where: { projectId, sourceNodeId, targetNodeId, relation: relation as PrismaCanvasEdgeRelation },
       });
       if (existing) {
         throw new BadRequestException("The requested canvas edge already exists");
@@ -1025,6 +1025,8 @@ export class AgentsService {
         return "generated_image";
       case "generated video":
         return "generated_video";
+      case "generated audio":
+        return "generated_audio";
       default:
         throw new BadRequestException("Unsupported link relation");
     }

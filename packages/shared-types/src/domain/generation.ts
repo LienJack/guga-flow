@@ -32,6 +32,7 @@ export const GENERATION_OPERATIONS = [
   "image_to_video",
   "shot_to_video",
   "ai_text_generation",
+  "ai_audio_generation",
   "workflow_run",
   "batch_shots_to_images",
   "batch_images_to_videos",
@@ -47,6 +48,7 @@ export const PHASE_8_GENERATION_OPERATIONS = [
   "image_refinement",
   "image_to_video",
   "ai_text_generation",
+  "ai_audio_generation",
 ] as const;
 export type Phase8GenerationOperation = (typeof PHASE_8_GENERATION_OPERATIONS)[number];
 
@@ -65,10 +67,22 @@ export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number];
 export const LLM_PROVIDER_MODES = ["chat", "text", "json"] as const;
 export type LlmProviderMode = (typeof LLM_PROVIDER_MODES)[number];
 
+export const AUDIO_PROVIDER_IDS = ["mock-audio"] as const;
+export type AudioProviderId = (typeof AUDIO_PROVIDER_IDS)[number];
+
+export const AUDIO_PROVIDER_MODES = [
+  "text_to_speech",
+  "voice_reference",
+  "background_music",
+  "narration",
+] as const;
+export type AudioProviderMode = (typeof AUDIO_PROVIDER_MODES)[number];
+
 export type ProgrammableProviderId = `custom:${string}`;
 export type AnyImageProviderId = ImageProviderId | ProgrammableProviderId;
 export type AnyVideoProviderId = VideoProviderId | ProgrammableProviderId;
 export type AnyLlmProviderId = LlmProviderId;
+export type AnyAudioProviderId = AudioProviderId;
 
 export const VIDEO_PROVIDER_MODES = ["text_to_video", "image_to_video", "reference_to_video", "video_edit"] as const;
 export type VideoProviderMode = (typeof VIDEO_PROVIDER_MODES)[number];
@@ -136,6 +150,7 @@ export const PROVIDER_MODEL_MODES = [
   ...LLM_PROVIDER_MODES,
   ...IMAGE_PROVIDER_MODES,
   ...VIDEO_PROVIDER_MODES,
+  ...AUDIO_PROVIDER_MODES,
 ] as const;
 export type ProviderModelMode = (typeof PROVIDER_MODEL_MODES)[number];
 
@@ -964,6 +979,14 @@ export interface VideoGenerationSettings {
   videoProviderParams?: CanvasSnapshotJson;
 }
 
+export interface AudioGenerationSettings {
+  audioProvider?: AnyAudioProviderId;
+  audioModel?: string;
+  audioPrompt?: string;
+  audioDurationSeconds?: number;
+  audioProviderParams?: CanvasSnapshotJson;
+}
+
 export function normalizeUpdateProviderConfigInput(input: unknown): UpdateProviderConfigInput {
   const raw = dataObject(input);
   const credential = normalizeProviderCredentialUpdate(raw.credential);
@@ -1125,7 +1148,10 @@ export interface GenerationJobRecord<TInput = unknown, TOutput = unknown> {
   updatedAt: string;
 }
 
-export interface CreateGenerationJobInput extends ImageGenerationSettings, VideoGenerationSettings {
+export interface CreateGenerationJobInput
+  extends ImageGenerationSettings,
+    VideoGenerationSettings,
+    AudioGenerationSettings {
   operation: Phase8GenerationOperation;
   sourceNodeId: string;
   refinementPrompt?: string;
@@ -1210,7 +1236,11 @@ export interface EditorExportSendResult {
 
 export interface GenerationJobListResult<
   TInput = GenerationJobInput,
-  TOutput = GeneratedMediaJobOutput | ReferenceAssetJobOutput | AiTextGenerationJobOutput,
+  TOutput =
+    | GeneratedMediaJobOutput
+    | ReferenceAssetJobOutput
+    | AiTextGenerationJobOutput
+    | AiAudioGenerationJobOutput,
 > {
   jobs: Array<GenerationJobRecord<TInput, TOutput>>;
   queueSummary: GenerationQueueSummary;
@@ -1264,6 +1294,7 @@ export type GenerationJobInput =
   | ImageRefinementJobInput
   | ImageToVideoJobInput
   | AiTextGenerationJobInput
+  | AiAudioGenerationJobInput
   | WorkflowRunJobInput
   | EditorExportJobInput;
 
@@ -1284,6 +1315,34 @@ export interface AiTextGenerationJobInput {
   sourceNodeIds: string[];
   provider: string;
   model?: string;
+  skillTemplateIds?: string[];
+  forceFailure?: boolean;
+}
+
+export interface AiAudioGenerationContextItem {
+  nodeId: string;
+  nodeType: string;
+  title?: string;
+  text?: string;
+  assetId?: string;
+  label?: string;
+  role?: "voice" | "narration" | "sound_effect" | "bgm" | "clip_audio";
+}
+
+export interface AiAudioGenerationJobInput {
+  operation: "ai_audio_generation";
+  projectId: string;
+  sourceNodeId: string;
+  aiAudioNodeId: string;
+  prompt: string;
+  scriptText: string;
+  context: AiAudioGenerationContextItem[];
+  sourceNodeIds: string[];
+  referenceAssetIds: string[];
+  provider: AnyAudioProviderId;
+  model: string;
+  durationSeconds?: number;
+  providerParams?: CanvasSnapshotJson;
   skillTemplateIds?: string[];
   forceFailure?: boolean;
 }
@@ -1799,7 +1858,11 @@ export interface GeneratedMediaJobTargetOutput {
 }
 
 export interface GeneratedMediaJobOutput {
-  operation: "shot_to_image" | "image_refinement" | "image_to_video" | "workflow_run";
+  operation:
+    | "shot_to_image"
+    | "image_refinement"
+    | "image_to_video"
+    | "workflow_run";
   sourceNodeId: string;
   targetNodeId: string;
   assetId: string;
@@ -1824,6 +1887,21 @@ export interface AiTextGenerationJobOutput {
   text: string;
   context: AiTextGenerationContextItem[];
   sourceNodeIds: string[];
+  completedAt: string;
+}
+
+export interface AiAudioGenerationJobOutput {
+  operation: "ai_audio_generation";
+  sourceNodeId: string;
+  targetNodeId: string;
+  assetId: string;
+  provider: string;
+  model: string;
+  prompt: string;
+  scriptText: string;
+  referenceAssetIds: string[];
+  context: AiAudioGenerationContextItem[];
+  providerOutput: GeneratedMediaProviderOutput;
   completedAt: string;
 }
 

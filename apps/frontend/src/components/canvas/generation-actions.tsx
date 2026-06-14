@@ -1,4 +1,5 @@
 import type {
+  AiAudioNodeData,
   AiTextNodeData,
   CanvasSnapshotJson,
   CanvasNodeRecord,
@@ -16,7 +17,7 @@ import type {
   VideoProviderCatalogResult,
 } from "@guga-flow/shared-types";
 import { filterSkillTemplateSummaries } from "@guga-flow/shared-types";
-import { Ban, FileText, ImagePlus, RotateCcw, Video } from "lucide-react";
+import { Ban, FileAudio, FileText, ImagePlus, RotateCcw, Video } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 
 import {
@@ -100,6 +101,7 @@ type DirectGenerationOperation =
   | "shot_to_image"
   | "character_to_image"
   | "location_to_image"
+  | "ai_audio_generation"
   | "ai_text_generation"
   | "image_refinement"
   | "image_to_video";
@@ -134,6 +136,7 @@ export function GenerationActions({
   );
   const [refinementPrompt, setRefinementPrompt] = useState("");
   const [textPrompt, setTextPrompt] = useState(() => aiTextPromptFromNode(node));
+  const [audioPrompt, setAudioPrompt] = useState(() => aiAudioPromptFromNode(node));
   const [skillTemplates, setSkillTemplates] = useState<SkillTemplateSummary[]>([]);
   const [selectedSkillTemplateId, setSelectedSkillTemplateId] = useState("");
   const actions = generationActionsForNode(node);
@@ -141,8 +144,10 @@ export function GenerationActions({
   const hasVideoProviderAction = actions.some((action) => action.operation === "image_to_video");
   const hasRefinementAction = actions.some((action) => action.operation === "image_refinement");
   const hasTextAction = actions.some((action) => action.operation === "ai_text_generation");
+  const hasAudioAction = actions.some((action) => action.operation === "ai_audio_generation");
   const trimmedRefinementPrompt = refinementPrompt.trim();
   const trimmedTextPrompt = textPrompt.trim();
+  const trimmedAudioPrompt = audioPrompt.trim();
   const requiredImageProviderMode: ImageProviderMode = hasRefinementAction
     ? "image_to_image"
     : "text_to_image";
@@ -275,6 +280,12 @@ export function GenerationActions({
     }
   }, [node.id, node.type]);
 
+  useEffect(() => {
+    if (node.type === "ai_audio") {
+      setAudioPrompt(aiAudioPromptFromNode(node));
+    }
+  }, [node.id, node.type]);
+
   if (!actions.length) {
     return null;
   }
@@ -295,6 +306,7 @@ export function GenerationActions({
           trimmedRefinementPrompt,
           selectedSkillTemplate ? [selectedSkillTemplate.id] : [],
           trimmedTextPrompt,
+          trimmedAudioPrompt,
         ),
       );
       setLastResult(t("generation.queued"));
@@ -346,7 +358,8 @@ export function GenerationActions({
       !imageProviderSupportsMode(selectedProvider, "image_to_image")) ||
     (operation === "image_to_video" && !selectedVideoProvider.enabled) ||
     (operation === "image_refinement" && !trimmedRefinementPrompt) ||
-    (operation === "ai_text_generation" && !trimmedTextPrompt);
+    (operation === "ai_text_generation" && !trimmedTextPrompt) ||
+    (operation === "ai_audio_generation" && !trimmedAudioPrompt);
 
   function handleInsertPreset() {
     const sourceText = activeSkillTemplateSource(selectedSkillTemplate);
@@ -423,6 +436,19 @@ export function GenerationActions({
             rows={4}
             disabled={busy || Boolean(activeJob)}
             onChange={(event) => setTextPrompt(event.target.value)}
+          />
+        </div>
+      ) : null}
+      {hasAudioAction ? (
+        <div className="generation-field wide">
+          <label htmlFor={`generation-audio-prompt-${node.id}`}>{t("generation.audioPrompt")}</label>
+          <textarea
+            id={`generation-audio-prompt-${node.id}`}
+            value={audioPrompt}
+            maxLength={4000}
+            rows={4}
+            disabled={busy || Boolean(activeJob)}
+            onChange={(event) => setAudioPrompt(event.target.value)}
           />
         </div>
       ) : null}
@@ -1021,6 +1047,7 @@ export function buildGenerationJobInputForOperation(
   refinementPrompt = "",
   skillTemplateIds: string[] = [],
   textPrompt = "",
+  audioPrompt = "",
 ): CreateGenerationJobInput {
   const selectedSkillTemplateIds = skillTemplateIds.length ? { skillTemplateIds } : {};
   if (operation === "ai_text_generation") {
@@ -1028,6 +1055,17 @@ export function buildGenerationJobInputForOperation(
       operation,
       sourceNodeId,
       textPrompt,
+      ...selectedSkillTemplateIds,
+    };
+  }
+
+  if (operation === "ai_audio_generation") {
+    return {
+      operation,
+      sourceNodeId,
+      audioPrompt,
+      audioProvider: "mock-audio",
+      audioModel: "mock-tts-v1",
       ...selectedSkillTemplateIds,
     };
   }
@@ -1086,6 +1124,9 @@ export function buildGenerationJobInputForOperation(
 function presetCategoryForActions(actions: readonly GenerationAction[]): SkillTemplatePresetCategory | undefined {
   if (actions.some((action) => action.operation === "ai_text_generation")) {
     return "ai-text";
+  }
+  if (actions.some((action) => action.operation === "ai_audio_generation")) {
+    return "ai-audio";
   }
   if (actions.some((action) => action.operation === "image_to_video")) {
     return "ai-video";
@@ -1230,6 +1271,17 @@ function aiTextPromptFromNode(node: CanvasNodeRecord): string {
   return typeof data?.prompt === "string" ? data.prompt : "";
 }
 
+function aiAudioPromptFromNode(node: CanvasNodeRecord): string {
+  if (node.type !== "ai_audio") {
+    return "";
+  }
+  const data = node.dataJson as AiAudioNodeData | undefined;
+  if (typeof data?.scriptText === "string" && data.scriptText.trim()) {
+    return data.scriptText;
+  }
+  return typeof data?.prompt === "string" ? data.prompt : "";
+}
+
 function imageProviderSupportsMode(
   provider: ImageProviderCatalogItem,
   requiredMode: ImageProviderMode,
@@ -1304,6 +1356,16 @@ function generationActionsForNode(node: CanvasNodeRecord): GenerationAction[] {
         icon: FileText,
         labelKey: "generation.generateText",
         operation: "ai_text_generation",
+      },
+    ];
+  }
+
+  if (node.type === "ai_audio") {
+    return [
+      {
+        icon: FileAudio,
+        labelKey: "generation.generateAudio",
+        operation: "ai_audio_generation",
       },
     ];
   }
