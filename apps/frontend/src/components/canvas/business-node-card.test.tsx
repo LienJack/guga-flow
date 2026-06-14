@@ -31,7 +31,40 @@ describe("BusinessNodeCard", () => {
       expect(html).toContain(definition.shortLabel);
       expect(html).toContain(definition.defaultTitle);
       expect(html).toContain(definition.summaryFallback);
+      expect(html).toContain(definition.familyLabel);
     }
+  });
+
+  it("summarizes taxonomy capabilities on visible cards", () => {
+    const imageHtml = renderToStaticMarkup(
+      <BusinessNodeCard
+        nodeId="image_1"
+        nodeType="image"
+        title="Image Node"
+        status="draft"
+        summary="Generated image"
+        detail="Prompt and asset link"
+        w={360}
+        h={220}
+      />,
+    );
+    const sceneFrameHtml = renderToStaticMarkup(
+      <BusinessNodeCard
+        nodeId="frame_1"
+        nodeType="scene_frame"
+        title="Frame 1"
+        status="draft"
+        summary="Opening sequence"
+        detail="Location ref"
+        w={360}
+        h={220}
+      />,
+    );
+
+    expect(imageHtml).toContain("AI Generation");
+    expect(imageHtml).toContain("Task + asset");
+    expect(sceneFrameHtml).toContain("Layout / Helper");
+    expect(sceneFrameHtml).toContain("Preview");
   });
 
   it("uses prefixed tldraw shape types for business nodes", () => {

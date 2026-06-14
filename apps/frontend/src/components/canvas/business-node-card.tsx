@@ -42,9 +42,29 @@ export function BusinessNodeCard({
         <span className="business-node-type">{definition.shortLabel}</span>
         <span className="business-node-status">{STATUS_LABELS[status]}</span>
       </header>
+      <div className="business-node-meta" aria-label="Node taxonomy">
+        <span>{definition.familyLabel}</span>
+        <span>{capabilitySummary(definition.capabilities)}</span>
+      </div>
       <h3>{title}</h3>
       <p>{summary}</p>
       {isCollapsed ? null : <footer>{detail}</footer>}
     </article>
   );
+}
+
+function capabilitySummary(capabilities: readonly string[]): string {
+  if (capabilities.includes("has_task") && capabilities.includes("produces_asset")) {
+    return "Task + asset";
+  }
+  if (capabilities.includes("produces_asset")) {
+    return "Asset";
+  }
+  if (capabilities.includes("produces_text")) {
+    return "Text";
+  }
+  if (capabilities.includes("has_preview")) {
+    return "Preview";
+  }
+  return "Metadata";
 }

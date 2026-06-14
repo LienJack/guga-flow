@@ -1,11 +1,13 @@
 import type {
+  CanvasNodeCapability,
+  CanvasNodeFamily,
   CanvasNodeRecord,
   CreateCanvasNodeInput,
   NodeStatus,
   Phase3CanvasNodeData,
   Phase3CanvasNodeType,
 } from "@guga-flow/shared-types";
-import { PHASE_3_CANVAS_NODE_TYPES } from "@guga-flow/shared-types";
+import { getCanvasNodeRegistryItem, PHASE_3_CANVAS_NODE_TYPES } from "@guga-flow/shared-types";
 
 export interface BusinessNodeDefinition {
   label: string;
@@ -14,6 +16,9 @@ export interface BusinessNodeDefinition {
   summaryFallback: string;
   detailFallback: string;
   tone: "story" | "scene" | "shot" | "asset" | "media" | "export";
+  family: CanvasNodeFamily;
+  familyLabel: string;
+  capabilities: readonly CanvasNodeCapability[];
 }
 
 export interface BusinessNodeCardModel {
@@ -28,79 +33,97 @@ export interface BusinessNodeCardModel {
   h: number;
 }
 
+type BusinessNodeDefinitionInput = Omit<
+  BusinessNodeDefinition,
+  "family" | "familyLabel" | "capabilities"
+>;
+
+function defineBusinessNode(
+  type: Phase3CanvasNodeType,
+  definition: BusinessNodeDefinitionInput,
+): BusinessNodeDefinition {
+  const registry = getCanvasNodeRegistryItem(type);
+  return {
+    ...definition,
+    family: registry.family,
+    familyLabel: registry.familyLabel,
+    capabilities: registry.capabilities,
+  };
+}
+
 export const BUSINESS_NODE_DEFINITIONS = {
-  novel: {
+  novel: defineBusinessNode("novel", {
     label: "Novel",
     shortLabel: "Novel",
     defaultTitle: "Novel Source",
     summaryFallback: "Source manuscript",
     detailFallback: "Full text and synopsis",
     tone: "story",
-  },
-  scene_frame: {
+  }),
+  scene_frame: defineBusinessNode("scene_frame", {
     label: "Scene Frame",
     shortLabel: "Frame",
     defaultTitle: "Scene Frame",
     summaryFallback: "Scene grouping frame",
     detailFallback: "Organizes scenes and shots",
     tone: "scene",
-  },
-  scene: {
+  }),
+  scene: defineBusinessNode("scene", {
     label: "Scene",
     shortLabel: "Scene",
     defaultTitle: "Scene",
     summaryFallback: "Story scene",
     detailFallback: "Location, time, and mood",
     tone: "scene",
-  },
-  shot: {
+  }),
+  shot: defineBusinessNode("shot", {
     label: "Shot",
     shortLabel: "Shot",
     defaultTitle: "Shot",
     summaryFallback: "Visual beat",
     detailFallback: "Action, camera, and prompt notes",
     tone: "shot",
-  },
-  character_asset: {
+  }),
+  character_asset: defineBusinessNode("character_asset", {
     label: "Character",
     shortLabel: "Char",
     defaultTitle: "Character",
     summaryFallback: "Character reference",
     detailFallback: "Appearance and consistency",
     tone: "asset",
-  },
-  location_asset: {
+  }),
+  location_asset: defineBusinessNode("location_asset", {
     label: "Location",
     shortLabel: "Loc",
     defaultTitle: "Location",
     summaryFallback: "Location reference",
     detailFallback: "Environment and visual style",
     tone: "asset",
-  },
-  image: {
+  }),
+  image: defineBusinessNode("image", {
     label: "Image",
     shortLabel: "Image",
     defaultTitle: "Image Node",
     summaryFallback: "Generated or uploaded image",
     detailFallback: "Prompt and asset link",
     tone: "media",
-  },
-  video: {
+  }),
+  video: defineBusinessNode("video", {
     label: "Video",
     shortLabel: "Video",
     defaultTitle: "Video Node",
     summaryFallback: "Generated or uploaded clip",
     detailFallback: "Prompt, duration, and asset link",
     tone: "media",
-  },
-  editor_package: {
+  }),
+  editor_package: defineBusinessNode("editor_package", {
     label: "Editor Package",
     shortLabel: "Export",
     defaultTitle: "Editor Package",
     summaryFallback: "Timeline handoff package",
     detailFallback: "Export metadata",
     tone: "export",
-  },
+  }),
 } as const satisfies Record<Phase3CanvasNodeType, BusinessNodeDefinition>;
 
 const PHASE_3_NODE_TYPE_SET = new Set<Phase3CanvasNodeType>(PHASE_3_CANVAS_NODE_TYPES);

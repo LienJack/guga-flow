@@ -1,5 +1,9 @@
-import type { Phase3CanvasNodeType } from "@guga-flow/shared-types";
-import { PHASE_3_CANVAS_NODE_TYPES } from "@guga-flow/shared-types";
+import type { CanvasNodeFamily, Phase3CanvasNodeType } from "@guga-flow/shared-types";
+import {
+  CANVAS_NODE_FAMILY_LABELS,
+  getCanvasNodeRegistryItem,
+  PHASE_3_CANVAS_NODE_TYPES,
+} from "@guga-flow/shared-types";
 import {
   BookOpen,
   Boxes,
@@ -45,27 +49,53 @@ const ACTION_LABELS: Record<Phase3CanvasNodeType, string> = {
   editor_package: "添加导出包",
 };
 
+const TOOLBAR_FAMILY_ORDER: CanvasNodeFamily[] = [
+  "business",
+  "ai_generation",
+  "media_operation",
+  "layout_helper",
+];
+
+const TOOLBAR_NODE_GROUPS = TOOLBAR_FAMILY_ORDER.map((family) => ({
+  family,
+  label: CANVAS_NODE_FAMILY_LABELS[family],
+  types: PHASE_3_CANVAS_NODE_TYPES.filter(
+    (type) => getCanvasNodeRegistryItem(type).family === family,
+  ),
+})).filter((group) => group.types.length > 0);
+
 export function BusinessNodeToolbar({ busy = false, onCreate }: BusinessNodeToolbarProps) {
   return (
-    <div className="business-node-toolbar" aria-label="Create business node">
-      {PHASE_3_CANVAS_NODE_TYPES.map((type) => {
-        const definition = getBusinessNodeDefinition(type);
-        const Icon = ICONS[type] ?? Film;
+    <div className="business-node-toolbar" aria-label="Create canvas node">
+      {TOOLBAR_NODE_GROUPS.map((group) => (
+        <section
+          className="business-node-toolbar-group"
+          aria-label={`${group.label} nodes`}
+          key={group.family}
+        >
+          <div className="business-node-toolbar-heading">{group.label}</div>
+          <div className="business-node-toolbar-actions">
+            {group.types.map((type) => {
+              const definition = getBusinessNodeDefinition(type);
+              const Icon = ICONS[type] ?? Film;
 
-        return (
-          <button
-            className="business-node-tool"
-            type="button"
-            key={type}
-            title={`Create ${definition.label}`}
-            disabled={busy}
-            onClick={() => onCreate(type)}
-          >
-            <Icon size={15} aria-hidden="true" />
-            <span>{ACTION_LABELS[type] ?? definition.shortLabel}</span>
-          </button>
-        );
-      })}
+              return (
+                <button
+                  className="business-node-tool"
+                  type="button"
+                  key={type}
+                  title={`Create ${definition.label}`}
+                  disabled={busy}
+                  onClick={() => onCreate(type)}
+                >
+                  <Icon size={15} aria-hidden="true" />
+                  <span>{ACTION_LABELS[type] ?? definition.shortLabel}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }

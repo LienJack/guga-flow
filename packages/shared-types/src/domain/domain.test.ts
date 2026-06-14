@@ -9,6 +9,10 @@ import {
   AGENT_DEPLOYMENT_ROLES,
   AGENT_MEMORY_SCOPES,
   AGENT_MEMORY_SOURCES,
+  CANVAS_NODE_CAPABILITIES,
+  CANVAS_NODE_FAMILIES,
+  CANVAS_NODE_REGISTRY,
+  CANVAS_NODE_REGISTRY_ITEMS,
   CANVAS_EDGE_RELATIONS,
   CANVAS_NODE_TYPES,
   CANVAS_SAVE_STATUSES,
@@ -55,6 +59,8 @@ import {
   VIDEO_PROVIDER_RESOLUTIONS,
   VIDEO_PROVIDER_TASK_STATUSES,
   buildStoryboardImportPlan,
+  canvasNodeHasCapability,
+  canvasNodeTypesByFamily,
   composeShotPrompt,
   findStoryboardImportLayoutOverlaps,
   hasStoryboardImportProvenance,
@@ -185,6 +191,42 @@ describe("shared domain constants", () => {
   it("includes MVP canvas node and edge concepts", () => {
     expect(CANVAS_NODE_TYPES).toContain("shot");
     expect(CANVAS_NODE_TYPES).toContain("editor_package");
+    expect(CANVAS_NODE_FAMILIES).toEqual([
+      "business",
+      "source_media",
+      "ai_generation",
+      "media_operation",
+      "layout_helper",
+      "advanced_visual",
+    ]);
+    expect(CANVAS_NODE_CAPABILITIES).toEqual([
+      "accepts_text",
+      "accepts_image",
+      "accepts_video",
+      "accepts_audio",
+      "produces_asset",
+      "produces_text",
+      "has_preview",
+      "has_task",
+    ]);
+    expect(CANVAS_NODE_REGISTRY_ITEMS.map((item) => item.type)).toEqual(CANVAS_NODE_TYPES);
+    for (const type of CANVAS_NODE_TYPES) {
+      const item = CANVAS_NODE_REGISTRY[type];
+      expect(item.type).toBe(type);
+      expect(CANVAS_NODE_FAMILIES).toContain(item.family);
+      expect(item.familyLabel).toBeTruthy();
+      expect(item.label).toBeTruthy();
+      expect(item.description).toBeTruthy();
+      for (const capability of item.capabilities) {
+        expect(CANVAS_NODE_CAPABILITIES).toContain(capability);
+      }
+    }
+    expect(canvasNodeTypesByFamily("business")).toEqual(
+      expect.arrayContaining(["novel", "shot", "character_asset"]),
+    );
+    expect(canvasNodeTypesByFamily("ai_generation")).toEqual(["image", "video"]);
+    expect(canvasNodeHasCapability("video", "accepts_audio")).toBe(true);
+    expect(canvasNodeHasCapability("note", "has_task")).toBe(false);
     expect(CANVAS_EDGE_RELATIONS).toContain("generated_image");
     expect(CANVAS_EDGE_RELATIONS).toContain("generated_video");
     expect(CANVAS_EDGE_RELATIONS).toContain("story_seed");

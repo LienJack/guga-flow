@@ -4527,6 +4527,43 @@ body {
   max-width: 132px;
 }
 
+.business-node-toolbar-group {
+  display: grid;
+  gap: 5px;
+}
+
+.business-node-toolbar-actions {
+  display: grid;
+  gap: 2px;
+}
+
+.business-node-toolbar-heading {
+  color: #8a8a8a;
+  padding: 4px 4px 1px;
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.business-node-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.business-node-meta span {
+  border: 1px solid #343434;
+  border-radius: 5px;
+  background: #242424;
+  color: #a8a8a8;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
 .semantic-bind-toolbar {
   top: auto;
   bottom: 86px;

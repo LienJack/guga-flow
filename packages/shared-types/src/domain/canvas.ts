@@ -17,6 +17,179 @@ export const CANVAS_NODE_TYPES = [
 ] as const;
 export type CanvasNodeType = (typeof CANVAS_NODE_TYPES)[number];
 
+export const CANVAS_NODE_FAMILIES = [
+  "business",
+  "source_media",
+  "ai_generation",
+  "media_operation",
+  "layout_helper",
+  "advanced_visual",
+] as const;
+export type CanvasNodeFamily = (typeof CANVAS_NODE_FAMILIES)[number];
+
+export const CANVAS_NODE_CAPABILITIES = [
+  "accepts_text",
+  "accepts_image",
+  "accepts_video",
+  "accepts_audio",
+  "produces_asset",
+  "produces_text",
+  "has_preview",
+  "has_task",
+] as const;
+export type CanvasNodeCapability = (typeof CANVAS_NODE_CAPABILITIES)[number];
+
+export const CANVAS_NODE_FAMILY_LABELS = {
+  business: "Business",
+  source_media: "Source Media",
+  ai_generation: "AI Generation",
+  media_operation: "Media Operation",
+  layout_helper: "Layout / Helper",
+  advanced_visual: "Advanced Visual",
+} as const satisfies Record<CanvasNodeFamily, string>;
+
+export interface CanvasNodeRegistryItem {
+  type: CanvasNodeType;
+  family: CanvasNodeFamily;
+  familyLabel: string;
+  label: string;
+  description: string;
+  capabilities: readonly CanvasNodeCapability[];
+}
+
+export const CANVAS_NODE_REGISTRY = {
+  novel: {
+    type: "novel",
+    family: "business",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.business,
+    label: "Novel",
+    description: "Long-form source text and story blueprint context.",
+    capabilities: ["accepts_text", "produces_text", "has_preview"],
+  },
+  scene_frame: {
+    type: "scene_frame",
+    family: "layout_helper",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.layout_helper,
+    label: "Scene Frame",
+    description: "Canvas grouping frame for scene and shot layout.",
+    capabilities: ["accepts_text", "has_preview"],
+  },
+  scene: {
+    type: "scene",
+    family: "business",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.business,
+    label: "Scene",
+    description: "Story scene facts such as location, time, mood, and synopsis.",
+    capabilities: ["accepts_text", "produces_text", "has_preview"],
+  },
+  shot: {
+    type: "shot",
+    family: "business",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.business,
+    label: "Shot",
+    description: "Visual beat that can drive image, video, prompt, and audio tasks.",
+    capabilities: [
+      "accepts_text",
+      "accepts_image",
+      "accepts_audio",
+      "produces_text",
+      "has_preview",
+      "has_task",
+    ],
+  },
+  character_asset: {
+    type: "character_asset",
+    family: "business",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.business,
+    label: "Character",
+    description: "Character reference facts for identity, appearance, voice, and continuity.",
+    capabilities: ["accepts_text", "accepts_image", "accepts_audio", "produces_text", "has_preview"],
+  },
+  location_asset: {
+    type: "location_asset",
+    family: "business",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.business,
+    label: "Location",
+    description: "Location reference facts for environment, mood, and visual consistency.",
+    capabilities: ["accepts_text", "accepts_image", "produces_text", "has_preview"],
+  },
+  style_asset: {
+    type: "style_asset",
+    family: "business",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.business,
+    label: "Style",
+    description: "Project visual style reference for prompt and generation context.",
+    capabilities: ["accepts_text", "accepts_image", "produces_text", "has_preview"],
+  },
+  prop_asset: {
+    type: "prop_asset",
+    family: "business",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.business,
+    label: "Prop",
+    description: "Prop reference facts for object continuity and prompt context.",
+    capabilities: ["accepts_text", "accepts_image", "produces_text", "has_preview"],
+  },
+  image: {
+    type: "image",
+    family: "ai_generation",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.ai_generation,
+    label: "Image",
+    description: "Generated or imported image result with asset and prompt context.",
+    capabilities: ["accepts_text", "accepts_image", "produces_asset", "has_preview", "has_task"],
+  },
+  video: {
+    type: "video",
+    family: "ai_generation",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.ai_generation,
+    label: "Video",
+    description: "Generated or imported video clip with asset, duration, and prompt context.",
+    capabilities: [
+      "accepts_text",
+      "accepts_image",
+      "accepts_video",
+      "accepts_audio",
+      "produces_asset",
+      "has_preview",
+      "has_task",
+    ],
+  },
+  editor_package: {
+    type: "editor_package",
+    family: "media_operation",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.media_operation,
+    label: "Editor Package",
+    description: "Task-backed media packaging and timeline handoff node.",
+    capabilities: ["accepts_video", "accepts_audio", "produces_asset", "has_preview", "has_task"],
+  },
+  note: {
+    type: "note",
+    family: "layout_helper",
+    familyLabel: CANVAS_NODE_FAMILY_LABELS.layout_helper,
+    label: "Note",
+    description: "Freeform annotation for planning and canvas organization.",
+    capabilities: ["accepts_text", "produces_text"],
+  },
+} as const satisfies Record<CanvasNodeType, CanvasNodeRegistryItem>;
+
+export const CANVAS_NODE_REGISTRY_ITEMS = CANVAS_NODE_TYPES.map((type) => CANVAS_NODE_REGISTRY[type]);
+
+export function getCanvasNodeRegistryItem(type: CanvasNodeType): CanvasNodeRegistryItem {
+  return CANVAS_NODE_REGISTRY[type];
+}
+
+export function canvasNodeTypesByFamily(family: CanvasNodeFamily): CanvasNodeType[] {
+  return CANVAS_NODE_REGISTRY_ITEMS.filter((item) => item.family === family).map((item) => item.type);
+}
+
+export function canvasNodeHasCapability(
+  type: CanvasNodeType,
+  capability: CanvasNodeCapability,
+): boolean {
+  return (CANVAS_NODE_REGISTRY[type].capabilities as readonly CanvasNodeCapability[]).includes(
+    capability,
+  );
+}
+
 export const PHASE_3_CANVAS_NODE_TYPES = [
   "novel",
   "scene_frame",

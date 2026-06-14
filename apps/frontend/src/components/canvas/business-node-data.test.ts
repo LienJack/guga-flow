@@ -1,5 +1,5 @@
 import type { CanvasNodeRecord } from "@guga-flow/shared-types";
-import { PHASE_3_CANVAS_NODE_TYPES } from "@guga-flow/shared-types";
+import { getCanvasNodeRegistryItem, PHASE_3_CANVAS_NODE_TYPES } from "@guga-flow/shared-types";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -29,6 +29,8 @@ describe("business node data helpers", () => {
   it("creates default data and create inputs for every Phase 3 node type", () => {
     for (const type of PHASE_3_CANVAS_NODE_TYPES) {
       const data = createDefaultBusinessNodeData(type);
+      const definition = getBusinessNodeDefinition(type);
+      const registry = getCanvasNodeRegistryItem(type);
       const input = createBusinessCanvasNodeInput(type, {
         tldrawShapeId: `shape:${type}`,
         x: 12,
@@ -45,6 +47,9 @@ describe("business node data helpers", () => {
         y: 24,
         status: "draft",
       });
+      expect(definition.family).toBe(registry.family);
+      expect(definition.familyLabel).toBe(registry.familyLabel);
+      expect(definition.capabilities).toEqual(registry.capabilities);
     }
   });
 
