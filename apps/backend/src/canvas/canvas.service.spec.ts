@@ -169,6 +169,84 @@ type MockFindArgs = { where: Record<string, unknown> };
 type MockUpdateArgs = { where: { id: string }; data: Record<string, unknown> };
 type MockCreateArgs = { data: Record<string, unknown> };
 
+function recordMatchesWhere(record: Record<string, unknown>, where: Record<string, unknown> = {}): boolean {
+  return Object.entries(where).every(([key, expected]) => {
+    if (expected && typeof expected === "object" && !Array.isArray(expected) && "in" in expected) {
+      const values = (expected as { in?: unknown[] }).in ?? [];
+      return values.includes(record[key]);
+    }
+    return record[key] === expected;
+  });
+}
+
+function installCanvasGraphMocks(
+  prisma: ReturnType<typeof createPrismaMock>,
+  initialNodes: MockCanvasNode[],
+  initialEdges: MockCanvasEdge[] = [],
+) {
+  const nodes = [...initialNodes];
+  const edges = [...initialEdges];
+  let nodeSequence = 1;
+  let edgeSequence = 1;
+
+  prisma.canvasDocument.upsert.mockResolvedValue(canvasDocument());
+  prisma.canvasNode.findMany.mockImplementation(async (args?: MockFindArgs) =>
+    nodes.filter((node) => recordMatchesWhere(node, args?.where)),
+  );
+  prisma.canvasNode.create.mockImplementation(async ({ data }: MockCreateArgs) => {
+    const node = canvasNode({
+      id: `created_node_${nodeSequence++}`,
+      ...data,
+    });
+    nodes.push(node);
+    return node;
+  });
+  prisma.canvasNode.update.mockImplementation(async ({ where, data }: MockUpdateArgs) => {
+    const index = nodes.findIndex((node) => node.id === where.id);
+    const updated = canvasNode({
+      ...(index >= 0 ? nodes[index] : { id: where.id }),
+      ...data,
+    });
+    if (index >= 0) {
+      nodes[index] = updated;
+    } else {
+      nodes.push(updated);
+    }
+    return updated;
+  });
+  prisma.canvasNode.delete.mockImplementation(async ({ where }: { where: { id: string } }) => {
+    const index = nodes.findIndex((node) => node.id === where.id);
+    const deleted = nodes[index] ?? canvasNode({ id: where.id });
+    if (index >= 0) {
+      nodes.splice(index, 1);
+    }
+    return deleted;
+  });
+  prisma.canvasEdge.findMany.mockImplementation(async (args?: MockFindArgs) =>
+    edges.filter((edge) => recordMatchesWhere(edge, args?.where)),
+  );
+  prisma.canvasEdge.create.mockImplementation(async ({ data }: MockCreateArgs) => {
+    const edge = canvasEdge({
+      id: `created_edge_${edgeSequence++}`,
+      ...data,
+    });
+    edges.push(edge);
+    return edge;
+  });
+  prisma.canvasEdge.deleteMany.mockImplementation(async ({ where }: MockFindArgs) => {
+    const deleted = edges.filter((edge) => recordMatchesWhere(edge, where));
+    for (const edge of deleted) {
+      const index = edges.findIndex((candidate) => candidate.id === edge.id);
+      if (index >= 0) {
+        edges.splice(index, 1);
+      }
+    }
+    return { count: deleted.length };
+  });
+
+  return { nodes, edges };
+}
+
 function createPrismaMock() {
   const prisma = {
     project: {
@@ -266,6 +344,7 @@ describe("CanvasService", () => {
         title: "Shot 001",
         dataJson: {
           shotNumber: "001",
+          storyboardOrder: 1,
           visualDescription: "Hero studies a blinking console.",
           action: "Hero finds the signal.",
           imagePrompt: "hero console image",
@@ -273,7 +352,23 @@ describe("CanvasService", () => {
           durationSeconds: 4,
           storyEventIds: ["event_1"],
           referenceAssetIds: ["asset_ref_1"],
+          selectedImageNodeId: "image_1",
+          selectedVideoNodeId: "video_1",
         },
+        updatedAt,
+      }),
+      canvasNode({
+        id: "image_1",
+        type: "image",
+        title: "Shot 001 image",
+        dataJson: { assetId: "asset_image_1" },
+        updatedAt,
+      }),
+      canvasNode({
+        id: "video_1",
+        type: "video",
+        title: "Shot 001 video",
+        dataJson: { assetId: "asset_video_1" },
         updatedAt,
       }),
       canvasNode({
@@ -313,8 +408,11 @@ describe("CanvasService", () => {
     expect(result.storyboardTable[0]).toMatchObject({
       shotNodeId: "shot_1",
       sceneNodeId: "scene_1",
+      orderIndex: 1,
       title: "Shot 001",
       imagePrompt: "hero console image",
+      imageNodeId: "image_1",
+      videoNodeId: "video_1",
       sourceScriptDraftId: "script_1",
     });
     expect(result.assets[0]).toMatchObject({
@@ -376,6 +474,172 @@ describe("CanvasService", () => {
     });
     expect(result.updatedNode.title).toBe("Shot 001 revised");
     expect(result.workspace.storyboardItems[0]?.summary).toBe("New summary");
+  });
+
+  it("creates production storyboard items and rebuilds sequence edges", async () => {
+    installCanvasGraphMocks(prisma, [
+      canvasNode({
+        id: "shot_1",
+        title: "Shot 001",
+        dataJson: { storyboardOrder: 1, shotNumber: "001", visualDescription: "Opening shot" },
+      }),
+    ]);
+
+    const result = await service.createProductionStoryboardItems("project_1", {
+      count: 2,
+      titlePrefix: "Panel",
+    });
+
+    expect(prisma.canvasNode.create).toHaveBeenCalledTimes(2);
+    expect(prisma.canvasEdge.deleteMany).toHaveBeenCalledWith({
+      where: { projectId: "project_1", canvasDocumentId: "canvas_1", relation: "sequence_next" },
+    });
+    expect(prisma.canvasEdge.create).toHaveBeenCalledTimes(2);
+    expect(result.focusNodeId).toBe("created_node_1");
+    expect(result.nodes.map((node) => node.dataJson)).toEqual([
+      expect.objectContaining({ storyboardOrder: 1, shotNumber: "001" }),
+      expect.objectContaining({ storyboardOrder: 2, shotNumber: "002" }),
+      expect.objectContaining({ storyboardOrder: 3, shotNumber: "003" }),
+    ]);
+    expect(result.workspace.storyboardItems.map((item) => item.orderIndex)).toEqual([1, 2, 3]);
+  });
+
+  it("reorders production storyboard items and keeps sequence_next edges in sync", async () => {
+    installCanvasGraphMocks(prisma, [
+      canvasNode({
+        id: "shot_1",
+        title: "Shot 001",
+        dataJson: { storyboardOrder: 1, shotNumber: "001", visualDescription: "First" },
+      }),
+      canvasNode({
+        id: "shot_2",
+        title: "Shot 002",
+        dataJson: { storyboardOrder: 2, shotNumber: "002", visualDescription: "Second" },
+        zIndex: 1,
+      }),
+      canvasNode({
+        id: "shot_3",
+        title: "Shot 003",
+        dataJson: { storyboardOrder: 3, shotNumber: "003", visualDescription: "Third" },
+        zIndex: 2,
+      }),
+    ]);
+
+    const result = await service.reorderProductionStoryboardItems("project_1", {
+      itemIds: ["shot_2", "shot_1", "shot_3"],
+    });
+
+    expect(result.nodes.map((node) => [node.id, node.dataJson])).toEqual([
+      ["shot_2", expect.objectContaining({ storyboardOrder: 1, shotNumber: "001" })],
+      ["shot_1", expect.objectContaining({ storyboardOrder: 2, shotNumber: "002" })],
+      ["shot_3", expect.objectContaining({ storyboardOrder: 3, shotNumber: "003" })],
+    ]);
+    expect(result.edges).toEqual([
+      expect.objectContaining({
+        sourceNodeId: "shot_2",
+        targetNodeId: "shot_1",
+        relation: "sequence_next",
+        dataJson: expect.objectContaining({ orderIndex: 1 }),
+      }),
+      expect.objectContaining({
+        sourceNodeId: "shot_1",
+        targetNodeId: "shot_3",
+        relation: "sequence_next",
+        dataJson: expect.objectContaining({ orderIndex: 2 }),
+      }),
+    ]);
+  });
+
+  it("deletes production storyboard items and resequences remaining shots", async () => {
+    installCanvasGraphMocks(prisma, [
+      canvasNode({
+        id: "shot_1",
+        title: "Shot 001",
+        dataJson: { storyboardOrder: 1, shotNumber: "001", visualDescription: "First" },
+      }),
+      canvasNode({
+        id: "shot_2",
+        title: "Shot 002",
+        dataJson: { storyboardOrder: 2, shotNumber: "002", visualDescription: "Second" },
+        zIndex: 1,
+      }),
+      canvasNode({
+        id: "shot_3",
+        title: "Shot 003",
+        dataJson: { storyboardOrder: 3, shotNumber: "003", visualDescription: "Third" },
+        zIndex: 2,
+      }),
+    ]);
+
+    const result = await service.deleteProductionStoryboardItems("project_1", {
+      itemIds: ["shot_2", "shot_3"],
+    });
+
+    expect(prisma.canvasNode.delete).toHaveBeenCalledTimes(2);
+    expect(result.deletedNodeIds).toEqual(["shot_2", "shot_3"]);
+    expect(result.nodes).toEqual([
+      expect.objectContaining({
+        id: "shot_1",
+        dataJson: expect.objectContaining({ storyboardOrder: 1, shotNumber: "001" }),
+      }),
+    ]);
+    expect(result.edges).toEqual([]);
+    expect(result.workspace.storyboardItems).toHaveLength(1);
+  });
+
+  it("creates storyboard media board nodes from production storyboard items", async () => {
+    installCanvasGraphMocks(prisma, [
+      canvasNode({
+        id: "shot_1",
+        title: "Shot 001",
+        dataJson: {
+          storyboardOrder: 1,
+          shotNumber: "001",
+          visualDescription: "Hero studies a blinking console.",
+          selectedImageNodeId: "image_1",
+          selectedVideoNodeId: "video_1",
+        },
+      }),
+      canvasNode({
+        id: "image_1",
+        type: "image",
+        title: "Image 001",
+        dataJson: { assetId: "asset_image_1" },
+      }),
+      canvasNode({
+        id: "video_1",
+        type: "video",
+        title: "Video 001",
+        dataJson: { assetId: "asset_video_1" },
+      }),
+    ]);
+
+    const result = await service.createStoryboardMediaBoard("project_1", {
+      itemIds: ["shot_1"],
+      title: "Board A",
+      columns: 3,
+    });
+
+    expect(result.boardNode).toMatchObject({
+      type: "scene_frame",
+      title: "Board A",
+      dataJson: expect.objectContaining({
+        storyboardBoard: expect.objectContaining({
+          title: "Board A",
+          columns: 3,
+          items: [
+            expect.objectContaining({
+              orderIndex: 1,
+              shotNodeId: "shot_1",
+              imageNodeId: "image_1",
+              videoNodeId: "video_1",
+              assetId: "asset_video_1",
+            }),
+          ],
+        }),
+      }),
+    });
+    expect(result.focusNodeId).toBe(result.boardNode.id);
   });
 
   it("saves snapshots and returns the updated canvas document", async () => {

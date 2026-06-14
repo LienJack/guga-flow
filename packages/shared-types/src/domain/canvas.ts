@@ -641,6 +641,28 @@ export interface SceneFrameNodeData {
   shotNodeIds?: string[];
   storyEventIds?: string[];
   storyEvents?: StoryEventTraceData[];
+  storyboardBoard?: StoryboardMediaBoardData;
+}
+
+export interface StoryboardMediaBoardItemData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  boardItemId: string;
+  orderIndex: number;
+  caption?: string;
+  shotNodeId?: string;
+  imageNodeId?: string;
+  videoNodeId?: string;
+  assetId?: string;
+  status?: NodeStatus;
+}
+
+export interface StoryboardMediaBoardData {
+  [key: string]: CanvasSnapshotJson | undefined;
+  boardId: string;
+  title: string;
+  columns: number;
+  source: "production_workspace";
+  items: StoryboardMediaBoardItemData[];
 }
 
 export interface SceneNodeData {
@@ -658,6 +680,7 @@ export interface SceneNodeData {
 
 export interface ShotNodeData {
   shotNumber?: string;
+  storyboardOrder?: number;
   visualDescription?: string;
   action?: string;
   cameraMovement?: string;

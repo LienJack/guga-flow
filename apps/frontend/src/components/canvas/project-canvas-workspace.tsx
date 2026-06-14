@@ -8,6 +8,7 @@ import type {
   GenerationJobRecord,
   GenerationQueueSummary,
   ImportStoryboardToCanvasResult,
+  ProductionWorkspaceMutationResult,
   ProjectDetail,
   UndoAgentCanvasActionResult,
 } from "@guga-flow/shared-types";
@@ -218,6 +219,40 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
     [handleSelectCanvasNode, refreshGenerationState],
   );
 
+  const handleProductionWorkspaceMutation = useCallback(
+    (result: ProductionWorkspaceMutationResult) => {
+      const deletedNodeIds = new Set(result.deletedNodeIds ?? []);
+      const replacesSequenceEdges =
+        result.nodes.some((node) => node.type === "shot") || deletedNodeIds.size > 0;
+
+      if (result.nodes.length > 0 || deletedNodeIds.size > 0) {
+        setCanvasNodes((current) =>
+          mergeCanvasNodeRecords(
+            current.filter((node) => !deletedNodeIds.has(node.id)),
+            result.nodes,
+          ),
+        );
+      }
+      if (result.edges.length > 0 || deletedNodeIds.size > 0 || replacesSequenceEdges) {
+        setCanvasEdges((current) =>
+          mergeCanvasEdgeRecords(
+            current.filter(
+              (edge) =>
+                !deletedNodeIds.has(edge.sourceNodeId) &&
+                !deletedNodeIds.has(edge.targetNodeId) &&
+                (!replacesSequenceEdges || edge.relation !== "sequence_next"),
+            ),
+            result.edges,
+          ),
+        );
+      }
+      if (result.focusNodeId) {
+        handleSelectCanvasNode(result.focusNodeId);
+      }
+    },
+    [handleSelectCanvasNode],
+  );
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (isEditableShortcutTarget(event.target)) {
@@ -268,6 +303,7 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
             projectId={projectId}
             selectedNodeId={selection.kind === "business-node" ? selection.nodeId : undefined}
             onItemUpdated={handleNodeUpdated}
+            onWorkspaceMutation={handleProductionWorkspaceMutation}
             onSelectNode={handleSelectCanvasNode}
           />
           <NovelStoryboardPanel

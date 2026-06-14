@@ -3,11 +3,15 @@ import type {
   CanvasSnapshotJson,
   CreateCanvasEdgeInput,
   CreateCanvasNodeInput,
+  CreateProductionStoryboardItemsInput,
+  CreateStoryboardMediaBoardInput,
+  DeleteProductionStoryboardItemsInput,
   ExportCanvasFragmentInput,
   ImportCanvasFragmentInput,
   ImportStoryboardToCanvasInput,
   NodeStatus,
   Phase3CanvasNodeType,
+  ReorderProductionStoryboardItemsInput,
   StoryboardImportDuplicatePolicy,
   UpdateCanvasNodeGeometryInput,
   UpdateCanvasNodeInput,
@@ -197,6 +201,60 @@ export class UpdateProductionWorkspaceItemDto implements UpdateProductionWorkspa
   @IsNumber({ allowInfinity: false, allowNaN: false })
   @Min(0.1)
   durationSeconds?: number;
+}
+
+export class CreateProductionStoryboardItemsDto implements CreateProductionStoryboardItemsInput {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  count?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  titlePrefix?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  afterItemId?: string;
+}
+
+export class DeleteProductionStoryboardItemsDto implements DeleteProductionStoryboardItemsInput {
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(160, { each: true })
+  itemIds!: string[];
+}
+
+export class ReorderProductionStoryboardItemsDto implements ReorderProductionStoryboardItemsInput {
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(160, { each: true })
+  itemIds!: string[];
+}
+
+export class CreateStoryboardMediaBoardDto implements CreateStoryboardMediaBoardInput {
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(160, { each: true })
+  itemIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  title?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  columns?: number;
 }
 
 export class ImportStoryboardToCanvasDto implements ImportStoryboardToCanvasInput {

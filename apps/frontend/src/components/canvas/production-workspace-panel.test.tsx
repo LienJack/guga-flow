@@ -14,6 +14,7 @@ describe("ProductionWorkspacePanel", () => {
         projectId="project_1"
         selectedNodeId="shot_1"
         onItemUpdated={vi.fn()}
+        onWorkspaceMutation={vi.fn()}
         onSelectNode={vi.fn()}
       />,
     );
@@ -25,6 +26,9 @@ describe("ProductionWorkspacePanel", () => {
     expect(html).toContain("hero console image");
     expect(html).toContain("slow push toward console");
     expect(html).toContain("Save item");
+    expect(html).toContain("Add 3");
+    expect(html).toContain("Delete selected");
+    expect(html).toContain("Board");
   });
 });
 
@@ -45,6 +49,7 @@ function workspace(): ProductionWorkspaceProjection {
       {
         itemId: "shot_1",
         shotNodeId: "shot_1",
+        orderIndex: 1,
         sceneNodeId: "scene_1",
         sceneTitle: "Control Room",
         shotNumber: "001",
@@ -64,6 +69,7 @@ function workspace(): ProductionWorkspaceProjection {
       {
         itemId: "shot_1",
         shotNodeId: "shot_1",
+        orderIndex: 1,
         sceneNodeId: "scene_1",
         sceneTitle: "Control Room",
         title: "Shot 001",

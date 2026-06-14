@@ -43,8 +43,12 @@ import type {
   CreateNovelDocumentInput,
   CreateNovelDocumentResult,
   CreateProjectInput,
+  CreateProductionStoryboardItemsInput,
+  CreateStoryboardMediaBoardInput,
+  CreateStoryboardMediaBoardResult,
   DeleteCanvasEdgeResult,
   DeleteCanvasNodeResult,
+  DeleteProductionStoryboardItemsInput,
   DeleteNovelDocumentResult,
   ComposeShotPromptInput,
   ExtractNovelChapterEventsInput,
@@ -83,7 +87,9 @@ import type {
   ProgrammableProviderDefinitionResult,
   ProgrammableProviderDefinitionSummary,
   ProductionWorkspaceAgentContext,
+  ProductionWorkspaceMutationResult,
   ProductionWorkspaceProjection,
+  ReorderProductionStoryboardItemsInput,
   ImportNovelSourceInput,
   ImportNovelSourceResult,
   ImportScriptAssetsInput,
@@ -834,6 +840,58 @@ export function updateProductionWorkspaceItem(
     `/projects/${projectId}/canvas/production-workspace/items/${itemId}`,
     {
       method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function createProductionStoryboardItems(
+  projectId: string,
+  input: CreateProductionStoryboardItemsInput,
+): Promise<ProductionWorkspaceMutationResult> {
+  return requestJson<ProductionWorkspaceMutationResult>(
+    `/projects/${projectId}/canvas/production-workspace/storyboard-items`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function deleteProductionStoryboardItems(
+  projectId: string,
+  input: DeleteProductionStoryboardItemsInput,
+): Promise<ProductionWorkspaceMutationResult> {
+  return requestJson<ProductionWorkspaceMutationResult>(
+    `/projects/${projectId}/canvas/production-workspace/storyboard-items/delete`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function reorderProductionStoryboardItems(
+  projectId: string,
+  input: ReorderProductionStoryboardItemsInput,
+): Promise<ProductionWorkspaceMutationResult> {
+  return requestJson<ProductionWorkspaceMutationResult>(
+    `/projects/${projectId}/canvas/production-workspace/storyboard-items/sequence`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function createStoryboardMediaBoard(
+  projectId: string,
+  input: CreateStoryboardMediaBoardInput,
+): Promise<CreateStoryboardMediaBoardResult> {
+  return requestJson<CreateStoryboardMediaBoardResult>(
+    `/projects/${projectId}/canvas/production-workspace/storyboard-board`,
+    {
+      method: "POST",
       body: JSON.stringify(input),
     },
   );

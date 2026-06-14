@@ -15,9 +15,11 @@ import {
   createProgrammableProvider,
   createProject,
   createCanvasEdge,
+  createProductionStoryboardItems,
   createCreativeStoryboard,
   createNovelDocument,
   createScriptDraft,
+  createStoryboardMediaBoard,
   discoverProviderModels,
   editorExportDownloadUrl,
   exportCanvasFragment,
@@ -73,6 +75,8 @@ import {
   disableProgrammableProvider,
   disableAgentMemory,
   clearAgentMemories,
+  deleteProductionStoryboardItems,
+  reorderProductionStoryboardItems,
   updateProject,
   updateProductionWorkspaceItem,
   validateProjectSettingsImport,
@@ -223,6 +227,22 @@ describe("frontend api client", () => {
       videoPrompt: "new video",
       durationSeconds: 6,
     });
+    await createProductionStoryboardItems("project_1", {
+      count: 3,
+      afterItemId: "shot_1",
+      titlePrefix: "Panel",
+    });
+    await deleteProductionStoryboardItems("project_1", {
+      itemIds: ["shot_2"],
+    });
+    await reorderProductionStoryboardItems("project_1", {
+      itemIds: ["shot_1", "shot_3"],
+    });
+    await createStoryboardMediaBoard("project_1", {
+      itemIds: ["shot_1", "shot_3"],
+      title: "Board A",
+      columns: 3,
+    });
     await getAgentProductionWorkspaceContext("project_1");
 
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -247,6 +267,50 @@ describe("frontend api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/production-workspace/storyboard-items",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          count: 3,
+          afterItemId: "shot_1",
+          titlePrefix: "Panel",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/production-workspace/storyboard-items/delete",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          itemIds: ["shot_2"],
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/production-workspace/storyboard-items/sequence",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          itemIds: ["shot_1", "shot_3"],
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "http://localhost:3002/api/v1/projects/project_1/canvas/production-workspace/storyboard-board",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          itemIds: ["shot_1", "shot_3"],
+          title: "Board A",
+          columns: 3,
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
       "http://localhost:3002/api/v1/projects/project_1/agents/production-workspace-context",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );

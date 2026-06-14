@@ -1,12 +1,30 @@
 import type {
   CanvasNodeRecord,
+  ProductionWorkspaceMutationResult,
   ProductionWorkspaceProjection,
   ProductionWorkspaceStoryboardItem,
 } from "@guga-flow/shared-types";
-import { Clapperboard, RefreshCw, Save } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Clapperboard,
+  Grid2X2,
+  LocateFixed,
+  Plus,
+  RefreshCw,
+  Save,
+  Trash2,
+} from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 
-import { getProductionWorkspace, updateProductionWorkspaceItem } from "../../lib/api";
+import {
+  createProductionStoryboardItems,
+  createStoryboardMediaBoard,
+  deleteProductionStoryboardItems,
+  getProductionWorkspace,
+  reorderProductionStoryboardItems,
+  updateProductionWorkspaceItem,
+} from "../../lib/api";
 
 interface ProductionWorkspacePanelProps {
   initialWorkspace?: ProductionWorkspaceProjection;
@@ -14,6 +32,7 @@ interface ProductionWorkspacePanelProps {
   projectId: string;
   selectedNodeId?: string;
   onItemUpdated(node: CanvasNodeRecord): void;
+  onWorkspaceMutation(result: ProductionWorkspaceMutationResult): void;
   onSelectNode(nodeId: string): void;
 }
 
@@ -29,6 +48,7 @@ export function ProductionWorkspacePanel({
   initialWorkspace,
   nodes,
   onItemUpdated,
+  onWorkspaceMutation,
   onSelectNode,
   projectId,
   selectedNodeId,
@@ -44,6 +64,7 @@ export function ProductionWorkspacePanel({
     initialWorkspace ?? null,
   );
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(initialItem?.itemId);
+  const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState<StoryboardItemDraft>(
     initialItem ? draftFromItem(initialItem) : emptyDraft(),
   );
@@ -90,6 +111,7 @@ export function ProductionWorkspacePanel({
   useEffect(() => {
     if (!selectedItem) {
       setSelectedItemId(undefined);
+      setSelectedBatchIds(new Set());
       setDraft(emptyDraft());
       return;
     }
@@ -107,6 +129,130 @@ export function ProductionWorkspacePanel({
     } finally {
       setBusy(false);
     }
+  }
+
+  function applyMutationResult(result: ProductionWorkspaceMutationResult, focusNodeId?: string) {
+    setWorkspace(result.workspace);
+    setSelectedBatchIds((current) => {
+      const availableIds = new Set(result.workspace.storyboardItems.map((item) => item.itemId));
+      return new Set([...current].filter((itemId) => availableIds.has(itemId)));
+    });
+    onWorkspaceMutation(result);
+    const nextFocusNodeId =
+      focusNodeId ??
+      result.focusNodeId ??
+      result.workspace.storyboardItems.find((item) => item.itemId === selectedItemId)?.shotNodeId ??
+      result.workspace.storyboardItems[0]?.shotNodeId;
+    if (nextFocusNodeId) {
+      onSelectNode(nextFocusNodeId);
+    }
+  }
+
+  async function runWorkspaceAction(
+    action: () => Promise<ProductionWorkspaceMutationResult>,
+    fallbackMessage: string,
+    focusNodeId?: string,
+  ) {
+    setBusy(true);
+    setError(null);
+    try {
+      applyMutationResult(await action(), focusNodeId);
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : fallbackMessage);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleBatchSelection(itemId: string, checked: boolean) {
+    setSelectedBatchIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(itemId);
+      } else {
+        next.delete(itemId);
+      }
+      return next;
+    });
+  }
+
+  function storyboardItemIds(): string[] {
+    return workspace?.storyboardItems.map((item) => item.itemId) ?? [];
+  }
+
+  function selectedDeleteIds(): string[] {
+    if (selectedBatchIds.size > 0) {
+      return [...selectedBatchIds];
+    }
+    return selectedItem ? [selectedItem.itemId] : [];
+  }
+
+  function movedStoryboardOrder(delta: -1 | 1): string[] | undefined {
+    if (!selectedItem || !workspace) {
+      return undefined;
+    }
+    const ids = storyboardItemIds();
+    const index = ids.indexOf(selectedItem.itemId);
+    const nextIndex = index + delta;
+    if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) {
+      return undefined;
+    }
+    const next = [...ids];
+    const [itemId] = next.splice(index, 1);
+    if (!itemId) {
+      return undefined;
+    }
+    next.splice(nextIndex, 0, itemId);
+    return next;
+  }
+
+  async function addStoryboardItems(count: number) {
+    await runWorkspaceAction(
+      () =>
+        createProductionStoryboardItems(projectId, {
+          count,
+          ...(selectedItem ? { afterItemId: selectedItem.itemId } : {}),
+        }),
+      "Unable to add storyboard items",
+    );
+  }
+
+  async function deleteSelectedStoryboardItems(itemIds: string[]) {
+    if (itemIds.length === 0) {
+      return;
+    }
+    await runWorkspaceAction(
+      () => deleteProductionStoryboardItems(projectId, { itemIds }),
+      "Unable to delete storyboard items",
+    );
+  }
+
+  async function moveSelectedStoryboardItem(delta: -1 | 1) {
+    const itemIds = movedStoryboardOrder(delta);
+    if (!itemIds || !selectedItem) {
+      return;
+    }
+    await runWorkspaceAction(
+      () => reorderProductionStoryboardItems(projectId, { itemIds }),
+      "Unable to reorder storyboard items",
+      selectedItem.shotNodeId,
+    );
+  }
+
+  async function createBoardFromSelection() {
+    if (!workspace?.storyboardItems.length) {
+      return;
+    }
+    const itemIds = selectedBatchIds.size > 0 ? [...selectedBatchIds] : storyboardItemIds();
+    await runWorkspaceAction(
+      () =>
+        createStoryboardMediaBoard(projectId, {
+          itemIds,
+          title: "Storyboard Board",
+          columns: 4,
+        }),
+      "Unable to create storyboard board",
+    );
   }
 
   async function saveStoryboardItem(event: React.FormEvent<HTMLFormElement>) {
@@ -150,6 +296,14 @@ export function ProductionWorkspacePanel({
           <RefreshCw size={15} aria-hidden="true" />
           Refresh
         </button>
+        <button className="ghost-action compact" type="button" onClick={() => void addStoryboardItems(1)} disabled={busy}>
+          <Plus size={15} aria-hidden="true" />
+          Add
+        </button>
+        <button className="ghost-action compact" type="button" onClick={() => void addStoryboardItems(3)} disabled={busy}>
+          <Plus size={15} aria-hidden="true" />
+          Add 3
+        </button>
       </div>
       {workspace ? (
         <>
@@ -159,23 +313,86 @@ export function ProductionWorkspacePanel({
             <span>{workspace.agentContext.assetSummary}</span>
             <span>{workspace.agentContext.generationSummary}</span>
           </div>
+          <div className="storyboard-action-row">
+            <button
+              className="ghost-action compact"
+              type="button"
+              onClick={() => void moveSelectedStoryboardItem(-1)}
+              disabled={busy || !selectedItem || workspace.storyboardItems[0]?.itemId === selectedItem.itemId}
+            >
+              <ArrowUp size={15} aria-hidden="true" />
+              Up
+            </button>
+            <button
+              className="ghost-action compact"
+              type="button"
+              onClick={() => void moveSelectedStoryboardItem(1)}
+              disabled={busy || !selectedItem || workspace.storyboardItems.at(-1)?.itemId === selectedItem.itemId}
+            >
+              <ArrowDown size={15} aria-hidden="true" />
+              Down
+            </button>
+            <button
+              className="ghost-action compact"
+              type="button"
+              onClick={() => void deleteSelectedStoryboardItems(selectedDeleteIds())}
+              disabled={busy || selectedDeleteIds().length === 0}
+            >
+              <Trash2 size={15} aria-hidden="true" />
+              Delete selected
+            </button>
+            <button
+              className="ghost-action compact"
+              type="button"
+              onClick={() => void deleteSelectedStoryboardItems(storyboardItemIds())}
+              disabled={busy || workspace.storyboardItems.length === 0}
+            >
+              <Trash2 size={15} aria-hidden="true" />
+              Delete all
+            </button>
+            <button
+              className="ghost-action compact"
+              type="button"
+              onClick={() => void createBoardFromSelection()}
+              disabled={busy || workspace.storyboardItems.length === 0}
+            >
+              <Grid2X2 size={15} aria-hidden="true" />
+              Board
+            </button>
+          </div>
           <div className="script-draft-list">
             {workspace.storyboardTable.slice(0, 8).map((item) => (
-              <button
+              <div
                 className={`script-draft-row${item.itemId === selectedItem?.itemId ? " active" : ""}`}
                 key={item.itemId}
-                type="button"
-                onClick={() => {
-                  setSelectedItemId(item.itemId);
-                  onSelectNode(item.shotNodeId);
-                }}
               >
                 <div>
-                  <strong>{item.title}</strong>
-                  <span>{item.sceneTitle ?? "Scene"} · {item.status}</span>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={selectedBatchIds.has(item.itemId)}
+                      onChange={(event) => toggleBatchSelection(item.itemId, event.target.checked)}
+                    />
+                    <strong>{item.orderIndex}. {item.title}</strong>
+                  </label>
+                  <span>
+                    {item.sceneTitle ?? "Scene"} · {item.status}
+                    {item.imageNodeId ? " · image" : ""}
+                    {item.videoNodeId ? " · video" : ""}
+                  </span>
                 </div>
-                <span>{item.durationSeconds ? `${item.durationSeconds}s` : "Shot"}</span>
-              </button>
+                <button
+                  className="ghost-action compact"
+                  type="button"
+                  onClick={() => {
+                    setSelectedItemId(item.itemId);
+                    onSelectNode(item.shotNodeId);
+                  }}
+                >
+                  <LocateFixed size={15} aria-hidden="true" />
+                  {item.durationSeconds ? `${item.durationSeconds}s` : "Locate"}
+                </button>
+              </div>
             ))}
           </div>
           {selectedItem ? (

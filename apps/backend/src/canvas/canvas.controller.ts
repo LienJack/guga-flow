@@ -4,9 +4,13 @@ import { CanvasService } from "./canvas.service";
 import {
   CreateCanvasEdgeDto,
   CreateCanvasNodeDto,
+  CreateProductionStoryboardItemsDto,
+  CreateStoryboardMediaBoardDto,
+  DeleteProductionStoryboardItemsDto,
   ExportCanvasFragmentDto,
   ImportCanvasFragmentDto,
   ImportStoryboardToCanvasDto,
+  ReorderProductionStoryboardItemsDto,
   SaveCanvasSnapshotDto,
   UpdateCanvasNodeDto,
   UpdateCanvasNodeGeometryDto,
@@ -39,6 +43,38 @@ export class CanvasController {
     @Body() body: UpdateProductionWorkspaceItemDto,
   ) {
     return this.canvasService.updateProductionWorkspaceItem(projectId, itemId, body);
+  }
+
+  @Post("production-workspace/storyboard-items")
+  createProductionStoryboardItems(
+    @Param("projectId") projectId: string,
+    @Body() body: CreateProductionStoryboardItemsDto,
+  ) {
+    return this.canvasService.createProductionStoryboardItems(projectId, body);
+  }
+
+  @Post("production-workspace/storyboard-items/delete")
+  deleteProductionStoryboardItems(
+    @Param("projectId") projectId: string,
+    @Body() body: DeleteProductionStoryboardItemsDto,
+  ) {
+    return this.canvasService.deleteProductionStoryboardItems(projectId, body);
+  }
+
+  @Patch("production-workspace/storyboard-items/sequence")
+  reorderProductionStoryboardItems(
+    @Param("projectId") projectId: string,
+    @Body() body: ReorderProductionStoryboardItemsDto,
+  ) {
+    return this.canvasService.reorderProductionStoryboardItems(projectId, body);
+  }
+
+  @Post("production-workspace/storyboard-board")
+  createStoryboardMediaBoard(
+    @Param("projectId") projectId: string,
+    @Body() body: CreateStoryboardMediaBoardDto,
+  ) {
+    return this.canvasService.createStoryboardMediaBoard(projectId, body);
   }
 
   @Post("nodes")

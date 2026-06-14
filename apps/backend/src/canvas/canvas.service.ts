@@ -19,8 +19,12 @@ import type {
   CreateCanvasEdgeResult,
   CreateCanvasNodeInput,
   CreateCanvasNodeResult,
+  CreateProductionStoryboardItemsInput,
+  CreateStoryboardMediaBoardInput,
+  CreateStoryboardMediaBoardResult,
   DeleteCanvasEdgeResult,
   DeleteCanvasNodeResult,
+  DeleteProductionStoryboardItemsInput,
   ImportStoryboardToCanvasInput,
   ImportStoryboardToCanvasResult,
   ExportCanvasFragmentInput,
@@ -33,13 +37,17 @@ import type {
   NodeStatus,
   ProductionWorkspaceAgentContext,
   ProductionWorkspaceAssetSummary,
+  ProductionWorkspaceMutationResult,
   ProductionWorkspaceProjection,
   ProductionWorkspaceScriptPlan,
   ProductionWorkspaceStoryboardItem,
+  ReorderProductionStoryboardItemsInput,
   SaveCanvasSnapshotInput,
   SaveCanvasSnapshotResult,
+  SceneFrameNodeData,
   ScriptAdaptationStrategy,
   ScriptDraftWorkspace,
+  ShotNodeData,
   StoryboardImportDataJson,
   StoryboardImportDuplicatePolicy,
   StoryboardImportPlannedNode,
@@ -276,6 +284,16 @@ function optionalPositiveNumber(value: unknown): number | undefined {
 
 function objectData(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function storyboardBoardAssetRef(
+  item: ProductionWorkspaceStoryboardItem,
+  nodesById: ReadonlyMap<string, CanvasNodeRecord>,
+): { assetId?: string } {
+  const mediaNodeId = item.videoNodeId ?? item.imageNodeId;
+  const mediaNode = mediaNodeId ? nodesById.get(mediaNodeId) : undefined;
+  const assetId = optionalText(objectData(mediaNode?.dataJson).assetId);
+  return assetId ? { assetId } : {};
 }
 
 function hasExistingLifecycleStages(value: CanvasSnapshotJson | undefined): boolean {
@@ -606,6 +624,175 @@ export class CanvasService {
     return {
       updatedNode: this.toCanvasNodeRecord(node),
       workspace: await this.getProductionWorkspace(projectId),
+    };
+  }
+
+  async createProductionStoryboardItems(
+    projectId: string,
+    input: CreateProductionStoryboardItemsInput,
+  ): Promise<ProductionWorkspaceMutationResult> {
+    const canvasDocument = await this.getOrCreateCanvasDocument(projectId);
+    const existingShots = (await this.prisma.canvasNode.findMany({
+      where: { projectId, canvasDocumentId: canvasDocument.id, type: "shot" },
+      orderBy: [{ zIndex: "asc" }, { createdAt: "asc" }],
+    })) as CanvasNodeModel[];
+    const count = this.normalizeStoryboardItemCount(input.count);
+    const titlePrefix = this.normalizeOptionalProductionText(input.titlePrefix) ?? "Shot";
+    const createdNodes: CanvasNodeModel[] = [];
+
+    for (let index = 0; index < count; index += 1) {
+      const order = existingShots.length + index + 1;
+      const shotNumber = this.formatShotNumber(order);
+      const node = (await this.prisma.canvasNode.create({
+        data: {
+          projectId,
+          canvasDocumentId: canvasDocument.id,
+          tldrawShapeId: `storyboard:shot:${randomUUID()}`,
+          type: prismaCanvasNodeType("shot"),
+          title: `${titlePrefix} ${shotNumber}`,
+          x: 120 + order * 28,
+          y: 160 + order * 18,
+          width: 320,
+          height: 220,
+          zIndex: existingShots.length + index,
+          status: "draft",
+          dataJson: {
+            shotNumber,
+            storyboardOrder: order,
+            visualDescription: `${titlePrefix} ${shotNumber}`,
+            durationSeconds: 4,
+            imagePrompt: `${titlePrefix} ${shotNumber} image prompt`,
+            videoPrompt: `${titlePrefix} ${shotNumber} video prompt`,
+          } satisfies ShotNodeData,
+        },
+      })) as CanvasNodeModel;
+      createdNodes.push(node);
+    }
+
+    const existingOrder = this.sortedStoryboardShotNodes(existingShots).map((node) => node.id);
+    const createdIds = createdNodes.map((node) => node.id);
+    const preferredOrder = this.insertStoryboardIds(existingOrder, createdIds, input.afterItemId);
+    const synced = await this.syncStoryboardSequence(projectId, preferredOrder);
+
+    return {
+      workspace: await this.getProductionWorkspace(projectId),
+      nodes: synced.nodes,
+      edges: synced.edges,
+      focusNodeId: createdIds[0],
+    };
+  }
+
+  async deleteProductionStoryboardItems(
+    projectId: string,
+    input: DeleteProductionStoryboardItemsInput,
+  ): Promise<ProductionWorkspaceMutationResult> {
+    const itemIds = uniqueStrings(input.itemIds ?? []);
+    if (itemIds.length === 0) {
+      throw new BadRequestException("Storyboard item ids are required");
+    }
+    const nodes = (await this.prisma.canvasNode.findMany({
+      where: { projectId, id: { in: itemIds }, type: "shot" },
+    })) as CanvasNodeModel[];
+    if (nodes.length !== itemIds.length) {
+      throw new BadRequestException("Storyboard items must be Shot nodes in this project");
+    }
+    for (const node of nodes) {
+      await this.prisma.canvasNode.delete({ where: { id: node.id } });
+    }
+    const synced = await this.syncStoryboardSequence(projectId);
+
+    return {
+      workspace: await this.getProductionWorkspace(projectId),
+      nodes: synced.nodes,
+      edges: synced.edges,
+      deletedNodeIds: itemIds,
+    };
+  }
+
+  async reorderProductionStoryboardItems(
+    projectId: string,
+    input: ReorderProductionStoryboardItemsInput,
+  ): Promise<ProductionWorkspaceMutationResult> {
+    const itemIds = uniqueStrings(input.itemIds ?? []);
+    if (itemIds.length === 0) {
+      throw new BadRequestException("Storyboard item order is required");
+    }
+    const synced = await this.syncStoryboardSequence(projectId, itemIds);
+
+    return {
+      workspace: await this.getProductionWorkspace(projectId),
+      nodes: synced.nodes,
+      edges: synced.edges,
+      focusNodeId: itemIds[0],
+    };
+  }
+
+  async createStoryboardMediaBoard(
+    projectId: string,
+    input: CreateStoryboardMediaBoardInput,
+  ): Promise<CreateStoryboardMediaBoardResult> {
+    const workspace = await this.getProductionWorkspace(projectId);
+    const canvas = await this.getCanvas(projectId);
+    const nodesById = new Map(canvas.nodes.map((node) => [node.id, node]));
+    const selectedIds = uniqueStrings(input.itemIds ?? []);
+    const items = selectedIds.length
+      ? workspace.storyboardItems.filter((item) => selectedIds.includes(item.itemId))
+      : workspace.storyboardItems;
+    if (selectedIds.length > 0 && items.length !== selectedIds.length) {
+      throw new BadRequestException("Storyboard board item ids must reference Shot nodes");
+    }
+    if (items.length === 0) {
+      throw new BadRequestException("Storyboard board requires at least one item");
+    }
+    const canvasDocument = await this.getOrCreateCanvasDocument(projectId);
+    const title = this.normalizeOptionalProductionText(input.title) ?? "Storyboard Board";
+    const columns = this.normalizeStoryboardBoardColumns(input.columns);
+    const boardData: SceneFrameNodeData = {
+      label: title,
+      order: 1,
+      description: `${items.length} storyboard items`,
+      shotNodeIds: items.map((item) => item.shotNodeId),
+      storyboardBoard: {
+        boardId: `board_${Date.now().toString(36)}`,
+        title,
+        columns,
+        source: "production_workspace",
+        items: items.map((item, index) => ({
+          boardItemId: item.itemId,
+          orderIndex: index + 1,
+          caption: item.title,
+          shotNodeId: item.shotNodeId,
+          ...(item.imageNodeId ? { imageNodeId: item.imageNodeId } : {}),
+          ...(item.videoNodeId ? { videoNodeId: item.videoNodeId } : {}),
+          ...storyboardBoardAssetRef(item, nodesById),
+          status: item.status,
+        })),
+      },
+    };
+    const boardNode = (await this.prisma.canvasNode.create({
+      data: {
+        projectId,
+        canvasDocumentId: canvasDocument.id,
+        tldrawShapeId: `storyboard:board:${randomUUID()}`,
+        type: prismaCanvasNodeType("scene_frame"),
+        title,
+        x: 80,
+        y: 80,
+        width: 520,
+        height: 360,
+        zIndex: workspace.summary.shotCount + workspace.summary.assetCount + 1,
+        status: "draft",
+        dataJson: this.normalizeNodeDataJson(boardData),
+      },
+    })) as CanvasNodeModel;
+    const nodeRecord = this.toCanvasNodeRecord(boardNode);
+
+    return {
+      workspace: await this.getProductionWorkspace(projectId),
+      boardNode: nodeRecord,
+      nodes: [nodeRecord],
+      edges: [],
+      focusNodeId: nodeRecord.id,
     };
   }
 
@@ -1770,14 +1957,11 @@ export class CanvasService {
     const storyboardItems = input.nodes
       .filter((node) => node.type === "shot")
       .map((node) => this.productionStoryboardItem(node, input.edges, nodesById, scriptPlan))
-      .sort((left, right) => {
-        const leftNumber = Number.parseInt(left.shotNumber ?? "", 10);
-        const rightNumber = Number.parseInt(right.shotNumber ?? "", 10);
-        if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {
-          return leftNumber - rightNumber;
-        }
-        return left.updatedAt.localeCompare(right.updatedAt) || left.title.localeCompare(right.title);
-      });
+      .sort((left, right) =>
+        left.orderIndex - right.orderIndex ||
+        left.updatedAt.localeCompare(right.updatedAt) ||
+        left.title.localeCompare(right.title),
+      );
     const assets = input.nodes
       .filter((node) =>
         node.type === "character_asset" || node.type === "location_asset" || node.type === "prop_asset",
@@ -1818,6 +2002,119 @@ export class CanvasService {
       },
       agentContext,
     };
+  }
+
+  private async syncStoryboardSequence(
+    projectId: string,
+    preferredOrder: readonly string[] = [],
+  ): Promise<{ nodes: CanvasNodeRecord[]; edges: CanvasEdgeRecord[] }> {
+    const canvasDocument = await this.getOrCreateCanvasDocument(projectId);
+    const shotNodes = (await this.prisma.canvasNode.findMany({
+      where: { projectId, canvasDocumentId: canvasDocument.id, type: "shot" },
+      orderBy: [{ zIndex: "asc" }, { createdAt: "asc" }],
+    })) as CanvasNodeModel[];
+    const orderedNodes = this.orderedStoryboardShotNodes(shotNodes, preferredOrder);
+    if (preferredOrder.length > 0 && preferredOrder.some((id) => !orderedNodes.some((node) => node.id === id))) {
+      throw new BadRequestException("Storyboard order contains unknown Shot nodes");
+    }
+
+    await this.prisma.canvasEdge.deleteMany({
+      where: { projectId, canvasDocumentId: canvasDocument.id, relation: "sequence_next" },
+    });
+
+    const updatedNodes: CanvasNodeModel[] = [];
+    for (const [index, node] of orderedNodes.entries()) {
+      const order = index + 1;
+      const dataJson = {
+        ...this.toNodeDataObject(node.dataJson),
+        storyboardOrder: order,
+        shotNumber: this.formatShotNumber(order),
+      };
+      const updated = (await this.prisma.canvasNode.update({
+        where: { id: node.id },
+        data: {
+          dataJson,
+          zIndex: order - 1,
+        },
+      })) as CanvasNodeModel;
+      updatedNodes.push(updated);
+    }
+
+    const edges: CanvasEdgeModel[] = [];
+    for (let index = 0; index < updatedNodes.length - 1; index += 1) {
+      const source = updatedNodes[index];
+      const target = updatedNodes[index + 1];
+      if (!source || !target) {
+        continue;
+      }
+      const edge = (await this.prisma.canvasEdge.create({
+        data: {
+          projectId,
+          canvasDocumentId: canvasDocument.id,
+          sourceNodeId: source.id,
+          targetNodeId: target.id,
+          sourceShapeId: source.tldrawShapeId,
+          targetShapeId: target.tldrawShapeId,
+          relation: prismaCanvasEdgeRelation("sequence_next"),
+          dataJson: { orderIndex: index + 1 },
+        },
+      })) as CanvasEdgeModel;
+      edges.push(edge);
+    }
+
+    return {
+      nodes: updatedNodes.map((node) => this.toCanvasNodeRecord(node)),
+      edges: edges.map((edge) => this.toCanvasEdgeRecord(edge)),
+    };
+  }
+
+  private orderedStoryboardShotNodes(
+    nodes: readonly CanvasNodeModel[],
+    preferredOrder: readonly string[],
+  ): CanvasNodeModel[] {
+    if (preferredOrder.length === 0) {
+      return this.sortedStoryboardShotNodes(nodes);
+    }
+    const rank = new Map(preferredOrder.map((id, index) => [id, index]));
+    const fallback = this.sortedStoryboardShotNodes(nodes);
+    const fallbackRank = new Map(fallback.map((node, index) => [node.id, index + preferredOrder.length]));
+    return [...nodes].sort((left, right) => {
+      const leftRank = rank.get(left.id) ?? fallbackRank.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+      const rightRank = rank.get(right.id) ?? fallbackRank.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+      return leftRank - rightRank || left.id.localeCompare(right.id);
+    });
+  }
+
+  private sortedStoryboardShotNodes(nodes: readonly CanvasNodeModel[]): CanvasNodeModel[] {
+    return [...nodes].sort((left, right) => {
+      const leftOrder = optionalPositiveNumber(objectData(left.dataJson).storyboardOrder);
+      const rightOrder = optionalPositiveNumber(objectData(right.dataJson).storyboardOrder);
+      if (leftOrder && rightOrder && leftOrder !== rightOrder) {
+        return leftOrder - rightOrder;
+      }
+      if (leftOrder && !rightOrder) {
+        return -1;
+      }
+      if (!leftOrder && rightOrder) {
+        return 1;
+      }
+      return left.zIndex - right.zIndex || toIsoString(left.createdAt).localeCompare(toIsoString(right.createdAt));
+    });
+  }
+
+  private insertStoryboardIds(
+    currentIds: readonly string[],
+    insertedIds: readonly string[],
+    afterItemId: string | undefined,
+  ): string[] {
+    if (!afterItemId) {
+      return [...currentIds, ...insertedIds];
+    }
+    const index = currentIds.indexOf(afterItemId);
+    if (index < 0) {
+      return [...currentIds, ...insertedIds];
+    }
+    return [...currentIds.slice(0, index + 1), ...insertedIds, ...currentIds.slice(index + 1)];
   }
 
   private productionScriptPlan(scriptDraft: ScriptDraftModel): ProductionWorkspaceScriptPlan {
@@ -1865,10 +2162,25 @@ export class CanvasService {
     const sceneData = objectData(sceneNode?.dataJson);
     const durationSeconds =
       optionalPositiveNumber(data.durationSeconds) ?? optionalPositiveNumber(data.durationSec);
+    const orderIndex =
+      optionalPositiveNumber(data.storyboardOrder) ??
+      optionalPositiveNumber(Number.parseInt(optionalText(data.shotNumber) ?? "", 10)) ??
+      node.zIndex + 1;
+    const generatedImageEdge = edges.find(
+      (edge) => edge.relation === "generated_image" && edge.sourceNodeId === node.id,
+    );
+    const imageNodeId = optionalText(data.selectedImageNodeId) ?? generatedImageEdge?.targetNodeId;
+    const generatedVideoEdge = edges.find(
+      (edge) =>
+        edge.relation === "generated_video" &&
+        (edge.sourceNodeId === imageNodeId || edge.sourceNodeId === node.id),
+    );
+    const videoNodeId = optionalText(data.selectedVideoNodeId) ?? generatedVideoEdge?.targetNodeId;
 
     return {
       itemId: node.id,
       shotNodeId: node.id,
+      orderIndex,
       ...(sceneNode ? { sceneNodeId: sceneNode.id } : {}),
       ...(sceneNode ? { sceneTitle: sceneNode.title ?? optionalText(sceneData.label) ?? "Scene" } : {}),
       ...(optionalText(data.shotNumber) ? { shotNumber: optionalText(data.shotNumber) } : {}),
@@ -1881,6 +2193,8 @@ export class CanvasService {
       status: node.status,
       storyEventIds: stringArray(data.storyEventIds),
       referenceAssetIds: stringArray(data.referenceAssetIds),
+      ...(imageNodeId ? { imageNodeId } : {}),
+      ...(videoNodeId ? { videoNodeId } : {}),
       ...(scriptPlan ? { sourceScriptDraftId: scriptPlan.scriptDraftId } : {}),
       updatedAt: node.updatedAt,
     };
@@ -1966,6 +2280,47 @@ export class CanvasService {
       throw new BadRequestException(`${label} is too long`);
     }
     return trimmed;
+  }
+
+  private normalizeOptionalProductionText(value: string | undefined): string | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+    if (typeof value !== "string") {
+      throw new BadRequestException("Text value must be a string");
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    if (trimmed.length > 2000) {
+      throw new BadRequestException("Text value is too long");
+    }
+    return trimmed;
+  }
+
+  private normalizeStoryboardItemCount(value: number | undefined): number {
+    if (value === undefined) {
+      return 1;
+    }
+    if (!Number.isInteger(value) || value < 1 || value > 50) {
+      throw new BadRequestException("Storyboard item count must be between 1 and 50");
+    }
+    return value;
+  }
+
+  private normalizeStoryboardBoardColumns(value: number | undefined): number {
+    if (value === undefined) {
+      return 4;
+    }
+    if (!Number.isInteger(value) || value < 1 || value > 8) {
+      throw new BadRequestException("Storyboard board columns must be between 1 and 8");
+    }
+    return value;
+  }
+
+  private formatShotNumber(order: number): string {
+    return String(order).padStart(3, "0");
   }
 
   private toCanvasDocumentRecord(canvasDocument: CanvasDocumentModel): CanvasDocumentRecord {

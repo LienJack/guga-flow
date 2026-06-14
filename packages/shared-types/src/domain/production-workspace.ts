@@ -1,4 +1,4 @@
-import type { CanvasNodeRecord, NodeStatus } from "./canvas";
+import type { CanvasEdgeRecord, CanvasNodeRecord, NodeStatus } from "./canvas";
 import type { GenerationQueueSummary } from "./generation";
 import type { ScriptAdaptationStrategy } from "./script";
 
@@ -25,6 +25,7 @@ export interface ProductionWorkspaceScriptPlan {
 export interface ProductionWorkspaceStoryboardItem {
   itemId: string;
   shotNodeId: string;
+  orderIndex: number;
   sceneNodeId?: string;
   sceneTitle?: string;
   shotNumber?: string;
@@ -37,6 +38,8 @@ export interface ProductionWorkspaceStoryboardItem {
   status: NodeStatus;
   storyEventIds: string[];
   referenceAssetIds: string[];
+  imageNodeId?: string;
+  videoNodeId?: string;
   sourceScriptDraftId?: string;
   sourceSceneId?: string;
   sourceBeatId?: string;
@@ -93,4 +96,36 @@ export interface UpdateProductionWorkspaceItemInput {
 export interface UpdateProductionWorkspaceItemResult {
   workspace: ProductionWorkspaceProjection;
   updatedNode: CanvasNodeRecord;
+}
+
+export interface CreateProductionStoryboardItemsInput {
+  count?: number;
+  titlePrefix?: string;
+  afterItemId?: string;
+}
+
+export interface DeleteProductionStoryboardItemsInput {
+  itemIds: string[];
+}
+
+export interface ReorderProductionStoryboardItemsInput {
+  itemIds: string[];
+}
+
+export interface CreateStoryboardMediaBoardInput {
+  itemIds?: string[];
+  title?: string;
+  columns?: number;
+}
+
+export interface ProductionWorkspaceMutationResult {
+  workspace: ProductionWorkspaceProjection;
+  nodes: CanvasNodeRecord[];
+  edges: CanvasEdgeRecord[];
+  deletedNodeIds?: string[];
+  focusNodeId?: string;
+}
+
+export interface CreateStoryboardMediaBoardResult extends ProductionWorkspaceMutationResult {
+  boardNode: CanvasNodeRecord;
 }
