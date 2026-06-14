@@ -116,6 +116,7 @@ export class ProjectSettingsService {
       editorExports,
       providerConfigs,
       programmableProviders,
+      agentDeploymentConfigs,
       assetRows,
       skillTemplates,
     ] = await Promise.all([
@@ -128,6 +129,7 @@ export class ProjectSettingsService {
       this.prisma.editorExport.count({ where: { projectId } }),
       this.prisma.providerConfig.findMany({ where: { projectId } }) as Promise<ProviderConfigModel[]>,
       this.prisma.programmableProvider.count({ where: { projectId } }),
+      this.prisma.agentDeployment.count({ where: { projectId } }),
       this.prisma.asset.findMany({
         where: { projectId },
         select: { type: true, sizeBytes: true },
@@ -148,6 +150,7 @@ export class ProjectSettingsService {
       skillTemplates: skillTemplates.length,
       providerConfigs: providerConfigs.length,
       programmableProviders,
+      agentDeploymentConfigs,
     };
 
     return {
@@ -205,6 +208,13 @@ function moduleStatuses(
       status: "ready",
       summary: `${counts.providerConfigs} provider config${counts.providerConfigs === 1 ? "" : "s"}`,
       itemCount: counts.providerConfigs + counts.programmableProviders,
+    },
+    {
+      module: "agents",
+      label: "Agent Deployment",
+      status: counts.agentDeploymentConfigs > 0 ? "ready" : "partial",
+      summary: `${counts.agentDeploymentConfigs} deployment config${counts.agentDeploymentConfigs === 1 ? "" : "s"}`,
+      itemCount: counts.agentDeploymentConfigs,
     },
     {
       module: "prompts",

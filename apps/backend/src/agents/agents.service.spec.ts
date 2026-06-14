@@ -5,10 +5,12 @@ import type {
   CanvasNodeRecord,
   ShotNodeData,
 } from "@guga-flow/shared-types";
+import { AGENT_DEPLOYMENT_ROLES } from "@guga-flow/shared-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CanvasService } from "../canvas/canvas.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { ProvidersService } from "../providers/providers.service";
 import { SkillTemplatesService } from "../skill-templates/skill-templates.service";
 import { AgentsService } from "./agents.service";
 
@@ -21,8 +23,8 @@ function generationJob(overrides: Record<string, unknown> = {}) {
     projectId: "project_1",
     operation: "agent_canvas_action",
     status: "running",
-    provider: "local-agent",
-    model: "deterministic-canvas-actions-v1",
+    provider: "mock-llm",
+    model: "mock-storyboard",
     sourceNodeId: null,
     targetNodeId: null,
     providerTaskId: null,
@@ -118,14 +120,48 @@ function agentMemory(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function agentDeployment(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "agent_deployment_1",
+    projectId: "project_1",
+    mode: "simple",
+    rolesJson: {
+      primary: {
+        provider: "mock-llm",
+        model: "mock-storyboard",
+        temperature: 0.2,
+        maxOutputTokens: 4096,
+      },
+      roles: {},
+    },
+    version: 1,
+    createdAt,
+    updatedAt,
+    ...overrides,
+  };
+}
+
 type MockCreateArgs = { data: Record<string, unknown> };
 type MockUpdateArgs = { where: Record<string, unknown>; data: Record<string, unknown> };
 type MockFindArgs = { where: Record<string, unknown> };
 
 function createPrismaMock() {
+  let deploymentRow: ReturnType<typeof agentDeployment> | null = null;
   return {
     project: {
       findUnique: vi.fn(async (): Promise<{ id: string } | null> => ({ id: "project_1" })),
+    },
+    agentDeployment: {
+      findUnique: vi.fn(async (): Promise<ReturnType<typeof agentDeployment> | null> => deploymentRow),
+      upsert: vi.fn(async (args: { create: Record<string, unknown>; update: Record<string, unknown> }) => {
+        const data = deploymentRow ? args.update : args.create;
+        deploymentRow = agentDeployment({
+          mode: data.mode,
+          rolesJson: data.rolesJson,
+          version: deploymentRow ? deploymentRow.version + 1 : data.version ?? 1,
+        });
+        return deploymentRow;
+      }),
     },
     generationJob: {
       create: vi.fn(async (args: MockCreateArgs) =>
@@ -218,21 +254,122 @@ function createSkillTemplatesServiceMock() {
   };
 }
 
+function createProvidersServiceMock() {
+  return {
+    getProviderManagement: vi.fn(async () => ({
+      llm: [
+        {
+          kind: "llm",
+          id: "mock-llm",
+          displayName: "Mock LLM",
+          enabled: true,
+          requiresApiKey: false,
+          defaultModel: "mock-storyboard",
+          models: [
+            {
+              id: "mock-storyboard",
+              displayName: "Mock Storyboard",
+              default: true,
+              kind: "llm",
+              modes: ["chat", "json"],
+              supportsJsonMode: true,
+            },
+          ],
+          supportedModes: ["chat", "json"],
+          supportsJsonMode: true,
+          supportsToolCalls: false,
+          supportsVision: false,
+          maxOutputTokens: 4096,
+          parameters: [],
+          configuredEnabled: true,
+          credentialConfigured: true,
+        },
+      ],
+      image: [],
+      video: [],
+    })),
+  };
+}
+
 describe("AgentsService", () => {
   let prisma: ReturnType<typeof createPrismaMock>;
   let canvasService: ReturnType<typeof createCanvasServiceMock>;
+  let providersService: ReturnType<typeof createProvidersServiceMock>;
   let skillTemplatesService: ReturnType<typeof createSkillTemplatesServiceMock>;
   let service: AgentsService;
 
   beforeEach(() => {
     prisma = createPrismaMock();
     canvasService = createCanvasServiceMock();
+    providersService = createProvidersServiceMock();
     skillTemplatesService = createSkillTemplatesServiceMock();
     service = new AgentsService(
       prisma as unknown as PrismaService,
       canvasService as unknown as CanvasService,
+      providersService as unknown as ProvidersService,
       skillTemplatesService as unknown as SkillTemplatesService,
     );
+  });
+
+  it("returns a default simple Agent deployment that resolves every role to the primary model", async () => {
+    const result = await service.getDeployment("project_1");
+
+    expect(result.deployment.mode).toBe("simple");
+    expect(result.deployment.primary).toMatchObject({
+      provider: "mock-llm",
+      model: "mock-storyboard",
+    });
+    expect(result.issues).toEqual([]);
+    expect(result.resolvedRoles).toHaveLength(AGENT_DEPLOYMENT_ROLES.length);
+    expect(result.resolvedRoles[0]).toMatchObject({
+      provider: "mock-llm",
+      model: "mock-storyboard",
+      inheritedFrom: "primary",
+    });
+  });
+
+  it("stores advanced role overrides and resolves the selected role independently", async () => {
+    const result = await service.updateDeployment("project_1", {
+      mode: "advanced",
+      roles: {
+        storyboard: {
+          provider: "mock-llm",
+          model: "mock-storyboard",
+          temperature: 0.1,
+          maxOutputTokens: 2048,
+          inherit: false,
+        },
+      },
+    });
+
+    expect(prisma.agentDeployment.upsert).toHaveBeenCalledWith({
+      where: { projectId: "project_1" },
+      create: expect.objectContaining({
+        projectId: "project_1",
+        mode: "advanced",
+        rolesJson: expect.objectContaining({
+          roles: expect.objectContaining({
+            storyboard: expect.objectContaining({ temperature: 0.1, inherit: false }),
+          }),
+        }),
+      }),
+      update: expect.objectContaining({
+        mode: "advanced",
+        rolesJson: expect.objectContaining({
+          roles: expect.objectContaining({
+            storyboard: expect.objectContaining({ maxOutputTokens: 2048 }),
+          }),
+        }),
+      }),
+    });
+    expect(result.deployment.mode).toBe("advanced");
+    expect(result.resolvedRoles.find((role) => role.role === "storyboard")).toMatchObject({
+      role: "storyboard",
+      provider: "mock-llm",
+      model: "mock-storyboard",
+      temperature: 0.1,
+      maxOutputTokens: 2048,
+    });
   });
 
   it("creates a shot node and records a succeeded agent action job", async () => {
@@ -254,8 +391,12 @@ describe("AgentsService", () => {
       data: expect.objectContaining({
         operation: "agent_canvas_action",
         status: "running",
-        provider: "local-agent",
+        provider: "mock-llm",
+        model: "mock-storyboard",
         inputJson: expect.objectContaining({
+          role: "universal",
+          provider: "mock-llm",
+          model: "mock-storyboard",
           memoryIds: ["memory_style"],
           memorySummary: expect.stringContaining("Rainy neon palette"),
           skillTemplateIds: ["skill_agent"],
@@ -288,6 +429,37 @@ describe("AgentsService", () => {
       }),
     });
     expect(result.focusNodeId).toBe("shot_agent_1");
+  });
+
+  it("blocks agent canvas actions before job creation when deployment config is invalid", async () => {
+    prisma.agentDeployment.findUnique.mockResolvedValue(
+      agentDeployment({
+        mode: "advanced",
+        rolesJson: {
+          primary: {
+            provider: "mock-llm",
+            model: "mock-storyboard",
+          },
+          roles: {
+            production: {
+              provider: "generic-llm",
+              model: "chat-model",
+              inherit: false,
+            },
+          },
+        },
+      }),
+    );
+
+    await expect(
+      service.createCanvasAction("project_1", {
+        role: "production",
+        message: "create shot: failed deployment gate",
+      }),
+    ).rejects.toThrow("Provider generic-llm is not available");
+
+    expect(prisma.generationJob.create).not.toHaveBeenCalled();
+    expect(canvasService.createNode).not.toHaveBeenCalled();
   });
 
   it("creates, recalls, disables, and clears visible project memories", async () => {

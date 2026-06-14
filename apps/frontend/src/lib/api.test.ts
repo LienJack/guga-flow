@@ -28,6 +28,7 @@ import {
   generateStoryboardDraft,
   generationEventsUrl,
   getActiveStoryboardDraft,
+  getAgentDeployment,
   getEditorExport,
   getImageProviderCatalog,
   getLlmProviderCatalog,
@@ -57,6 +58,7 @@ import {
   markStoryboardDraftReady,
   retryGenerationJob,
   runWorkflow,
+  resolveAgentRole,
   recallAgentMemories,
   testProviderConfig,
   disableProgrammableProvider,
@@ -66,6 +68,7 @@ import {
   validateProjectSettingsImport,
   updateProviderConfig,
   updateProgrammableProviderSource,
+  updateAgentDeployment,
   updateSkillTemplateSource,
   sendEditorExportToLocalEditor,
   updateStoryboardDraft,
@@ -309,9 +312,15 @@ describe("frontend api client", () => {
           projectId: "project_1",
           operation: "agent_canvas_action",
           status: "succeeded",
-          provider: "local-agent",
-          model: "deterministic-canvas-actions-v1",
-          inputJson: { operation: "agent_canvas_action", message: "create shot: rain reveal" },
+          provider: "mock-llm",
+          model: "mock-storyboard",
+          inputJson: {
+            operation: "agent_canvas_action",
+            role: "universal",
+            provider: "mock-llm",
+            model: "mock-storyboard",
+            message: "create shot: rain reveal",
+          },
           outputJson: {
             operation: "agent_canvas_action",
             actionKind: "create_node",
@@ -339,6 +348,17 @@ describe("frontend api client", () => {
       targetNodeId: "shot_selected",
     });
     await undoAgentCanvasAction("project_1", "job_1");
+    await getAgentDeployment("project_1");
+    await updateAgentDeployment("project_1", {
+      mode: "advanced",
+      roles: {
+        script: {
+          provider: "mock-llm",
+          model: "mock-storyboard",
+        },
+      },
+    });
+    await resolveAgentRole("project_1", { role: "script" });
     await listAgentMemories("project_1");
     await createAgentMemory("project_1", {
       title: "Rainy neon palette",
@@ -369,11 +389,40 @@ describe("frontend api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      "http://localhost:3002/api/v1/projects/project_1/agents/memories",
+      "http://localhost:3002/api/v1/projects/project_1/agents/deployment",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
+      "http://localhost:3002/api/v1/projects/project_1/agents/deployment",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          mode: "advanced",
+          roles: {
+            script: {
+              provider: "mock-llm",
+              model: "mock-storyboard",
+            },
+          },
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "http://localhost:3002/api/v1/projects/project_1/agents/deployment/resolve",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ role: "script" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "http://localhost:3002/api/v1/projects/project_1/agents/memories",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
       "http://localhost:3002/api/v1/projects/project_1/agents/memories",
       expect.objectContaining({
         method: "POST",
@@ -385,12 +434,12 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      5,
+      8,
       "http://localhost:3002/api/v1/projects/project_1/agents/memories/memory_1/disable",
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      6,
+      9,
       "http://localhost:3002/api/v1/projects/project_1/agents/memories/clear",
       expect.objectContaining({
         method: "POST",
@@ -398,7 +447,7 @@ describe("frontend api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      7,
+      10,
       "http://localhost:3002/api/v1/projects/project_1/agents/memories/recall",
       expect.objectContaining({
         method: "POST",

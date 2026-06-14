@@ -53,8 +53,11 @@ import type {
   EditorExportSendResult,
   GenerationJobListResult,
   GenerationJobRecord,
+  AgentDeploymentResult,
   AgentMemoryListResult,
   AgentMemoryRecord,
+  ResolveAgentRoleInput,
+  ResolveAgentRoleResult,
   RecallAgentMemoriesInput,
   RecallAgentMemoriesResult,
   ClearAgentMemoriesInput,
@@ -104,6 +107,7 @@ import type {
   UpdateProviderConfigInput,
   UpdateSkillTemplateSourceInput,
   UndoAgentCanvasActionResult,
+  UpdateAgentDeploymentInput,
   UpdateAgentMemoryInput,
   CreateProgrammableProviderInput,
   UpdateProgrammableProviderSourceInput,
@@ -547,6 +551,30 @@ export function undoAgentCanvasAction(
     `/projects/${projectId}/agents/canvas-actions/${jobId}/undo`,
     { method: "POST" },
   );
+}
+
+export function getAgentDeployment(projectId: string): Promise<AgentDeploymentResult> {
+  return requestJson<AgentDeploymentResult>(`/projects/${projectId}/agents/deployment`);
+}
+
+export function updateAgentDeployment(
+  projectId: string,
+  input: UpdateAgentDeploymentInput,
+): Promise<AgentDeploymentResult> {
+  return requestJson<AgentDeploymentResult>(`/projects/${projectId}/agents/deployment`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function resolveAgentRole(
+  projectId: string,
+  input: ResolveAgentRoleInput,
+): Promise<ResolveAgentRoleResult> {
+  return requestJson<ResolveAgentRoleResult>(`/projects/${projectId}/agents/deployment/resolve`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function listAgentMemories(projectId: string): Promise<AgentMemoryListResult> {

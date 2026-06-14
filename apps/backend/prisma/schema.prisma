@@ -153,6 +153,7 @@ model Project {
   canvasFragmentImports CanvasFragmentImport[]
   programmableProviders ProgrammableProvider[]
   agentMemories      AgentMemory[]
+  agentDeployment    AgentDeployment?
   skillTemplates     SkillTemplate[]
   novelEventGraphs   NovelEventGraph[]
   scriptDrafts       ScriptDraft[]
@@ -499,6 +500,17 @@ model AgentMemory {
 
   @@index([projectId, enabled])
   @@index([projectId, scope])
+}
+
+model AgentDeployment {
+  id        String   @id @default(cuid())
+  projectId String   @unique
+  mode      String   @default("simple")
+  rolesJson Json     @default("{}")
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model SkillTemplate {

@@ -12,6 +12,7 @@ import { I18nProvider } from "../../lib/i18n";
 
 vi.mock("../../lib/api", () => ({
   exportProjectSettings: vi.fn(),
+  getAgentDeployment: vi.fn(async () => agentDeployment),
   getProjectSettingsSummary: vi.fn(async () => settingsSummary),
   getProviderManagement: vi.fn(async () => providerManagement),
   listProgrammableProviders: vi.fn(async () => ({ providers: [] })),
@@ -22,6 +23,7 @@ vi.mock("../../lib/api", () => ({
   createProgrammableProvider: vi.fn(),
   disableProgrammableProvider: vi.fn(),
   testProviderConfig: vi.fn(),
+  updateAgentDeployment: vi.fn(),
   updateProviderConfig: vi.fn(),
   updateProgrammableProviderSource: vi.fn(),
   updateSkillTemplateSource: vi.fn(),
@@ -40,6 +42,13 @@ const settingsSummary: ProjectSettingsSummaryResult = {
       label: "Providers and Models",
       status: "ready",
       summary: "1 provider config",
+      itemCount: 1,
+    },
+    {
+      module: "agents",
+      label: "Agent Deployment",
+      status: "ready",
+      summary: "1 deployment config",
       itemCount: 1,
     },
     {
@@ -86,6 +95,7 @@ const settingsSummary: ProjectSettingsSummaryResult = {
     skillTemplates: 1,
     providerConfigs: 1,
     programmableProviders: 0,
+    agentDeploymentConfigs: 1,
   },
   fileSummary: {
     totalAssets: 2,
@@ -105,8 +115,50 @@ const settingsSummary: ProjectSettingsSummaryResult = {
   },
 };
 
+const agentDeployment = {
+  deployment: {
+    projectId: "project_1",
+    mode: "simple" as const,
+    primary: {
+      provider: "mock-llm" as const,
+      model: "mock-storyboard",
+      temperature: 0.2,
+      maxOutputTokens: 4096,
+    },
+    roles: {},
+    version: 1,
+    updatedAt: "2026-06-14T00:00:00.000Z",
+  },
+  resolvedRoles: [
+    {
+      role: "universal" as const,
+      provider: "mock-llm" as const,
+      model: "mock-storyboard",
+      inheritedFrom: "primary" as const,
+    },
+  ],
+  issues: [],
+};
+
 const providerManagement: ProviderManagementResult = {
-  llm: [],
+  llm: [
+    {
+      id: "mock-llm",
+      kind: "llm",
+      displayName: "Mock LLM",
+      enabled: true,
+      requiresApiKey: false,
+      defaultModel: "mock-storyboard",
+      models: [{ id: "mock-storyboard", displayName: "Mock Storyboard", default: true }],
+      supportedModes: ["chat", "json"],
+      supportsJsonMode: true,
+      supportsToolCalls: false,
+      supportsVision: false,
+      parameters: [],
+      configuredEnabled: true,
+      credentialConfigured: true,
+    },
+  ],
   image: [
     {
       id: "image2",
@@ -171,6 +223,7 @@ describe("SettingsCenter", () => {
 
     expect(html).toContain("Settings Center");
     expect(html).toContain("Providers and Models");
+    expect(html).toContain("Agent Deployment");
     expect(html).toContain("Prompts and Skills");
     expect(html).toContain("Project Defaults");
     expect(html).toContain("Export JSON");
@@ -197,6 +250,7 @@ describe("SettingsCenter", () => {
 
     expect(html).toContain("设置中心");
     expect(html).toContain("供应商和模型");
+    expect(html).toContain("Agent 部署");
     expect(html).toContain("导出 JSON");
     expect(html).toContain("导入载荷");
     expect(html).toContain("资产总数");

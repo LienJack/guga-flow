@@ -2,15 +2,26 @@ import type {
   ClearAgentMemoriesInput,
   CreateAgentCanvasActionInput,
   CreateAgentMemoryInput,
+  LlmProviderId,
   RecallAgentMemoriesInput,
+  ResolveAgentRoleInput,
+  UpdateAgentDeploymentInput,
   UpdateAgentMemoryInput,
 } from "@guga-flow/shared-types";
-import { AGENT_MEMORY_SCOPES, AGENT_MEMORY_SOURCES } from "@guga-flow/shared-types";
+import {
+  AGENT_DEPLOYMENT_MODES,
+  AGENT_DEPLOYMENT_ROLES,
+  AGENT_MEMORY_SCOPES,
+  AGENT_MEMORY_SOURCES,
+  LLM_PROVIDER_IDS,
+} from "@guga-flow/shared-types";
 import {
   ArrayUnique,
   IsArray,
   IsBoolean,
   IsIn,
+  IsInt,
+  IsObject,
   IsOptional,
   IsString,
   Max,
@@ -21,11 +32,44 @@ import {
 } from "class-validator";
 import { Type } from "class-transformer";
 
+export class AgentRoleModelConfigDto {
+  @IsOptional()
+  @IsIn(LLM_PROVIDER_IDS)
+  provider?: LlmProviderId;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  model?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  @Min(0)
+  @Max(2)
+  temperature?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200000)
+  maxOutputTokens?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  inherit?: boolean;
+}
+
 export class CreateAgentCanvasActionDto implements CreateAgentCanvasActionInput {
   @IsString()
   @MinLength(1)
   @MaxLength(1000)
   message!: string;
+
+  @IsOptional()
+  @IsIn(AGENT_DEPLOYMENT_ROLES)
+  role?: CreateAgentCanvasActionInput["role"];
 
   @IsOptional()
   @IsString()
@@ -51,6 +95,25 @@ export class CreateAgentCanvasActionDto implements CreateAgentCanvasActionInput 
   @Type(() => Number)
   @IsNumber({ allowInfinity: false, allowNaN: false })
   canvasY?: number;
+}
+
+export class UpdateAgentDeploymentDto implements UpdateAgentDeploymentInput {
+  @IsOptional()
+  @IsIn(AGENT_DEPLOYMENT_MODES)
+  mode?: UpdateAgentDeploymentInput["mode"];
+
+  @IsOptional()
+  @IsObject()
+  primary?: UpdateAgentDeploymentInput["primary"];
+
+  @IsOptional()
+  @IsObject()
+  roles?: UpdateAgentDeploymentInput["roles"];
+}
+
+export class ResolveAgentRoleDto implements ResolveAgentRoleInput {
+  @IsIn(AGENT_DEPLOYMENT_ROLES)
+  role!: ResolveAgentRoleInput["role"];
 }
 
 export class CreateAgentMemoryDto implements CreateAgentMemoryInput {

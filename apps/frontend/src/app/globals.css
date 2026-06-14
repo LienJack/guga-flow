@@ -3453,6 +3453,10 @@ select:focus-visible {
   grid-column: 1 / -1;
 }
 
+.agent-primary-grid {
+  grid-template-columns: minmax(120px, 0.45fr) minmax(170px, 0.8fr) minmax(180px, 1fr) minmax(112px, 0.45fr) minmax(120px, 0.5fr);
+}
+
 .provider-model-matrix {
   display: grid;
   gap: 7px;
@@ -3515,6 +3519,43 @@ select:focus-visible {
   width: 15px;
   height: 15px;
   accent-color: var(--accent);
+}
+
+.agent-role-matrix {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcfd;
+  padding: 10px;
+}
+
+.agent-role-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.8fr) minmax(84px, auto) minmax(150px, 1fr) minmax(170px, 1fr) minmax(96px, 0.45fr) minmax(104px, 0.5fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agent-role-row > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.agent-role-row .generation-field span,
+.agent-role-row .provider-toggle span {
+  font-size: 11px;
+}
+
+.agent-deployment-issues {
+  display: grid;
+  gap: 7px;
+}
+
+.agent-deployment-issues .provider-version-row {
+  grid-template-columns: 24px 110px minmax(0, 1fr);
 }
 
 .provider-programmable-form {
@@ -3736,6 +3777,8 @@ select:focus-visible {
   }
 
   .provider-config-grid.programmable,
+  .agent-primary-grid,
+  .agent-role-row,
   .provider-model-row,
   .provider-model-row.add,
   .provider-version-row {

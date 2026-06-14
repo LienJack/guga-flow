@@ -41,6 +41,7 @@ function createPrismaMock() {
       ]),
     },
     programmableProvider: { count: vi.fn(async () => 1) },
+    agentDeployment: { count: vi.fn(async () => 1) },
     skillTemplate: {
       findMany: vi.fn(async () => [
         {
@@ -85,6 +86,7 @@ describe("ProjectSettingsService", () => {
       skillTemplates: 1,
       providerConfigs: 1,
       programmableProviders: 1,
+      agentDeploymentConfigs: 1,
     });
     expect(summary.fileSummary).toMatchObject({
       totalAssets: 3,
@@ -99,6 +101,7 @@ describe("ProjectSettingsService", () => {
     );
     expect(summary.modules.map((module) => module.module)).toEqual([
       "providers",
+      "agents",
       "prompts",
       "project_defaults",
       "data",

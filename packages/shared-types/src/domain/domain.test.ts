@@ -5,6 +5,8 @@ import {
   ASSET_PURPOSES,
   ASSET_TYPES,
   AGENT_CANVAS_ACTION_KINDS,
+  AGENT_DEPLOYMENT_MODES,
+  AGENT_DEPLOYMENT_ROLES,
   AGENT_MEMORY_SCOPES,
   AGENT_MEMORY_SOURCES,
   CANVAS_EDGE_RELATIONS,
@@ -172,6 +174,18 @@ describe("shared domain constants", () => {
     expect(GENERATION_OPERATIONS).toContain("editor_export");
     expect(GENERATION_OPERATIONS).toContain("agent_canvas_action");
     expect(AGENT_CANVAS_ACTION_KINDS).toEqual(["create_node", "update_node", "create_edge"]);
+    expect(AGENT_DEPLOYMENT_MODES).toEqual(["simple", "advanced"]);
+    expect(AGENT_DEPLOYMENT_ROLES).toEqual([
+      "script",
+      "production",
+      "universal",
+      "supervision",
+      "skeleton",
+      "adaptation",
+      "storyboard",
+      "asset",
+      "video_prompt",
+    ]);
     expect(AGENT_MEMORY_SCOPES).toEqual(["project", "agent"]);
     expect(AGENT_MEMORY_SOURCES).toEqual(["manual", "agent_action", "system_summary"]);
     expect(PHASE_8_GENERATION_OPERATIONS).toEqual([
@@ -224,6 +238,7 @@ describe("shared domain constants", () => {
     expect(SCRIPT_DRAFT_STATUSES).toEqual(["draft", "selected", "exported"]);
     expect(SETTINGS_CENTER_MODULES).toEqual([
       "providers",
+      "agents",
       "prompts",
       "project_defaults",
       "data",
@@ -362,6 +377,7 @@ describe("shared domain constants", () => {
         skillTemplates: 4,
         providerConfigs: 2,
         programmableProviders: 1,
+        agentDeploymentConfigs: 1,
       },
       fileSummary: {
         totalAssets: 5,
@@ -1059,8 +1075,9 @@ describe("shared domain constants", () => {
     const jobInput: AgentCanvasActionJobInput = {
       operation: "agent_canvas_action",
       projectId: "project_1",
-      provider: "local-agent",
-      model: "deterministic-canvas-actions-v1",
+      role: "universal",
+      provider: "mock-llm",
+      model: "mock-storyboard",
       ...createInput,
     };
     const previous = canvasNode<Record<string, CanvasSnapshotJson>>("shot_previous", "shot", "Old title", {
@@ -1115,8 +1132,8 @@ describe("shared domain constants", () => {
         projectId: "project_1",
         operation: "agent_canvas_action",
         status: "succeeded",
-        provider: "local-agent",
-        model: "deterministic-canvas-actions-v1",
+        provider: "mock-llm",
+        model: "mock-storyboard",
         inputJson: jobInput,
         outputJson: jobOutput,
         createdAt: "2026-06-13T00:00:00.000Z",
@@ -1133,7 +1150,8 @@ describe("shared domain constants", () => {
       deletedEdgeIds: [],
     };
 
-    expect(result.job.inputJson.provider).toBe("local-agent");
+    expect(result.job.inputJson.role).toBe("universal");
+    expect(result.job.inputJson.provider).toBe("mock-llm");
     expect(result.job.outputJson?.createdNodes?.[0]?.nodeId).toBe("shot_agent_1");
     expect(undoResult.job.outputJson?.undo?.restoredNodeIds).toEqual(["shot_previous"]);
   });
@@ -1161,8 +1179,9 @@ describe("shared domain constants", () => {
     const jobInput: AgentCanvasActionJobInput = {
       operation: "agent_canvas_action",
       projectId: "project_1",
-      provider: "local-agent",
-      model: "deterministic-canvas-actions-v1",
+      role: "universal",
+      provider: "mock-llm",
+      model: "mock-storyboard",
       message: "create shot: rainy neon alley reveal",
       memoryIds: recall.memoryIds,
       memorySummary: recall.summary,

@@ -5,6 +5,7 @@ import type { ProjectAspectRatio } from "./project";
 
 export const SETTINGS_CENTER_MODULES = [
   "providers",
+  "agents",
   "prompts",
   "project_defaults",
   "data",
@@ -35,6 +36,7 @@ export interface ProjectSettingsResourceCounts {
   skillTemplates: number;
   providerConfigs: number;
   programmableProviders: number;
+  agentDeploymentConfigs: number;
 }
 
 export interface ProjectSettingsFileTypeSummary {

@@ -7,6 +7,7 @@ import type {
   NodeStatus,
   Phase3CanvasNodeType,
 } from "./canvas";
+import type { AgentDeploymentRole } from "./agent";
 import type { PromptDebugPart, PromptMissingContext, ShotPromptSourceNodeIds } from "./prompt-composer";
 import { PROJECT_ASPECT_RATIOS, type ProjectAspectRatio } from "./project";
 
@@ -1283,6 +1284,7 @@ export type AgentCanvasActionKind = (typeof AGENT_CANVAS_ACTION_KINDS)[number];
 
 export interface CreateAgentCanvasActionInput {
   message: string;
+  role?: AgentDeploymentRole;
   selectedNodeId?: string;
   sourceNodeId?: string;
   targetNodeId?: string;
@@ -1293,8 +1295,9 @@ export interface CreateAgentCanvasActionInput {
 export interface AgentCanvasActionJobInput extends CreateAgentCanvasActionInput {
   operation: "agent_canvas_action";
   projectId: string;
-  provider: "local-agent";
-  model: "deterministic-canvas-actions-v1";
+  role: AgentDeploymentRole;
+  provider: string;
+  model: string;
   memoryIds?: string[];
   memorySummary?: string;
   skillTemplateIds?: string[];

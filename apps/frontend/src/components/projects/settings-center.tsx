@@ -7,7 +7,7 @@ import type {
   SkillTemplateSummary,
   ProgrammableProviderDefinitionSummary,
 } from "@guga-flow/shared-types";
-import { Database, Download, FileArchive, Info, Settings2, SlidersHorizontal, Upload } from "lucide-react";
+import { Bot, Database, Download, FileArchive, Info, Settings2, SlidersHorizontal, Upload } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 
 import {
@@ -16,6 +16,7 @@ import {
   validateProjectSettingsImport,
 } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import { AgentDeploymentSettingsPanel } from "./agent-deployment-settings-panel";
 import { ProviderSettingsPanel } from "./provider-settings-panel";
 import { SkillTemplateSettingsPanel } from "./skill-template-settings-panel";
 
@@ -156,6 +157,11 @@ export function SettingsCenter({
         />
       </section>
 
+      <section id="settings-agents" className="settings-center-section">
+        <SectionHeading icon={<Bot size={16} aria-hidden="true" />} title={t("settings.agents")} />
+        <AgentDeploymentSettingsPanel initialProviders={initialProviders} projectId={projectId} />
+      </section>
+
       <section id="settings-prompts" className="settings-center-section">
         <SectionHeading icon={<Settings2 size={16} aria-hidden="true" />} title={t("settings.prompts")} />
         <SkillTemplateSettingsPanel initialSkillTemplates={initialSkillTemplates} projectId={projectId} />
@@ -294,6 +300,7 @@ type SettingsModule = ProjectSettingsSummaryResult["modules"][number];
 
 function settingsModuleLabel(moduleId: SettingsModule["module"], t: Translator): string {
   const labelKeys: Record<SettingsModule["module"], string> = {
+    agents: "settings.agents",
     data: "settings.data",
     files: "settings.files",
     project_defaults: "settings.projectDefaults",
@@ -308,6 +315,12 @@ function settingsModuleSummary(module: SettingsModule, t: Translator): string {
   if (module.module === "providers") {
     const count = module.itemCount ?? 0;
     return t(count === 1 ? "settings.providersSummary" : "settings.providersSummaryPlural", {
+      count,
+    });
+  }
+  if (module.module === "agents") {
+    const count = module.itemCount ?? 0;
+    return t(count === 1 ? "settings.agentsSummary" : "settings.agentsSummaryPlural", {
       count,
     });
   }

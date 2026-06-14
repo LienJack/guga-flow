@@ -13,6 +13,15 @@ import type {
   AgentCanvasActionJobOutput,
   AgentCanvasActionPreviousNodeSnapshot,
   AgentCanvasActionUpdatedNode,
+  AgentDeploymentConfig,
+  AgentDeploymentIssue,
+  AgentDeploymentMode,
+  AgentDeploymentRecord,
+  AgentDeploymentResolvedRole,
+  AgentDeploymentResult,
+  AgentDeploymentRole,
+  AgentDeploymentRoleMap,
+  AgentRoleModelConfig,
   AgentMemoryListResult,
   AgentMemoryRecord,
   AgentMemoryScope,
@@ -28,19 +37,32 @@ import type {
   CreateAgentCanvasActionResult,
   CreateAgentMemoryInput,
   GenerationJobRecord,
+  LlmProviderId,
+  LlmProviderManagementItem,
   NodeStatus,
   Phase3CanvasNodeType,
   RecallAgentMemoriesInput,
   RecallAgentMemoriesResult,
+  ResolveAgentRoleInput,
+  ResolveAgentRoleResult,
   SkillTemplatePromptContext,
   UndoAgentCanvasActionResult,
+  UpdateAgentDeploymentInput,
   UpdateAgentMemoryInput,
 } from "@guga-flow/shared-types";
-import { AGENT_MEMORY_SCOPES, AGENT_MEMORY_SOURCES, PHASE_3_CANVAS_NODE_TYPES } from "@guga-flow/shared-types";
+import {
+  AGENT_DEPLOYMENT_MODES,
+  AGENT_DEPLOYMENT_ROLES,
+  AGENT_MEMORY_SCOPES,
+  AGENT_MEMORY_SOURCES,
+  LLM_PROVIDER_IDS,
+  PHASE_3_CANVAS_NODE_TYPES,
+} from "@guga-flow/shared-types";
 import { Prisma } from "../generated/prisma/client";
 
 import { CanvasService } from "../canvas/canvas.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { ProvidersService } from "../providers/providers.service";
 import { SkillTemplatesService } from "../skill-templates/skill-templates.service";
 
 type GenerationJobModel = {
@@ -92,6 +114,16 @@ type AgentMemoryModel = {
   updatedAt: Date | string;
 };
 
+type AgentDeploymentModel = {
+  id: string;
+  projectId: string;
+  mode: string;
+  rolesJson: unknown;
+  version: number;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
 type ParsedAgentAction =
   | {
       kind: "create_node";
@@ -110,8 +142,17 @@ type ParsedAgentAction =
       relation: CanvasEdgeRelation;
     };
 
-const AGENT_PROVIDER = "local-agent" as const;
-const AGENT_MODEL = "deterministic-canvas-actions-v1" as const;
+const DEFAULT_AGENT_ROLE: AgentDeploymentRole = "universal";
+const DEFAULT_AGENT_DEPLOYMENT_CONFIG: AgentDeploymentConfig = {
+  mode: "simple",
+  primary: {
+    provider: "mock-llm",
+    model: "mock-storyboard",
+    temperature: 0.2,
+    maxOutputTokens: 4096,
+  },
+  roles: {},
+};
 const SUPPORTED_CREATE_TYPES = new Map<string, Phase3CanvasNodeType>([
   ["novel", "novel"],
   ["scene frame", "scene_frame"],
@@ -140,6 +181,18 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isAgentDeploymentMode(value: unknown): value is AgentDeploymentMode {
+  return typeof value === "string" && AGENT_DEPLOYMENT_MODES.includes(value as AgentDeploymentMode);
+}
+
+function isAgentDeploymentRole(value: unknown): value is AgentDeploymentRole {
+  return typeof value === "string" && AGENT_DEPLOYMENT_ROLES.includes(value as AgentDeploymentRole);
+}
+
+function isLlmProviderId(value: unknown): value is LlmProviderId {
+  return typeof value === "string" && LLM_PROVIDER_IDS.includes(value as LlmProviderId);
+}
+
 function dataObject(value: unknown): Record<string, unknown> {
   return isPlainObject(value) ? value : {};
 }
@@ -150,6 +203,18 @@ function optionalString(value: unknown): string | undefined {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Agent canvas action failed";
+}
+
+function clampNumber(value: unknown, min: number, max: number): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.min(max, Math.max(min, value));
+}
+
+function clampInteger(value: unknown, min: number, max: number): number | undefined {
+  const clamped = clampNumber(value, min, max);
+  return clamped === undefined ? undefined : Math.round(clamped);
 }
 
 function isCanvasSnapshotJson(value: unknown): value is CanvasSnapshotJson {
@@ -175,16 +240,72 @@ export class AgentsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CanvasService) private readonly canvasService: CanvasService,
+    @Inject(ProvidersService) private readonly providersService: ProvidersService,
     @Optional()
     @Inject(SkillTemplatesService)
     private readonly skillTemplatesService?: SkillTemplatesService,
   ) {}
+
+  async getDeployment(projectId: string): Promise<AgentDeploymentResult> {
+    await this.ensureProjectExists(projectId);
+    const row = await this.findDeployment(projectId);
+    return this.deploymentResult(this.toDeploymentRecord(projectId, row));
+  }
+
+  async updateDeployment(
+    projectId: string,
+    input: UpdateAgentDeploymentInput,
+  ): Promise<AgentDeploymentResult> {
+    await this.ensureProjectExists(projectId);
+    const current = this.toDeploymentRecord(projectId, await this.findDeployment(projectId));
+    const nextConfig = this.normalizeDeploymentConfig(
+      {
+        mode: input.mode ?? current.mode,
+        primary: input.primary ?? current.primary,
+        roles: input.roles ? this.normalizeRoleMap(input.roles, current.roles) : current.roles,
+      },
+      current,
+    );
+
+    const row = (await this.prisma.agentDeployment.upsert({
+      where: { projectId },
+      create: {
+        projectId,
+        mode: nextConfig.mode,
+        rolesJson: jsonValue(this.toStoredDeploymentJson(nextConfig)),
+        version: 1,
+      },
+      update: {
+        mode: nextConfig.mode,
+        rolesJson: jsonValue(this.toStoredDeploymentJson(nextConfig)),
+        version: { increment: 1 },
+      },
+    })) as AgentDeploymentModel;
+
+    return this.deploymentResult(this.toDeploymentRecord(projectId, row));
+  }
+
+  async resolveRole(
+    projectId: string,
+    input: ResolveAgentRoleInput,
+  ): Promise<ResolveAgentRoleResult> {
+    const role = this.requireAgentRole(input.role);
+    const result = await this.getDeployment(projectId);
+    const issues = result.issues.filter((issue) => issue.role === role);
+    const config = result.resolvedRoles.find((resolved) => resolved.role === role);
+    if (!config || issues.length > 0) {
+      const detail = issues.map((issue) => issue.message).join("; ") || "role has no resolved provider/model";
+      throw new BadRequestException(`Agent deployment for ${role} is invalid: ${detail}`);
+    }
+    return { config };
+  }
 
   async createCanvasAction(
     projectId: string,
     input: CreateAgentCanvasActionInput,
   ): Promise<CreateAgentCanvasActionResult> {
     const message = this.normalizeMessage(input.message);
+    const runtime = await this.resolveRole(projectId, { role: input.role ?? DEFAULT_AGENT_ROLE });
     await this.ensureProjectExists(projectId);
     const recall = await this.recallMemoriesForAction(projectId, message);
     const skillTemplates = this.skillTemplatesService
@@ -195,8 +316,9 @@ export class AgentsService {
     const jobInput: AgentCanvasActionJobInput = {
       operation: "agent_canvas_action",
       projectId,
-      provider: AGENT_PROVIDER,
-      model: AGENT_MODEL,
+      role: runtime.config.role,
+      provider: runtime.config.provider,
+      model: runtime.config.model,
       message,
       ...(input.selectedNodeId ? { selectedNodeId: input.selectedNodeId } : {}),
       ...(input.sourceNodeId ? { sourceNodeId: input.sourceNodeId } : {}),
@@ -214,8 +336,8 @@ export class AgentsService {
         projectId,
         operation: "agent_canvas_action",
         status: "running",
-        provider: AGENT_PROVIDER,
-        model: AGENT_MODEL,
+        provider: runtime.config.provider,
+        model: runtime.config.model,
         inputJson: jsonValue(jobInput),
       },
     })) as GenerationJobModel;
@@ -682,6 +804,202 @@ export class AgentsService {
     if (!project) {
       throw new NotFoundException("Project not found");
     }
+  }
+
+  private async findDeployment(projectId: string): Promise<AgentDeploymentModel | undefined> {
+    const row = (await this.prisma.agentDeployment.findUnique({
+      where: { projectId },
+    })) as AgentDeploymentModel | null;
+    return row ?? undefined;
+  }
+
+  private toDeploymentRecord(
+    projectId: string,
+    row: AgentDeploymentModel | undefined,
+  ): AgentDeploymentRecord {
+    const stored = dataObject(row?.rolesJson);
+    const config = this.normalizeDeploymentConfig(
+      {
+        mode: row?.mode,
+        primary: stored.primary,
+        roles: stored.roles,
+      },
+      DEFAULT_AGENT_DEPLOYMENT_CONFIG,
+    );
+    return {
+      projectId,
+      version: row?.version ?? 1,
+      ...config,
+      ...(row?.updatedAt ? { updatedAt: toIsoString(row.updatedAt) } : {}),
+    };
+  }
+
+  private toStoredDeploymentJson(config: AgentDeploymentConfig): Record<string, unknown> {
+    return {
+      primary: config.primary,
+      roles: config.roles,
+    };
+  }
+
+  private normalizeDeploymentConfig(
+    value: unknown,
+    fallback: AgentDeploymentConfig,
+  ): AgentDeploymentConfig {
+    const data = dataObject(value);
+    return {
+      mode: isAgentDeploymentMode(data.mode) ? data.mode : fallback.mode,
+      primary: this.normalizeRoleConfig(data.primary, fallback.primary),
+      roles: this.normalizeRoleMap(data.roles, fallback.roles),
+    };
+  }
+
+  private normalizeRoleMap(value: unknown, fallback: AgentDeploymentRoleMap = {}): AgentDeploymentRoleMap {
+    const raw = dataObject(value);
+    const roles: AgentDeploymentRoleMap = { ...fallback };
+    for (const role of AGENT_DEPLOYMENT_ROLES) {
+      if (!(role in raw)) {
+        continue;
+      }
+      if (raw[role] === null) {
+        delete roles[role];
+        continue;
+      }
+      const config = this.normalizeRoleConfig(raw[role], roles[role] ?? {});
+      if (Object.keys(config).length > 0) {
+        roles[role] = config;
+      } else {
+        delete roles[role];
+      }
+    }
+    return roles;
+  }
+
+  private normalizeRoleConfig(
+    value: unknown,
+    fallback: AgentRoleModelConfig = {},
+  ): AgentRoleModelConfig {
+    const raw = dataObject(value);
+    const provider = isLlmProviderId(raw.provider) ? raw.provider : fallback.provider;
+    const model = optionalString(raw.model) ?? fallback.model;
+    const temperature = clampNumber(raw.temperature, 0, 2) ?? fallback.temperature;
+    const maxOutputTokens = clampInteger(raw.maxOutputTokens, 1, 200000) ?? fallback.maxOutputTokens;
+    const inherit = typeof raw.inherit === "boolean" ? raw.inherit : fallback.inherit;
+
+    return {
+      ...(provider ? { provider } : {}),
+      ...(model ? { model } : {}),
+      ...(temperature !== undefined ? { temperature } : {}),
+      ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+      ...(inherit !== undefined ? { inherit } : {}),
+    };
+  }
+
+  private async deploymentResult(record: AgentDeploymentRecord): Promise<AgentDeploymentResult> {
+    const management = await this.providersService.getProviderManagement(record.projectId);
+    const issues: AgentDeploymentIssue[] = [];
+    const resolvedRoles: AgentDeploymentResolvedRole[] = [];
+    for (const role of AGENT_DEPLOYMENT_ROLES) {
+      const resolved = this.resolveDeploymentRole(record, role, management.llm);
+      issues.push(...resolved.issues);
+      if (resolved.config) {
+        resolvedRoles.push(resolved.config);
+      }
+    }
+    return {
+      deployment: record,
+      resolvedRoles,
+      issues,
+    };
+  }
+
+  private resolveDeploymentRole(
+    deployment: AgentDeploymentConfig,
+    role: AgentDeploymentRole,
+    providers: readonly LlmProviderManagementItem[],
+  ): { config?: AgentDeploymentResolvedRole; issues: AgentDeploymentIssue[] } {
+    const { config, inheritedFrom, path } = this.roleConfigFor(deployment, role);
+    const issues: AgentDeploymentIssue[] = [];
+    const providerId = config.provider;
+    const model = config.model;
+    const issue = (field: string, message: string): void => {
+      issues.push({ role, path: `${path}.${field}`, message });
+    };
+
+    if (!providerId) {
+      issue("provider", "Provider is required");
+    }
+    if (!model) {
+      issue("model", "Model is required");
+    }
+    const provider = providerId
+      ? providers.find((candidate) => candidate.id === providerId)
+      : undefined;
+    if (providerId && !provider) {
+      issue("provider", `Provider ${providerId} is not available`);
+    }
+    if (provider && !provider.configuredEnabled) {
+      issue("provider", `${provider.displayName} is disabled for this project`);
+    }
+    if (provider && !provider.credentialConfigured) {
+      issue("provider", `${provider.displayName} credential is not configured`);
+    }
+    if (provider && !provider.enabled && provider.configuredEnabled && provider.credentialConfigured) {
+      issue("provider", provider.disabledReason ?? `${provider.displayName} is not enabled`);
+    }
+    const modelConfig = model ? provider?.models.find((candidate) => candidate.id === model) : undefined;
+    if (provider && model && !modelConfig) {
+      issue("model", `Model ${model} is not available for ${provider.displayName}`);
+    }
+    if (modelConfig?.disabled) {
+      issue("model", `Model ${model} is disabled for ${provider?.displayName ?? providerId}`);
+    }
+
+    if (!providerId || !model) {
+      return { issues };
+    }
+    return {
+      config: {
+        role,
+        provider: providerId,
+        model,
+        ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
+        ...(config.maxOutputTokens !== undefined ? { maxOutputTokens: config.maxOutputTokens } : {}),
+        ...(inheritedFrom ? { inheritedFrom } : {}),
+      },
+      issues,
+    };
+  }
+
+  private roleConfigFor(
+    deployment: AgentDeploymentConfig,
+    role: AgentDeploymentRole,
+  ): { config: AgentRoleModelConfig; inheritedFrom?: "primary"; path: string } {
+    if (deployment.mode === "simple") {
+      return {
+        config: deployment.primary,
+        inheritedFrom: "primary",
+        path: "deployment.primary",
+      };
+    }
+    const roleConfig = deployment.roles[role];
+    if (!roleConfig || roleConfig.inherit) {
+      return {
+        config: deployment.primary,
+        inheritedFrom: "primary",
+        path: "deployment.primary",
+      };
+    }
+    return {
+      config: this.normalizeRoleConfig(roleConfig, deployment.primary),
+      path: `deployment.roles.${role}`,
+    };
+  }
+
+  private requireAgentRole(value: unknown): AgentDeploymentRole {
+    if (isAgentDeploymentRole(value)) {
+      return value;
+    }
+    throw new BadRequestException(`Unsupported Agent role: ${String(value)}`);
   }
 
   private parseJobOutput(value: unknown): AgentCanvasActionJobOutput {

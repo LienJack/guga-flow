@@ -7,6 +7,8 @@ import {
   CreateAgentCanvasActionDto,
   CreateAgentMemoryDto,
   RecallAgentMemoriesDto,
+  ResolveAgentRoleDto,
+  UpdateAgentDeploymentDto,
   UpdateAgentMemoryDto,
 } from "./dto";
 
@@ -25,6 +27,24 @@ export class AgentsController {
   @Post("canvas-actions/:jobId/undo")
   undoCanvasAction(@Param("projectId") projectId: string, @Param("jobId") jobId: string) {
     return this.agentsService.undoCanvasAction(projectId, jobId);
+  }
+
+  @Get("deployment")
+  getDeployment(@Param("projectId") projectId: string) {
+    return this.agentsService.getDeployment(projectId);
+  }
+
+  @Patch("deployment")
+  updateDeployment(
+    @Param("projectId") projectId: string,
+    @Body() body: UpdateAgentDeploymentDto,
+  ) {
+    return this.agentsService.updateDeployment(projectId, body);
+  }
+
+  @Post("deployment/resolve")
+  resolveRole(@Param("projectId") projectId: string, @Body() body: ResolveAgentRoleDto) {
+    return this.agentsService.resolveRole(projectId, body);
   }
 
   @Get("memories")
