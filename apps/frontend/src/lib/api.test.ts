@@ -48,6 +48,7 @@ import {
   getNovelChapter,
   getProviderManagement,
   getProjectSettingsSummary,
+  getTaskCenter,
   getProjectImageProviderCatalog,
   getProjectLlmProviderCatalog,
   getProjectVideoProviderCatalog,
@@ -1013,6 +1014,7 @@ describe("frontend api client", () => {
       providerParams: { quality: "high" },
     });
     await listGenerationJobs("project_1");
+    await getTaskCenter("project_1");
     await retryGenerationJob("project_1", "job_1");
     await getImageProviderCatalog();
 
@@ -1039,11 +1041,16 @@ describe("frontend api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
+      "http://localhost:3002/api/v1/projects/project_1/generation/jobs/task-center",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
       "http://localhost:3002/api/v1/projects/project_1/generation/jobs/job_1/retry",
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      5,
       "http://localhost:3002/api/v1/providers/image",
       expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
     );

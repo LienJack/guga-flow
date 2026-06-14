@@ -1305,6 +1305,80 @@ export interface GenerationJobListResult<
   queueSummary: GenerationQueueSummary;
 }
 
+export const TASK_CENTER_TASK_CLASSES = [
+  "llm",
+  "image",
+  "video",
+  "audio",
+  "asset",
+  "media",
+  "workflow",
+  "editor_export",
+  "agent",
+  "unknown",
+] as const;
+export type TaskCenterTaskClass = (typeof TASK_CENTER_TASK_CLASSES)[number];
+
+export const DIAGNOSTIC_EVENT_SEVERITIES = ["info", "warning", "error"] as const;
+export type DiagnosticEventSeverity = (typeof DIAGNOSTIC_EVENT_SEVERITIES)[number];
+
+export const DIAGNOSTIC_EVENT_CATEGORIES = [
+  "provider",
+  "task",
+  "media",
+  "agent",
+  "workflow",
+  "editor_export",
+  "unknown",
+] as const;
+export type DiagnosticEventCategory = (typeof DIAGNOSTIC_EVENT_CATEGORIES)[number];
+
+export interface TaskCenterRelatedObject {
+  nodeId?: string;
+  assetId?: string;
+  scriptDraftId?: string;
+  editorExportId?: string;
+}
+
+export interface TaskCenterActions {
+  canRetry: boolean;
+  canCancel: boolean;
+  canClear: boolean;
+}
+
+export interface TaskCenterItem {
+  taskId: string;
+  taskClass: TaskCenterTaskClass;
+  operation: GenerationOperation;
+  title: string;
+  status: GenerationJobStatus;
+  provider: string;
+  model?: string;
+  traceId: string;
+  reason?: string;
+  related: TaskCenterRelatedObject;
+  actions: TaskCenterActions;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DiagnosticEventRecord {
+  traceId: string;
+  projectId: string;
+  taskId: string;
+  surface: string;
+  category: DiagnosticEventCategory;
+  severity: DiagnosticEventSeverity;
+  safeMessage: string;
+  timestamp: string;
+}
+
+export interface TaskCenterResult {
+  items: TaskCenterItem[];
+  diagnostics: DiagnosticEventRecord[];
+  queueSummary: GenerationQueueSummary;
+}
+
 export interface RetryGenerationJobResult<TInput = GenerationJobInput> {
   originalJob: GenerationJobRecord<TInput>;
   retryJob: GenerationJobRecord<TInput>;

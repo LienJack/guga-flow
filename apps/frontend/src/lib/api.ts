@@ -74,6 +74,7 @@ import type {
   EditorExportSendResult,
   GenerationJobListResult,
   GenerationJobRecord,
+  TaskCenterResult,
   AgentDeploymentResult,
   AgentMemoryListResult,
   AgentMemoryRecord,
@@ -1363,6 +1364,10 @@ export function createBatchShotsToImagesJobs(
 
 export function listGenerationJobs(projectId: string): Promise<GenerationJobListResult> {
   return requestJson<GenerationJobListResult>(`/projects/${projectId}/generation/jobs`);
+}
+
+export function getTaskCenter(projectId: string): Promise<TaskCenterResult> {
+  return requestJson<TaskCenterResult>(`/projects/${projectId}/generation/jobs/task-center`);
 }
 
 export function retryGenerationJob(

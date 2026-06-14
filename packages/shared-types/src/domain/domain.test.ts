@@ -26,6 +26,8 @@ import {
   CANVAS_NODE_TYPES,
   CANVAS_SAVE_STATUSES,
   CREATIVE_AGENT_MODES,
+  DIAGNOSTIC_EVENT_CATEGORIES,
+  DIAGNOSTIC_EVENT_SEVERITIES,
   EDITOR_EXPORT_SORT_MODES,
   EDITOR_EXPORT_PRESETS,
   EDITOR_EXPORT_STATUSES,
@@ -71,6 +73,7 @@ import {
   STORYBOARD_IMPORT_DUPLICATE_POLICIES,
   STORYBOARD_DRAFT_STATUSES,
   STREAMING_AGENT_ROLES,
+  TASK_CENTER_TASK_CLASSES,
   UPLOADABLE_ASSET_MIME_TYPES,
   VIDEO_PROVIDER_IDS,
   VIDEO_PROVIDER_MODES,
@@ -183,6 +186,7 @@ import {
   type SkillTemplateSummary,
   type StoryboardDraftRecord,
   type StoryboardResult,
+  type TaskCenterResult,
   type TimelineManifest,
   type UpdateCanvasNodeGeometryInput,
   type UpdateCanvasNodeInput,
@@ -433,6 +437,9 @@ describe("shared domain constants", () => {
       "failed",
       "stopped",
     ]);
+    expect(TASK_CENTER_TASK_CLASSES).toContain("agent");
+    expect(DIAGNOSTIC_EVENT_CATEGORIES).toContain("provider");
+    expect(DIAGNOSTIC_EVENT_SEVERITIES).toEqual(["info", "warning", "error"]);
     expect(AGENT_DEPLOYMENT_MODES).toEqual(["simple", "advanced"]);
     expect(AGENT_DEPLOYMENT_ROLES).toEqual([
       "script",
@@ -1605,6 +1612,58 @@ describe("shared domain constants", () => {
     expect(productionResult.job.outputJson?.actionKind).toBe("create_storyboard_board");
     expect(sessionResult.job.inputJson.sessionMode).toBe("stream");
     expect(sessionResult.events[0]?.phase).toBe("thinking");
+  });
+
+  it("exports CEX-22 task center and diagnostics contracts", () => {
+    const taskCenter: TaskCenterResult = {
+      items: [
+        {
+          taskId: "job_1",
+          taskClass: "video",
+          operation: "image_to_video",
+          title: "Image To Video",
+          status: "failed",
+          provider: "mock-video",
+          traceId: "trace_project_1_job_1",
+          reason: "Provider failed with [secret]",
+          related: { nodeId: "video_1" },
+          actions: { canRetry: true, canCancel: false, canClear: true },
+          createdAt: "2026-06-14T00:00:00.000Z",
+          updatedAt: "2026-06-14T00:05:00.000Z",
+        },
+      ],
+      diagnostics: [
+        {
+          traceId: "trace_project_1_job_1",
+          projectId: "project_1",
+          taskId: "job_1",
+          surface: "video",
+          category: "provider",
+          severity: "error",
+          safeMessage: "Provider failed with [secret]",
+          timestamp: "2026-06-14T00:05:00.000Z",
+        },
+      ],
+      queueSummary: {
+        counts: {
+          queued: 0,
+          running: 0,
+          provider_waiting: 0,
+          succeeded: 0,
+          failed: 1,
+          cancelled: 0,
+        },
+        queued: 0,
+        running: 0,
+        providerWaiting: 0,
+        succeeded: 0,
+        failed: 1,
+        cancelled: 0,
+      },
+    };
+
+    expect(taskCenter.items[0]?.actions.canRetry).toBe(true);
+    expect(taskCenter.diagnostics[0]?.safeMessage).not.toContain("sk-");
   });
 
   it("exports TF-12 visible agent memory contracts", () => {

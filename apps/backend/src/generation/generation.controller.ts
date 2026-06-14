@@ -73,6 +73,11 @@ export class GenerationController {
     return this.generationService.listJobs(projectId);
   }
 
+  @Get("task-center")
+  getTaskCenter(@Param("projectId") projectId: string) {
+    return this.generationService.getTaskCenter(projectId);
+  }
+
   @Get(":jobId")
   getJob(@Param("projectId") projectId: string, @Param("jobId") jobId: string) {
     return this.generationService.getJob(projectId, jobId);

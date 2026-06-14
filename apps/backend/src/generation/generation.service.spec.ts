@@ -1313,6 +1313,71 @@ describe("GenerationService", () => {
     });
   });
 
+  it("builds safe task center projections with diagnostics", async () => {
+    prisma.generationJob.findMany.mockResolvedValueOnce([
+      generationJob({
+        id: "failed_video",
+        operation: "image_to_video",
+        status: "failed",
+        provider: "mock-video",
+        model: "mock-video-v1",
+        targetNodeId: "video_1",
+        errorMessage:
+          "Provider failed with sk-secretvalue123 at /Users/lienli/private/source.mp4",
+        inputJson: {
+          operation: "image_to_video",
+          projectId: "project_1",
+          sourceNodeId: "image_1",
+          prompt: "do not expose this full prompt",
+        },
+      }),
+      generationJob({
+        id: "agent_job",
+        operation: "agent_canvas_action",
+        status: "running",
+        provider: "mock-llm",
+        model: "mock-storyboard",
+        sourceNodeId: null,
+        targetNodeId: null,
+        inputJson: {
+          operation: "agent_canvas_action",
+          projectId: "project_1",
+          role: "production",
+          provider: "mock-llm",
+          model: "mock-storyboard",
+          message: "create board",
+        },
+      }),
+    ]);
+    prisma.generationJob.findMany.mockResolvedValueOnce([{ status: "failed" }, { status: "running" }]);
+
+    const result = await service.getTaskCenter("project_1");
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        taskId: "failed_video",
+        taskClass: "video",
+        traceId: "trace_project_1_failed_video",
+        related: { nodeId: "video_1" },
+        actions: expect.objectContaining({ canRetry: true, canCancel: false, canClear: true }),
+      }),
+      expect.objectContaining({
+        taskId: "agent_job",
+        taskClass: "agent",
+        actions: expect.objectContaining({ canCancel: true }),
+      }),
+    ]);
+    expect(result.diagnostics[0]).toMatchObject({
+      taskId: "failed_video",
+      category: "provider",
+      severity: "error",
+      safeMessage: "Provider failed with [secret] at [local-path]",
+    });
+    expect(JSON.stringify(result)).not.toContain("do not expose this full prompt");
+    expect(JSON.stringify(result)).not.toContain("/Users/lienli");
+    expect(JSON.stringify(result)).not.toContain("sk-secretvalue123");
+  });
+
   it("claims one queued job and marks its source node running", async () => {
     prisma.generationJob.findFirst.mockResolvedValue(generationJob({ status: "queued" }));
     prisma.generationJob.findUnique.mockResolvedValue(generationJob({ status: "running" }));

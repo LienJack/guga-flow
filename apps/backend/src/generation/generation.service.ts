@@ -69,6 +69,9 @@ import type {
   ShotNodeData,
   ShotPromptCompositionResult,
   ShotToImageJobInput,
+  TaskCenterResult,
+  TaskCenterTaskClass,
+  DiagnosticEventCategory,
   VideoProviderCatalogItem,
   VideoProviderMode,
   VideoReferenceMediaInput,
@@ -687,6 +690,30 @@ export class GenerationService {
 
     return {
       jobs: jobs.map((job) => this.toGenerationJobRecord(job)),
+      queueSummary: await this.getQueueSummary(projectId),
+    };
+  }
+
+  async getTaskCenter(projectId: string): Promise<TaskCenterResult> {
+    const jobs = (await this.prisma.generationJob.findMany({
+      where: { projectId },
+      orderBy: { createdAt: "desc" },
+    })) as GenerationJobModel[];
+    const items = jobs.map((job) => this.toTaskCenterItem(job));
+    return {
+      items,
+      diagnostics: items
+        .filter((item) => item.reason)
+        .map((item) => ({
+          traceId: item.traceId,
+          projectId,
+          taskId: item.taskId,
+          surface: item.taskClass,
+          category: this.diagnosticCategoryForTask(item.taskClass),
+          severity: item.status === "failed" ? "error" : "warning",
+          safeMessage: item.reason ?? "Task requires attention",
+          timestamp: item.updatedAt,
+        })),
       queueSummary: await this.getQueueSummary(projectId),
     };
   }
@@ -3229,6 +3256,122 @@ export class GenerationService {
       where: { id: nodeId },
       data: { status },
     });
+  }
+
+  private toTaskCenterItem(job: GenerationJobModel): TaskCenterResult["items"][number] {
+    const input = dataObject(job.inputJson);
+    const related = {
+      ...(job.targetNodeId ?? job.sourceNodeId
+        ? { nodeId: job.targetNodeId ?? job.sourceNodeId ?? undefined }
+        : {}),
+      ...(this.firstString(input.assetIds) ?? optionalString(input.assetId)
+        ? { assetId: this.firstString(input.assetIds) ?? optionalString(input.assetId) }
+        : {}),
+      ...(optionalString(input.scriptDraftId)
+        ? { scriptDraftId: optionalString(input.scriptDraftId) }
+        : {}),
+      ...(optionalString(input.editorExportId)
+        ? { editorExportId: optionalString(input.editorExportId) }
+        : {}),
+    };
+    return {
+      taskId: job.id,
+      taskClass: this.taskClassForOperation(job.operation),
+      operation: job.operation as GenerationOperation,
+      title: this.taskTitle(job.operation),
+      status: job.status as GenerationJobStatus,
+      provider: job.provider,
+      ...(job.model ? { model: job.model } : {}),
+      traceId: this.traceId(job),
+      ...(job.errorMessage ? { reason: this.safeDiagnosticMessage(job.errorMessage) } : {}),
+      related,
+      actions: {
+        canRetry: job.status === "failed",
+        canCancel: isCancellableJobStatus(job.status),
+        canClear: job.status === "failed" || job.status === "cancelled" || job.status === "succeeded",
+      },
+      createdAt: toIsoString(job.createdAt),
+      updatedAt: toIsoString(job.updatedAt),
+    };
+  }
+
+  private taskClassForOperation(operation: string): TaskCenterTaskClass {
+    if (operation === "agent_canvas_action") {
+      return "agent";
+    }
+    if (operation === "ai_text") {
+      return "llm";
+    }
+    if (operation === "ai_audio") {
+      return "audio";
+    }
+    if (operation === "image_to_video" || operation === "batch_images_to_videos") {
+      return "video";
+    }
+    if (
+      operation === "shot_to_image" ||
+      operation === "character_to_image" ||
+      operation === "location_to_image" ||
+      operation === "image_refinement" ||
+      operation === "batch_shots_to_images"
+    ) {
+      return "image";
+    }
+    if (operation === "asset_caption" || operation === "asset_prompt_polish" || operation === "asset_image_generation") {
+      return "asset";
+    }
+    if (operation === "asset_classification" || operation === "media_metadata") {
+      return "media";
+    }
+    if (operation === "workflow_run") {
+      return "workflow";
+    }
+    if (operation === "editor_export") {
+      return "editor_export";
+    }
+    return "unknown";
+  }
+
+  private diagnosticCategoryForTask(taskClass: TaskCenterTaskClass): DiagnosticEventCategory {
+    if (taskClass === "agent") {
+      return "agent";
+    }
+    if (taskClass === "media" || taskClass === "asset") {
+      return "media";
+    }
+    if (taskClass === "workflow") {
+      return "workflow";
+    }
+    if (taskClass === "editor_export") {
+      return "editor_export";
+    }
+    if (taskClass === "unknown") {
+      return "unknown";
+    }
+    return "provider";
+  }
+
+  private taskTitle(operation: string): string {
+    return operation
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+
+  private traceId(job: GenerationJobModel): string {
+    return `trace_${job.projectId}_${job.id}`.replace(/[^a-zA-Z0-9_-]+/g, "_");
+  }
+
+  private safeDiagnosticMessage(message: string): string {
+    return message
+      .replace(/sk-[a-zA-Z0-9_-]{8,}/g, "[secret]")
+      .replace(/(?:\/Users|\/home|\/var\/folders)\/[^\s"'`]+/g, "[local-path]")
+      .replace(/[A-Za-z]:\\[^\s"'`]+/g, "[local-path]")
+      .slice(0, 240);
+  }
+
+  private firstString(value: unknown): string | undefined {
+    return Array.isArray(value) ? optionalString(value[0]) : undefined;
   }
 
   private toGenerationJobRecord<TInput = GenerationJobInput, TOutput = unknown>(

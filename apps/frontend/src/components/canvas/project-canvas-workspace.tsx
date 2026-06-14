@@ -10,11 +10,19 @@ import type {
   ImportStoryboardToCanvasResult,
   ProductionWorkspaceMutationResult,
   ProjectDetail,
+  TaskCenterResult,
   UndoAgentCanvasActionResult,
 } from "@guga-flow/shared-types";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-import { getProject, getProjectCanvas, listGenerationJobs } from "../../lib/api";
+import {
+  cancelGenerationJob,
+  getProject,
+  getProjectCanvas,
+  getTaskCenter,
+  listGenerationJobs,
+  retryGenerationJob,
+} from "../../lib/api";
 import { WorkbenchShell } from "../workbench-shell";
 import { NovelStoryboardPanel } from "../novels/novel-storyboard-panel";
 import { mergeStoryboardImportGraph } from "../novels/storyboard-data";
@@ -28,6 +36,7 @@ import {
 } from "./canvas-productivity-panel";
 import { CanvasSaveStatusBadge } from "./canvas-save-status";
 import { ProductionWorkspacePanel } from "./production-workspace-panel";
+import { TaskCenterPanel } from "./task-center-panel";
 
 interface ProjectCanvasWorkspaceProps {
   projectId: string;
@@ -40,6 +49,7 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
   const [canvasEdges, setCanvasEdges] = useState<CanvasEdgeRecord[]>([]);
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [generationJobs, setGenerationJobs] = useState<GenerationJobRecord[]>([]);
+  const [taskCenter, setTaskCenter] = useState<TaskCenterResult | null>(null);
   const [queueSummary, setQueueSummary] = useState<
     Pick<GenerationQueueSummary, "queued" | "running" | "failed" | "providerWaiting" | "cancelled">
   >({
@@ -102,13 +112,17 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
 
   const refreshGenerationState = useCallback(
     async (input: { refreshCanvas?: boolean } = {}) => {
-      const result = await listGenerationJobs(projectId);
+      const [result, taskCenterResult] = await Promise.all([
+        listGenerationJobs(projectId),
+        getTaskCenter(projectId),
+      ]);
       const nextSignature = result.jobs
         .map((job) => `${job.id}:${job.status}:${job.targetNodeId ?? ""}:${job.updatedAt}`)
         .join("|");
 
       setGenerationJobs(result.jobs);
       setQueueSummary(result.queueSummary);
+      setTaskCenter(taskCenterResult);
 
       if (input.refreshCanvas || (generationSignatureRef.current && generationSignatureRef.current !== nextSignature)) {
         await refreshCanvasFacts();
@@ -219,6 +233,22 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
     [handleSelectCanvasNode, refreshGenerationState],
   );
 
+  const handleRetryTask = useCallback(
+    async (taskId: string) => {
+      await retryGenerationJob(projectId, taskId);
+      await refreshGenerationState({ refreshCanvas: true });
+    },
+    [projectId, refreshGenerationState],
+  );
+
+  const handleCancelTask = useCallback(
+    async (taskId: string) => {
+      await cancelGenerationJob(projectId, taskId);
+      await refreshGenerationState({ refreshCanvas: true });
+    },
+    [projectId, refreshGenerationState],
+  );
+
   const handleProductionWorkspaceMutation = useCallback(
     (result: ProductionWorkspaceMutationResult) => {
       const deletedNodeIds = new Set(result.deletedNodeIds ?? []);
@@ -290,6 +320,12 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
             selection={selection}
             onActionComplete={handleAgentActionComplete}
             onUndoComplete={handleAgentUndoComplete}
+          />
+          <TaskCenterPanel
+            taskCenter={taskCenter}
+            onCancelTask={handleCancelTask}
+            onRetryTask={handleRetryTask}
+            onSelectNode={handleSelectCanvasNode}
           />
           <CanvasProductivityPanel
             nodes={canvasNodes}
