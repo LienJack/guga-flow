@@ -674,7 +674,29 @@ describe("AgentsService", () => {
 
   it("creates, recalls, disables, and clears visible project memories", async () => {
     prisma.agentMemory.findMany.mockResolvedValue([
-      agentMemory({ id: "memory_1" }),
+      agentMemory({
+        id: "memory_1",
+        tagsJson: {
+          tags: ["style", "rain"],
+          type: "manual_preference",
+          agentRole: "production",
+          contextNodeId: "shot_1",
+          tokenEstimate: 12,
+          safetyFiltered: false,
+        },
+      }),
+      agentMemory({
+        id: "memory_script",
+        title: "Script-only memory",
+        content: "Keep this for script agent only.",
+        tagsJson: {
+          tags: ["script"],
+          type: "summary",
+          agentRole: "script",
+          tokenEstimate: 8,
+          safetyFiltered: false,
+        },
+      }),
       agentMemory({
         id: "memory_disabled",
         title: "Muted colors",
@@ -685,21 +707,34 @@ describe("AgentsService", () => {
     prisma.agentMemory.findFirst.mockResolvedValue(agentMemory({ id: "memory_1" }));
 
     const created = await service.createMemory("project_1", {
+      type: "manual_preference",
+      agentRole: "production",
+      contextNodeId: "shot_1",
       title: " Rainy neon palette ",
-      content: " Use rainy neon lighting for night chase sequences. ",
+      content: " Use rainy neon lighting for night chase sequences with sk-secretvalue123 at /Users/lienli/private.txt. ",
       tags: ["Style", "rain", "rain"],
     });
     const list = await service.listMemories("project_1");
     const recall = await service.recallMemories("project_1", {
       query: "rainy neon shot",
+      role: "production",
+      contextNodeId: "shot_1",
+      tokenBudget: 100,
       limit: 5,
     });
     const disabled = await service.disableMemory("project_1", "memory_1");
     const cleared = await service.clearMemories("project_1");
 
     expect(created.tags).toEqual(["style", "rain"]);
-    expect(list.memories).toHaveLength(2);
+    expect(created.type).toBe("manual_preference");
+    expect(created.agentRole).toBe("production");
+    expect(created.contextNodeId).toBe("shot_1");
+    expect(created.safetyFiltered).toBe(true);
+    expect(created.content).not.toContain("sk-secretvalue123");
+    expect(created.content).not.toContain("/Users/lienli");
+    expect(list.memories).toHaveLength(3);
     expect(recall.memoryIds).toContain("memory_1");
+    expect(recall.memoryIds).not.toContain("memory_script");
     expect(recall.memoryIds).not.toContain("memory_disabled");
     expect(disabled.enabled).toBe(false);
     expect(cleared.deletedCount).toBe(2);

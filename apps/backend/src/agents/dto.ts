@@ -15,6 +15,7 @@ import {
   AGENT_DEPLOYMENT_ROLES,
   AGENT_MEMORY_SCOPES,
   AGENT_MEMORY_SOURCES,
+  AGENT_MEMORY_TYPES,
   LLM_PROVIDER_IDS,
   PRODUCTION_AGENT_ACTION_KINDS,
   STREAMING_AGENT_ROLES,
@@ -183,6 +184,10 @@ export class CreateAgentMemoryDto implements CreateAgentMemoryInput {
   @IsIn(AGENT_MEMORY_SCOPES)
   scope?: CreateAgentMemoryInput["scope"];
 
+  @IsOptional()
+  @IsIn(AGENT_MEMORY_TYPES)
+  type?: CreateAgentMemoryInput["type"];
+
   @IsString()
   @MinLength(1)
   @MaxLength(160)
@@ -201,6 +206,15 @@ export class CreateAgentMemoryDto implements CreateAgentMemoryInput {
   tags?: string[];
 
   @IsOptional()
+  @IsIn(AGENT_DEPLOYMENT_ROLES)
+  agentRole?: CreateAgentMemoryInput["agentRole"];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  contextNodeId?: string;
+
+  @IsOptional()
   @IsIn(AGENT_MEMORY_SOURCES)
   source?: CreateAgentMemoryInput["source"];
 
@@ -210,6 +224,10 @@ export class CreateAgentMemoryDto implements CreateAgentMemoryInput {
 }
 
 export class UpdateAgentMemoryDto implements UpdateAgentMemoryInput {
+  @IsOptional()
+  @IsIn(AGENT_MEMORY_TYPES)
+  type?: UpdateAgentMemoryInput["type"];
+
   @IsOptional()
   @IsString()
   @MinLength(1)
@@ -230,6 +248,15 @@ export class UpdateAgentMemoryDto implements UpdateAgentMemoryInput {
   tags?: string[];
 
   @IsOptional()
+  @IsIn(AGENT_DEPLOYMENT_ROLES)
+  agentRole?: UpdateAgentMemoryInput["agentRole"];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  contextNodeId?: string;
+
+  @IsOptional()
   @IsBoolean()
   enabled?: boolean;
 }
@@ -238,6 +265,22 @@ export class RecallAgentMemoriesDto implements RecallAgentMemoriesInput {
   @IsString()
   @MaxLength(1000)
   query!: string;
+
+  @IsOptional()
+  @IsIn(AGENT_DEPLOYMENT_ROLES)
+  role?: RecallAgentMemoriesInput["role"];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  contextNodeId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(100)
+  @Max(4000)
+  tokenBudget?: number;
 
   @IsOptional()
   @Type(() => Number)

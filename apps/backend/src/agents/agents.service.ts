@@ -26,6 +26,7 @@ import type {
   AgentMemoryRecord,
   AgentMemoryScope,
   AgentMemorySource,
+  AgentMemoryType,
   AgentStreamEventPayload,
   CanvasEdgeRecord,
   CanvasEdgeRelation,
@@ -61,6 +62,7 @@ import {
   AGENT_DEPLOYMENT_ROLES,
   AGENT_MEMORY_SCOPES,
   AGENT_MEMORY_SOURCES,
+  AGENT_MEMORY_TYPES,
   LLM_PROVIDER_IDS,
   PHASE_3_CANVAS_NODE_TYPES,
   SKILL_TEMPLATE_KINDS,
@@ -120,6 +122,15 @@ type AgentMemoryModel = {
   enabled: boolean;
   createdAt: Date | string;
   updatedAt: Date | string;
+};
+
+type AgentMemoryMetadata = {
+  tags: string[];
+  type: AgentMemoryType;
+  agentRole?: AgentDeploymentRole;
+  contextNodeId?: string;
+  tokenEstimate: number;
+  safetyFiltered: boolean;
 };
 
 type AgentDeploymentModel = {
@@ -608,7 +619,8 @@ export class AgentsService {
     input: CreateAgentMemoryInput,
   ): Promise<AgentMemoryRecord> {
     await this.ensureProjectExists(projectId);
-    const content = this.normalizeMemoryContent(input.content);
+    const rawContent = this.normalizeMemoryContent(input.content);
+    const { content, safetyFiltered } = this.safeMemoryContent(rawContent);
     const memory = (await this.prisma.agentMemory.create({
       data: {
         projectId,
@@ -616,7 +628,16 @@ export class AgentsService {
         title: this.normalizeMemoryTitle(input.title),
         content,
         summary: this.memorySummary(content),
-        tagsJson: jsonValue(this.normalizeMemoryTags(input.tags)),
+        tagsJson: jsonValue(
+          this.memoryMetadataJson({
+            tags: this.normalizeMemoryTags(input.tags),
+            type: this.normalizeMemoryType(input.type),
+            agentRole: this.normalizeOptionalAgentRole(input.agentRole),
+            contextNodeId: optionalString(input.contextNodeId),
+            tokenEstimate: this.estimateMemoryTokens(content),
+            safetyFiltered,
+          }),
+        ),
         source: this.normalizeMemorySource(input.source),
         enabled: input.enabled ?? true,
       },
@@ -631,6 +652,8 @@ export class AgentsService {
     input: UpdateAgentMemoryInput,
   ): Promise<AgentMemoryRecord> {
     const existing = await this.findProjectMemory(projectId, memoryId);
+    const metadata = this.memoryMetadata(existing.tagsJson, existing.content);
+    let metadataChanged = false;
     const data: {
       title?: string;
       content?: string;
@@ -642,14 +665,35 @@ export class AgentsService {
       data.title = this.normalizeMemoryTitle(input.title);
     }
     if (input.content !== undefined) {
-      data.content = this.normalizeMemoryContent(input.content);
+      const rawContent = this.normalizeMemoryContent(input.content);
+      const safe = this.safeMemoryContent(rawContent);
+      data.content = safe.content;
       data.summary = this.memorySummary(data.content);
+      metadata.tokenEstimate = this.estimateMemoryTokens(data.content);
+      metadata.safetyFiltered = safe.safetyFiltered;
+      metadataChanged = true;
     }
     if (input.tags !== undefined) {
-      data.tagsJson = jsonValue(this.normalizeMemoryTags(input.tags));
+      metadata.tags = this.normalizeMemoryTags(input.tags);
+      metadataChanged = true;
+    }
+    if (input.type !== undefined) {
+      metadata.type = this.normalizeMemoryType(input.type);
+      metadataChanged = true;
+    }
+    if (input.agentRole !== undefined) {
+      metadata.agentRole = this.normalizeOptionalAgentRole(input.agentRole);
+      metadataChanged = true;
+    }
+    if (input.contextNodeId !== undefined) {
+      metadata.contextNodeId = optionalString(input.contextNodeId);
+      metadataChanged = true;
     }
     if (input.enabled !== undefined) {
       data.enabled = input.enabled;
+    }
+    if (metadataChanged) {
+      data.tagsJson = jsonValue(this.memoryMetadataJson(metadata));
     }
 
     if (Object.keys(data).length === 0) {
@@ -696,17 +740,20 @@ export class AgentsService {
     await this.ensureProjectExists(projectId);
     const query = input.query.trim();
     const limit = Math.max(1, Math.min(input.limit ?? 5, 20));
+    const tokenBudget = Math.max(100, Math.min(input.tokenBudget ?? 1200, 4000));
     const memories = ((await this.prisma.agentMemory.findMany({
       where: { projectId, enabled: true },
       orderBy: { updatedAt: "desc" },
-    })) as AgentMemoryModel[]).filter((memory) => memory.enabled);
+    })) as AgentMemoryModel[]).filter((memory) =>
+      memory.enabled && this.memoryMatchesIsolation(memory, input),
+    );
     const terms = this.recallTerms(query);
-    const scored = memories
+    const scored = this.limitMemoriesByTokenBudget(memories
       .map((memory) => ({ memory, score: this.memoryRecallScore(memory, terms) }))
       .filter((entry) => terms.length === 0 || entry.score > 0)
       .sort((a, b) => b.score - a.score || a.memory.title.localeCompare(b.memory.title))
       .slice(0, limit)
-      .map((entry) => this.toMemoryRecord(entry.memory));
+      .map((entry) => this.toMemoryRecord(entry.memory)), tokenBudget);
 
     return {
       memories: scored,
@@ -1302,12 +1349,94 @@ export class AgentsService {
     ).slice(0, 12);
   }
 
+  private memoryMetadata(value: unknown, content: string): AgentMemoryMetadata {
+    if (Array.isArray(value)) {
+      return {
+        tags: this.normalizeMemoryTags(value.filter((item): item is string => typeof item === "string")),
+        type: "manual_preference",
+        tokenEstimate: this.estimateMemoryTokens(content),
+        safetyFiltered: false,
+      };
+    }
+    const raw = dataObject(value);
+    return {
+      tags: this.normalizeMemoryTags(
+        Array.isArray(raw.tags) ? raw.tags.filter((item): item is string => typeof item === "string") : [],
+      ),
+      type: this.normalizeMemoryType(raw.type as AgentMemoryType | undefined),
+      agentRole: this.normalizeOptionalAgentRole(raw.agentRole),
+      contextNodeId: optionalString(raw.contextNodeId),
+      tokenEstimate: clampInteger(raw.tokenEstimate, 1, 4000) ?? this.estimateMemoryTokens(content),
+      safetyFiltered: raw.safetyFiltered === true,
+    };
+  }
+
+  private memoryMetadataJson(metadata: AgentMemoryMetadata): Record<string, CanvasSnapshotJson> {
+    return {
+      tags: metadata.tags,
+      type: metadata.type,
+      tokenEstimate: metadata.tokenEstimate,
+      safetyFiltered: metadata.safetyFiltered,
+      ...(metadata.agentRole ? { agentRole: metadata.agentRole } : {}),
+      ...(metadata.contextNodeId ? { contextNodeId: metadata.contextNodeId } : {}),
+    };
+  }
+
   private normalizeMemoryScope(value: AgentMemoryScope | undefined): AgentMemoryScope {
     return value && AGENT_MEMORY_SCOPES.includes(value) ? value : "project";
   }
 
   private normalizeMemorySource(value: AgentMemorySource | undefined): AgentMemorySource {
     return value && AGENT_MEMORY_SOURCES.includes(value) ? value : "manual";
+  }
+
+  private normalizeMemoryType(value: AgentMemoryType | undefined): AgentMemoryType {
+    return value && AGENT_MEMORY_TYPES.includes(value) ? value : "manual_preference";
+  }
+
+  private normalizeOptionalAgentRole(value: unknown): AgentDeploymentRole | undefined {
+    return typeof value === "string" && AGENT_DEPLOYMENT_ROLES.includes(value as AgentDeploymentRole)
+      ? (value as AgentDeploymentRole)
+      : undefined;
+  }
+
+  private safeMemoryContent(content: string): { content: string; safetyFiltered: boolean } {
+    const filtered = content
+      .replace(/sk-[a-zA-Z0-9_-]{8,}/g, "[secret]")
+      .replace(/(?:\/Users|\/home|\/var\/folders)\/[^\s"'`]+/g, "[local-path]")
+      .replace(/[A-Za-z]:\\[^\s"'`]+/g, "[local-path]");
+    return { content: filtered, safetyFiltered: filtered !== content };
+  }
+
+  private estimateMemoryTokens(content: string): number {
+    return Math.max(1, Math.ceil(content.length / 4));
+  }
+
+  private memoryMatchesIsolation(memory: AgentMemoryModel, input: RecallAgentMemoriesInput): boolean {
+    const metadata = this.memoryMetadata(memory.tagsJson, memory.content);
+    if (metadata.agentRole && input.role && metadata.agentRole !== input.role) {
+      return false;
+    }
+    if (metadata.contextNodeId && input.contextNodeId && metadata.contextNodeId !== input.contextNodeId) {
+      return false;
+    }
+    return true;
+  }
+
+  private limitMemoriesByTokenBudget(
+    memories: readonly AgentMemoryRecord[],
+    tokenBudget: number,
+  ): AgentMemoryRecord[] {
+    const selected: AgentMemoryRecord[] = [];
+    let used = 0;
+    for (const memory of memories) {
+      if (used + memory.tokenEstimate > tokenBudget && selected.length > 0) {
+        break;
+      }
+      selected.push(memory);
+      used += memory.tokenEstimate;
+    }
+    return selected;
   }
 
   private memorySummary(content: string): string {
@@ -1480,14 +1609,20 @@ export class AgentsService {
   }
 
   private toMemoryRecord(memory: AgentMemoryModel): AgentMemoryRecord {
+    const metadata = this.memoryMetadata(memory.tagsJson, memory.content);
     return {
       id: memory.id,
       projectId: memory.projectId,
       scope: this.normalizeMemoryScope(memory.scope as AgentMemoryScope),
+      type: metadata.type,
       title: memory.title,
       content: memory.content,
       summary: memory.summary,
-      tags: this.memoryTags(memory.tagsJson),
+      tags: metadata.tags,
+      ...(metadata.agentRole ? { agentRole: metadata.agentRole } : {}),
+      ...(metadata.contextNodeId ? { contextNodeId: metadata.contextNodeId } : {}),
+      tokenEstimate: metadata.tokenEstimate,
+      safetyFiltered: metadata.safetyFiltered,
       source: this.normalizeMemorySource(memory.source as AgentMemorySource),
       enabled: memory.enabled,
       createdAt: toIsoString(memory.createdAt),
@@ -1496,8 +1631,6 @@ export class AgentsService {
   }
 
   private memoryTags(value: unknown): string[] {
-    return Array.isArray(value) && value.every((item): item is string => typeof item === "string")
-      ? this.normalizeMemoryTags(value)
-      : [];
+    return this.memoryMetadata(value, "").tags;
   }
 }

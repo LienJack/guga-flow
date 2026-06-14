@@ -1,6 +1,8 @@
 import type {
   AgentCanvasActionJobInput,
   AgentCanvasActionJobOutput,
+  AgentDeploymentRole,
+  AgentMemoryType,
   AgentStreamEventPayload,
   AgentMemoryRecord,
   CanvasNodeRecord,
@@ -74,6 +76,8 @@ export function AgentCanvasActionsPanel({
   const [memoryTitle, setMemoryTitle] = useState("");
   const [memoryContent, setMemoryContent] = useState("");
   const [memoryTags, setMemoryTags] = useState("");
+  const [memoryType, setMemoryType] = useState<AgentMemoryType>("manual_preference");
+  const [memoryAgentRole, setMemoryAgentRole] = useState<AgentDeploymentRole | "">("");
   const [memoryError, setMemoryError] = useState<string | null>(null);
 
   const selectedNodeId = selectedNode?.id;
@@ -304,9 +308,12 @@ export function AgentCanvasActionsPanel({
     setMemoryError(null);
     try {
       const memory = await createAgentMemory(projectId, {
+        type: memoryType,
         title: memoryTitle,
         content: memoryContent,
         tags: parseTags(memoryTags),
+        ...(memoryAgentRole ? { agentRole: memoryAgentRole } : {}),
+        ...(selectedNodeId ? { contextNodeId: selectedNodeId } : {}),
       });
       setMemories((current) => [memory, ...current.filter((item) => item.id !== memory.id)]);
       setMemoryTitle("");
@@ -487,6 +494,32 @@ export function AgentCanvasActionsPanel({
           </button>
         </div>
         <form className="agent-memory-form" onSubmit={submitMemory}>
+          <div className="agent-context-grid">
+            <label className="field-label">
+              Type
+              <select
+                value={memoryType}
+                onChange={(event) => setMemoryType(event.target.value as AgentMemoryType)}
+              >
+                <option value="manual_preference">Preference</option>
+                <option value="message">Message</option>
+                <option value="summary">Summary</option>
+                <option value="tool_result">Tool result</option>
+              </select>
+            </label>
+            <label className="field-label">
+              Role
+              <select
+                value={memoryAgentRole}
+                onChange={(event) => setMemoryAgentRole(event.target.value as AgentDeploymentRole | "")}
+              >
+                <option value="">Project</option>
+                <option value="script">Script</option>
+                <option value="production">Production</option>
+                <option value="universal">Universal</option>
+              </select>
+            </label>
+          </div>
           <label className="field-label">
             Title
             <input
@@ -524,6 +557,11 @@ export function AgentCanvasActionsPanel({
                 <div>
                   <strong>{memory.title}</strong>
                   <span>{memory.summary}</span>
+                  <small>
+                    {[memory.type, memory.agentRole, memory.contextNodeId, memory.safetyFiltered ? "filtered" : ""]
+                      .filter(Boolean)
+                      .join(" / ")}
+                  </small>
                   {memory.tags.length ? <small>{memory.tags.map((tag) => `#${tag}`).join(" ")}</small> : null}
                 </div>
                 {memory.enabled ? (
