@@ -12,12 +12,14 @@
     "build": "pnpm db:generate && pnpm -r build",
     "test": "pnpm --filter \"./packages/*\" run build && pnpm db:generate && pnpm -r test",
     "format:check": "pnpm -r lint",
+    "verify:cex28": "node scripts/verify-cex28-director-3d.mjs",
     "db:generate": "pnpm --filter @guga-flow/backend run prisma:generate",
     "db:migrate": "pnpm --filter @guga-flow/backend run prisma:migrate",
     "db:studio": "pnpm --filter @guga-flow/backend run prisma:studio",
     "mock:workflow": "pnpm --filter @guga-flow/worker run mock:workflow"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "25.9.3",
     "typescript": "6.0.3"
   }
