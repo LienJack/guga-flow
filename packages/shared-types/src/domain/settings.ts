@@ -57,7 +57,22 @@ export interface ProjectSettingsVersionInfo {
   appVersion: string;
   apiVersion: "v1";
   nodeVersion?: string;
+  buildCommit?: string;
+  buildTime?: string;
+  releaseFeedUrl?: string;
+  runtime: {
+    environment: string;
+    nodeVersion?: string;
+  };
   generatedAt: string;
+}
+
+export interface ProjectSettingsDebugInfo {
+  aiDebugAvailable: boolean;
+  aiDebugEnabled: boolean;
+  environment: string;
+  safeTraceFields: string[];
+  credentialValuesExposed: false;
 }
 
 export interface ProjectSettingsProjectSummary {
@@ -73,6 +88,7 @@ export interface ProjectSettingsSummaryResult {
   resourceCounts: ProjectSettingsResourceCounts;
   fileSummary: ProjectSettingsFileSummary;
   version: ProjectSettingsVersionInfo;
+  debug: ProjectSettingsDebugInfo;
 }
 
 export interface ProjectSettingsProviderExportSummary {

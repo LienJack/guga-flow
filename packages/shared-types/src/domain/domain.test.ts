@@ -707,7 +707,20 @@ describe("shared domain constants", () => {
         service: "guga-flow",
         appVersion: "0.1.0",
         apiVersion: "v1",
+        buildCommit: "abc123",
+        buildTime: "2026-06-14T00:00:00.000Z",
+        runtime: {
+          environment: "development",
+          nodeVersion: "v26.3.0",
+        },
         generatedAt: "2026-06-13T00:00:00.000Z",
+      },
+      debug: {
+        aiDebugAvailable: true,
+        aiDebugEnabled: false,
+        environment: "development",
+        safeTraceFields: ["traceId", "provider", "model", "latencyMs", "sanitizedError"],
+        credentialValuesExposed: false,
       },
     };
     const settingsExport: ProjectSettingsExportPayload = {
@@ -751,6 +764,8 @@ describe("shared domain constants", () => {
     };
 
     expect(summary.modules[0]?.module).toBe("providers");
+    expect(summary.version.buildCommit).toBe("abc123");
+    expect(summary.debug.credentialValuesExposed).toBe(false);
     expect(settingsExport.providers[0]?.credentialConfigured).toBe(true);
     expect(JSON.stringify(settingsExport)).not.toContain("sk-");
     expect(validation.valid).toBe(true);

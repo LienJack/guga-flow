@@ -120,8 +120,21 @@ const settingsSummary: ProjectSettingsSummaryResult = {
     service: "guga-flow",
     appVersion: "0.1.0",
     apiVersion: "v1",
+    buildCommit: "abc123",
+    buildTime: "2026-06-14T00:00:00.000Z",
     nodeVersion: "v26.3.0",
+    runtime: {
+      environment: "development",
+      nodeVersion: "v26.3.0",
+    },
     generatedAt: "2026-06-13T00:00:00.000Z",
+  },
+  debug: {
+    aiDebugAvailable: true,
+    aiDebugEnabled: false,
+    environment: "development",
+    safeTraceFields: ["traceId", "provider", "model", "latencyMs", "sanitizedError"],
+    credentialValuesExposed: false,
   },
 };
 
@@ -278,6 +291,10 @@ describe("SettingsCenter", () => {
     expect(html).toContain("Total assets");
     expect(html).toContain("audio");
     expect(html).toContain("Version");
+    expect(html).toContain("Build");
+    expect(html).toContain("abc123");
+    expect(html).toContain("Runtime");
+    expect(html).toContain("AI debug");
     expect(html).toContain("Image 2");
     expect(html).toContain("Art Skill");
     expect(html).not.toContain("sk-");
@@ -304,6 +321,8 @@ describe("SettingsCenter", () => {
     expect(html).toContain("资产维护");
     expect(html).toContain("远程 URL");
     expect(html).toContain("资产总数");
+    expect(html).toContain("构建");
+    expect(html).toContain("AI 调试");
     expect(html).toContain("Visual manual");
     expect(html).toContain("Image 2");
     expect(html).toContain("Art Skill");

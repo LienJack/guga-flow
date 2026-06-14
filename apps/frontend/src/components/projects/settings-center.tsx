@@ -55,6 +55,9 @@ export function SettingsCenter({
   const [exportResult, setExportResult] = useState<ProjectSettingsExportResult | null>(null);
   const [importPayload, setImportPayload] = useState("");
   const [importState, setImportState] = useState<PanelState>({});
+  const [aiDebugSwitchEnabled, setAiDebugSwitchEnabled] = useState(
+    initialSummary?.debug.aiDebugEnabled ?? false,
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(!initialSummary);
 
@@ -84,6 +87,12 @@ export function SettingsCenter({
       cancelled = true;
     };
   }, [projectId]);
+
+  useEffect(() => {
+    if (summary) {
+      setAiDebugSwitchEnabled(summary.debug.aiDebugEnabled);
+    }
+  }, [summary]);
 
   function handleProjectUpdated(updated: ProjectDetail) {
     setProject(updated);
@@ -309,10 +318,50 @@ export function SettingsCenter({
                 <dd>{summary.version.apiVersion}</dd>
               </div>
               <div>
+                <dt>{t("settings.build")}</dt>
+                <dd>
+                  {[summary.version.buildCommit, summary.version.buildTime].filter(Boolean).join(" / ") ||
+                    t("settings.unknown")}
+                </dd>
+              </div>
+              <div>
+                <dt>{t("settings.runtime")}</dt>
+                <dd>{summary.version.runtime.nodeVersion ?? summary.version.nodeVersion ?? t("settings.unknown")}</dd>
+              </div>
+              <div>
+                <dt>{t("settings.environment")}</dt>
+                <dd>{summary.version.runtime.environment}</dd>
+              </div>
+              <div>
                 <dt>{t("settings.node")}</dt>
                 <dd>{summary.version.nodeVersion ?? t("settings.unknown")}</dd>
               </div>
+              {summary.version.releaseFeedUrl ? (
+                <div>
+                  <dt>{t("settings.releaseFeed")}</dt>
+                  <dd>{summary.version.releaseFeedUrl}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt>{t("settings.aiDebug")}</dt>
+                <dd>{summary.debug.aiDebugEnabled ? t("settings.enabled") : t("settings.disabled")}</dd>
+              </div>
             </dl>
+            <div className="settings-actions-row">
+              <label className="tool-button">
+                <input
+                  type="checkbox"
+                  style={{ width: "auto" }}
+                  checked={aiDebugSwitchEnabled}
+                  disabled={!summary.debug.aiDebugAvailable}
+                  onChange={(event) => setAiDebugSwitchEnabled(event.target.checked)}
+                />
+                {t("settings.aiDebug")}
+              </label>
+              <span className="generation-status">
+                {summary.debug.aiDebugAvailable ? t("settings.available") : t("settings.unavailable")}
+              </span>
+            </div>
           </section>
         </>
       ) : null}

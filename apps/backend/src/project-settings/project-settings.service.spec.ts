@@ -1,5 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PrismaService } from "../prisma/prisma.service";
 import { ProjectSettingsService } from "./project-settings.service";
@@ -68,7 +68,15 @@ function createService(prisma = createPrismaMock()) {
 }
 
 describe("ProjectSettingsService", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("returns a settings center summary with counts, file totals, and version metadata", async () => {
+    vi.stubEnv("APP_VERSION", "0.2.0");
+    vi.stubEnv("BUILD_COMMIT", "abc123");
+    vi.stubEnv("BUILD_TIME", "2026-06-14T00:00:00.000Z");
+    vi.stubEnv("AI_DEBUG_ENABLED", "true");
     const { service } = createService();
 
     const summary = await service.getSummary("project_1");
@@ -108,7 +116,20 @@ describe("ProjectSettingsService", () => {
       "files",
       "version",
     ]);
-    expect(summary.version).toMatchObject({ service: "guga-flow", apiVersion: "v1" });
+    expect(summary.version).toMatchObject({
+      service: "guga-flow",
+      appVersion: "0.2.0",
+      apiVersion: "v1",
+      buildCommit: "abc123",
+      buildTime: "2026-06-14T00:00:00.000Z",
+      runtime: { environment: expect.any(String), nodeVersion: expect.any(String) },
+    });
+    expect(summary.debug).toMatchObject({
+      aiDebugAvailable: true,
+      aiDebugEnabled: true,
+      safeTraceFields: expect.arrayContaining(["traceId", "sanitizedError"]),
+      credentialValuesExposed: false,
+    });
   });
 
   it("exports safe project settings metadata without credential values", async () => {

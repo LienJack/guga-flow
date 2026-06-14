@@ -11,6 +11,20 @@ export class HealthController {
     return {
       status: "ok",
       service: "guga-flow-backend",
+      version: {
+        appVersion: config.appVersion,
+        apiVersion: "v1",
+        buildCommit: config.buildCommit,
+        buildTime: config.buildTime,
+        nodeVersion: process.version,
+        environment: config.nodeEnv,
+      },
+      debug: {
+        aiDebugAvailable: config.aiDebugAvailable,
+        aiDebugEnabled: config.aiDebugEnabled,
+        safeTraceFields: ["traceId", "provider", "model", "latencyMs", "sanitizedError"],
+        credentialValuesExposed: false,
+      },
       providerMode: {
         llm: {
           selected: config.llmProvider,

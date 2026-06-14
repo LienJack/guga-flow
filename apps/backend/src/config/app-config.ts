@@ -1,4 +1,9 @@
 export interface AppConfig {
+  nodeEnv: string;
+  appVersion: string;
+  buildCommit?: string;
+  buildTime?: string;
+  releaseFeedUrl?: string;
   port: number;
   corsAllowedOrigins: string[];
   databaseUrl: string;
@@ -18,6 +23,8 @@ export interface AppConfig {
   sessionTtlSeconds: number;
   defaultAdminEmail: string;
   defaultAdminPassword: string;
+  aiDebugAvailable: boolean;
+  aiDebugEnabled: boolean;
   realProviderKeysConfigured: {
     llm: boolean;
     image: boolean;
@@ -66,6 +73,8 @@ function readList(value: string | undefined, fallback: string[]): string[] {
 }
 
 export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const nodeEnv = env.NODE_ENV || "development";
+  const aiDebugAvailable = nodeEnv !== "production";
   const genericLlmKeyConfigured = Boolean(env.LLM_API_KEY || env.OPENAI_API_KEY);
   const geminiLlmKeyConfigured = Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY);
   const anthropicLlmKeyConfigured = Boolean(env.ANTHROPIC_API_KEY);
@@ -80,6 +89,11 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   );
 
   return {
+    nodeEnv,
+    appVersion: env.APP_VERSION || env.npm_package_version || "0.1.0",
+    buildCommit: env.BUILD_COMMIT || env.VERCEL_GIT_COMMIT_SHA || env.GIT_COMMIT || undefined,
+    buildTime: env.BUILD_TIME || env.VERCEL_GIT_COMMIT_SHA_CREATED_AT || undefined,
+    releaseFeedUrl: env.RELEASE_FEED_URL || undefined,
     port: readNumber("PORT", env.PORT, 3002),
     corsAllowedOrigins: readList(env.CORS_ALLOWED_ORIGINS, [
       "http://localhost:3000",
@@ -102,6 +116,8 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     sessionTtlSeconds: readNumber("AUTH_SESSION_TTL_SECONDS", env.AUTH_SESSION_TTL_SECONDS, 60 * 60 * 24 * 7),
     defaultAdminEmail: env.DEFAULT_ADMIN_EMAIL || "admin@guga-flow.local",
     defaultAdminPassword: env.DEFAULT_ADMIN_PASSWORD || "guga-flow-dev",
+    aiDebugAvailable,
+    aiDebugEnabled: aiDebugAvailable && env.AI_DEBUG_ENABLED === "true",
     realProviderKeysConfigured: {
       llm: genericLlmKeyConfigured || geminiLlmKeyConfigured || anthropicLlmKeyConfigured || arkLlmKeyConfigured,
       image: Boolean(env.IMAGE_API_KEY || image2KeyConfigured || bananaKeyConfigured),

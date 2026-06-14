@@ -9,6 +9,12 @@ describe("HealthController", () => {
     const health = controller.getHealth();
 
     expect(health.status).toBe("ok");
+    expect(health.version).toMatchObject({ appVersion: expect.any(String), apiVersion: "v1" });
+    expect(health.debug).toMatchObject({
+      aiDebugAvailable: true,
+      aiDebugEnabled: false,
+      credentialValuesExposed: false,
+    });
     expect(health.providerMode.llm.selected).toBe("mock");
     expect(health.providerMode.editor.localEditorConfigured).toBe(false);
     expect(JSON.stringify(health)).not.toContain("API_KEY");
@@ -65,5 +71,21 @@ describe("HealthController", () => {
 
   it("fails fast for invalid numeric configuration", () => {
     expect(() => readAppConfig({ PORT: "not-a-port" })).toThrow("PORT must be a positive integer");
+  });
+
+  it("keeps AI debug disabled in production even when requested", () => {
+    const config = readAppConfig({
+      NODE_ENV: "production",
+      AI_DEBUG_ENABLED: "true",
+      BUILD_COMMIT: "abc123",
+      BUILD_TIME: "2026-06-14T00:00:00.000Z",
+      RELEASE_FEED_URL: "https://releases.example.com/guga-flow.json",
+    });
+
+    expect(config.aiDebugAvailable).toBe(false);
+    expect(config.aiDebugEnabled).toBe(false);
+    expect(config.buildCommit).toBe("abc123");
+    expect(config.buildTime).toBe("2026-06-14T00:00:00.000Z");
+    expect(config.releaseFeedUrl).toBe("https://releases.example.com/guga-flow.json");
   });
 });

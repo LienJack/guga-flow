@@ -62,6 +62,7 @@ export class ProjectSettingsService {
       resourceCounts: bundle.counts,
       fileSummary: bundle.fileSummary,
       version: versionInfo(),
+      debug: debugInfo(),
     };
   }
 
@@ -254,12 +255,31 @@ function moduleStatuses(
 }
 
 function versionInfo(): ProjectSettingsSummaryResult["version"] {
+  const config = readAppConfig();
   return {
     service: "guga-flow",
-    appVersion: process.env.npm_package_version || "0.1.0",
+    appVersion: config.appVersion,
     apiVersion: "v1",
+    buildCommit: config.buildCommit,
+    buildTime: config.buildTime,
+    releaseFeedUrl: config.releaseFeedUrl,
     nodeVersion: process.version,
+    runtime: {
+      environment: config.nodeEnv,
+      nodeVersion: process.version,
+    },
     generatedAt: new Date().toISOString(),
+  };
+}
+
+function debugInfo(): ProjectSettingsSummaryResult["debug"] {
+  const config = readAppConfig();
+  return {
+    aiDebugAvailable: config.aiDebugAvailable,
+    aiDebugEnabled: config.aiDebugEnabled,
+    environment: config.nodeEnv,
+    safeTraceFields: ["traceId", "provider", "model", "latencyMs", "sanitizedError"],
+    credentialValuesExposed: false,
   };
 }
 
