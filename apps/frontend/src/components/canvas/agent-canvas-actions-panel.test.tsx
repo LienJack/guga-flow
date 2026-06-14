@@ -27,6 +27,7 @@ describe("AgentCanvasActionsPanel", () => {
     expect(html).toContain("create shot: rain reveal");
     expect(html).toContain("Rain reveal");
     expect(html).toContain("Run");
+    expect(html).toContain("Board");
     expect(html).toContain("Memory");
     expect(html).toContain("Content");
     expect(html).toContain("Tags");

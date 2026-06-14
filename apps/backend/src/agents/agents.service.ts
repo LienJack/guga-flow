@@ -36,6 +36,8 @@ import type {
   CreateAgentCanvasActionInput,
   CreateAgentCanvasActionResult,
   CreateAgentMemoryInput,
+  CreateProductionAgentActionInput,
+  CreateProductionAgentActionResult,
   GenerationJobRecord,
   LlmProviderId,
   LlmProviderManagementItem,
@@ -382,6 +384,107 @@ export class AgentsService {
         nodes: executed.nodes,
         edges: executed.edges,
         ...(executed.focusNodeId ? { focusNodeId: executed.focusNodeId } : {}),
+      };
+    } catch (error) {
+      await this.prisma.generationJob.update({
+        where: { id: job.id },
+        data: {
+          status: "failed",
+          errorMessage: errorMessage(error),
+        },
+      });
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new BadRequestException(errorMessage(error));
+    }
+  }
+
+  async createProductionAction(
+    projectId: string,
+    input: CreateProductionAgentActionInput,
+  ): Promise<CreateProductionAgentActionResult> {
+    const action = input.action as string;
+    if (action !== "create_storyboard_board") {
+      throw new BadRequestException(`Unsupported production agent action "${input.action}"`);
+    }
+
+    const title = input.title ? this.normalizeTitle(input.title) : "Production Storyboard Board";
+    const message = this.normalizeMessage(input.message ?? `create storyboard board: ${title}`);
+    const role = this.requireAgentRole(input.role ?? "production");
+    const runtime = await this.resolveRole(projectId, { role });
+    await this.ensureProjectExists(projectId);
+    const itemIds = this.normalizeActionItemIds(input.itemIds);
+
+    const jobInput: AgentCanvasActionJobInput = {
+      operation: "agent_canvas_action",
+      projectId,
+      role: runtime.config.role,
+      provider: runtime.config.provider,
+      model: runtime.config.model,
+      message,
+      productionAction: input.action,
+      title,
+      ...(itemIds.length > 0 ? { itemIds } : {}),
+      ...(input.columns !== undefined ? { columns: input.columns } : {}),
+    };
+
+    const job = (await this.prisma.generationJob.create({
+      data: {
+        projectId,
+        operation: "agent_canvas_action",
+        status: "running",
+        provider: runtime.config.provider,
+        model: runtime.config.model,
+        inputJson: jsonValue(jobInput),
+      },
+    })) as GenerationJobModel;
+
+    try {
+      const created = await this.canvasService.createStoryboardMediaBoard(projectId, {
+        ...(itemIds.length > 0 ? { itemIds } : {}),
+        title,
+        ...(input.columns !== undefined ? { columns: input.columns } : {}),
+      });
+      const boardNode = await this.tagAgentCreatedNode(
+        projectId,
+        created.boardNode,
+        job.id,
+        message,
+        "create_storyboard_board",
+      );
+      const nodes = created.nodes.map((node) => (node.id === boardNode.id ? boardNode : node));
+      const output: AgentCanvasActionJobOutput = {
+        operation: "agent_canvas_action",
+        actionKind: "create_storyboard_board",
+        message,
+        summary: `Created storyboard board "${boardNode.title ?? title}"`,
+        createdNodes: [
+          {
+            nodeId: boardNode.id,
+            type: "scene_frame",
+            ...(boardNode.title ? { title: boardNode.title } : {}),
+          },
+        ],
+        completedAt: new Date().toISOString(),
+      };
+      const completed = (await this.prisma.generationJob.update({
+        where: { id: job.id },
+        data: {
+          status: "succeeded",
+          outputJson: jsonValue(output),
+          targetNodeId: boardNode.id,
+        },
+      })) as GenerationJobModel;
+
+      return {
+        job: this.toGenerationJobRecord<AgentCanvasActionJobInput, AgentCanvasActionJobOutput>(
+          completed,
+        ),
+        workspace: created.workspace,
+        nodes,
+        edges: created.edges,
+        focusNodeId: boardNode.id,
       };
     } catch (error) {
       await this.prisma.generationJob.update({
@@ -1060,6 +1163,38 @@ export class AgentsService {
       throw new BadRequestException("Agent action title is too long");
     }
     return title;
+  }
+
+  private normalizeActionItemIds(value: readonly string[] | undefined): string[] {
+    return [...new Set((value ?? []).map((itemId) => itemId.trim()).filter(Boolean))];
+  }
+
+  private async tagAgentCreatedNode(
+    projectId: string,
+    node: CanvasNodeRecord,
+    jobId: string,
+    message: string,
+    actionKind: AgentCanvasActionJobOutput["actionKind"],
+  ): Promise<CanvasNodeRecord> {
+    const dataJson = {
+      ...dataObject(node.dataJson),
+      agentAction: {
+        ...dataObject(dataObject(node.dataJson).agentAction),
+        jobId,
+        message,
+        actionKind,
+      },
+    };
+    const updated = (await this.prisma.canvasNode.update({
+      where: { id: node.id },
+      data: {
+        dataJson: jsonValue(dataJson),
+      },
+    })) as CanvasNodeModel;
+    if (updated.projectId !== projectId) {
+      throw new BadRequestException("Production agent action created an invalid project node");
+    }
+    return this.toCanvasNodeRecord(updated);
   }
 
   private normalizeMemoryTitle(value: string): string {

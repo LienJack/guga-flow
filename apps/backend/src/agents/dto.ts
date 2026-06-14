@@ -2,6 +2,7 @@ import type {
   ClearAgentMemoriesInput,
   CreateAgentCanvasActionInput,
   CreateAgentMemoryInput,
+  CreateProductionAgentActionInput,
   LlmProviderId,
   RecallAgentMemoriesInput,
   ResolveAgentRoleInput,
@@ -14,6 +15,7 @@ import {
   AGENT_MEMORY_SCOPES,
   AGENT_MEMORY_SOURCES,
   LLM_PROVIDER_IDS,
+  PRODUCTION_AGENT_ACTION_KINDS,
 } from "@guga-flow/shared-types";
 import {
   ArrayUnique,
@@ -95,6 +97,39 @@ export class CreateAgentCanvasActionDto implements CreateAgentCanvasActionInput 
   @Type(() => Number)
   @IsNumber({ allowInfinity: false, allowNaN: false })
   canvasY?: number;
+}
+
+export class CreateProductionAgentActionDto implements CreateProductionAgentActionInput {
+  @IsIn(PRODUCTION_AGENT_ACTION_KINDS)
+  action!: CreateProductionAgentActionInput["action"];
+
+  @IsOptional()
+  @IsIn(AGENT_DEPLOYMENT_ROLES)
+  role?: CreateProductionAgentActionInput["role"];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  message?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  title?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(160, { each: true })
+  itemIds?: string[];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(6)
+  columns?: number;
 }
 
 export class UpdateAgentDeploymentDto implements UpdateAgentDeploymentInput {

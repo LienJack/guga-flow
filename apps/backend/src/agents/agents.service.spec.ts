@@ -3,6 +3,8 @@ import type {
   AgentCanvasActionJobOutput,
   CanvasEdgeRecord,
   CanvasNodeRecord,
+  ProductionWorkspaceProjection,
+  SceneFrameNodeData,
   ShotNodeData,
 } from "@guga-flow/shared-types";
 import { AGENT_DEPLOYMENT_ROLES } from "@guga-flow/shared-types";
@@ -103,6 +105,60 @@ function canvasEdge(
   };
 }
 
+function productionWorkspace(): ProductionWorkspaceProjection {
+  return {
+    projectId: "project_1",
+    storyboardTable: [],
+    storyboardItems: [
+      {
+        itemId: "shot_1",
+        shotNodeId: "shot_1",
+        orderIndex: 1,
+        title: "Shot 001",
+        summary: "A rain reveal opens the sequence.",
+        durationSeconds: 4,
+        imagePrompt: "rain reveal image",
+        videoPrompt: "slow push through rain",
+        status: "draft",
+        storyEventIds: [],
+        referenceAssetIds: [],
+        updatedAt: updatedAt.toISOString(),
+      },
+    ],
+    videoTracks: [],
+    assets: [],
+    summary: {
+      shotCount: 1,
+      assetCount: 0,
+      referenceAssetCount: 0,
+      latestUpdatedAt: updatedAt.toISOString(),
+      generationQueue: {
+        counts: {
+          queued: 0,
+          running: 0,
+          provider_waiting: 0,
+          succeeded: 0,
+          failed: 0,
+          cancelled: 0,
+        },
+        queued: 0,
+        running: 0,
+        providerWaiting: 0,
+        succeeded: 0,
+        failed: 0,
+        cancelled: 0,
+      },
+    },
+    agentContext: {
+      scriptPlanSummary: "No script plan.",
+      storyboardTableSummary: "1 shots across 1 scene containers.",
+      storyboardSummary: "Shot 001: A rain reveal opens the sequence.",
+      assetSummary: "0 production assets, 0 visual variants.",
+      generationSummary: "0 active generation jobs, 0 failed jobs.",
+    },
+  };
+}
+
 function agentMemory(overrides: Record<string, unknown> = {}) {
   return {
     id: "memory_1",
@@ -187,18 +243,29 @@ function createPrismaMock() {
         async (_args: MockFindArgs): Promise<ReturnType<typeof canvasNodeModel> | null> => null,
       ),
       findMany: vi.fn(async (_args: MockFindArgs) => []),
-      update: vi.fn(async (args: MockUpdateArgs) =>
-        canvasNodeModel({
-          title: args.data.title,
-          dataJson: args.data.dataJson,
-          x: args.data.x,
-          y: args.data.y,
-          width: args.data.width,
-          height: args.data.height,
-          zIndex: args.data.zIndex,
-          status: args.data.status,
-        }),
-      ),
+      update: vi.fn(async (args: MockUpdateArgs) => {
+        if (args.where.id === "board_1") {
+          return canvasNodeModel({
+            id: "board_1",
+            tldrawShapeId: "shape:board_1",
+            type: "scene_frame",
+            title: "Agent Board",
+            width: 520,
+            height: 360,
+            dataJson: args.data.dataJson,
+          });
+        }
+        return canvasNodeModel({
+          ...(args.data.title !== undefined ? { title: args.data.title } : {}),
+          ...(args.data.dataJson !== undefined ? { dataJson: args.data.dataJson } : {}),
+          ...(args.data.x !== undefined ? { x: args.data.x } : {}),
+          ...(args.data.y !== undefined ? { y: args.data.y } : {}),
+          ...(args.data.width !== undefined ? { width: args.data.width } : {}),
+          ...(args.data.height !== undefined ? { height: args.data.height } : {}),
+          ...(args.data.zIndex !== undefined ? { zIndex: args.data.zIndex } : {}),
+          ...(args.data.status !== undefined ? { status: args.data.status } : {}),
+        });
+      }),
       deleteMany: vi.fn(async () => ({ count: 1 })),
     },
     canvasEdge: {
@@ -220,6 +287,12 @@ function createPrismaMock() {
 }
 
 function createCanvasServiceMock() {
+  const boardNode = canvasNode<SceneFrameNodeData>("board_1", "scene_frame", "Agent Board", {
+    label: "Agent Board",
+    description: "1 storyboard items",
+    shotNodeIds: ["shot_1"],
+  });
+
   return {
     createNode: vi.fn(async (_projectId: string, input: { type: CanvasNodeRecord["type"]; title?: string; dataJson?: unknown }) => ({
       node: canvasNode<ShotNodeData>("shot_agent_1", input.type, input.title ?? "Untitled", input.dataJson as ShotNodeData),
@@ -235,6 +308,13 @@ function createCanvasServiceMock() {
       updatedNodes: [canvasNode<ShotNodeData>("shot_1", "shot", "Shot 1", { characterAssetIds: ["character_1"] })],
     })),
     deleteEdge: vi.fn(async () => ({ deleted: true, edgeId: "edge_1", deletedEdgeIds: ["edge_1"], updatedNodes: [] })),
+    createStoryboardMediaBoard: vi.fn(async () => ({
+      workspace: productionWorkspace(),
+      boardNode,
+      nodes: [boardNode],
+      edges: [],
+      focusNodeId: "board_1",
+    })),
   };
 }
 
@@ -447,6 +527,68 @@ describe("AgentsService", () => {
     expect(result.focusNodeId).toBe("shot_agent_1");
   });
 
+  it("creates storyboard boards through the production agent tool boundary", async () => {
+    const result = await service.createProductionAction("project_1", {
+      action: "create_storyboard_board",
+      title: "Agent Board",
+      itemIds: ["shot_1", "shot_1", " "],
+      columns: 3,
+    });
+
+    expect(prisma.generationJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        operation: "agent_canvas_action",
+        status: "running",
+        provider: "mock-llm",
+        model: "mock-storyboard",
+        inputJson: expect.objectContaining({
+          role: "production",
+          productionAction: "create_storyboard_board",
+          title: "Agent Board",
+          itemIds: ["shot_1"],
+          columns: 3,
+        }),
+      }),
+    });
+    expect(canvasService.createStoryboardMediaBoard).toHaveBeenCalledWith("project_1", {
+      itemIds: ["shot_1"],
+      title: "Agent Board",
+      columns: 3,
+    });
+    expect(prisma.canvasNode.update).toHaveBeenCalledWith({
+      where: { id: "board_1" },
+      data: {
+        dataJson: expect.objectContaining({
+          label: "Agent Board",
+          agentAction: expect.objectContaining({
+            jobId: "job_1",
+            actionKind: "create_storyboard_board",
+          }),
+        }),
+      },
+    });
+    expect(prisma.generationJob.update).toHaveBeenCalledWith({
+      where: { id: "job_1" },
+      data: expect.objectContaining({
+        status: "succeeded",
+        outputJson: expect.objectContaining({
+          actionKind: "create_storyboard_board",
+          summary: expect.stringContaining("Agent Board"),
+          createdNodes: [{ nodeId: "board_1", type: "scene_frame", title: "Agent Board" }],
+        }),
+        targetNodeId: "board_1",
+      }),
+    });
+    expect(result.focusNodeId).toBe("board_1");
+    expect(result.workspace.storyboardItems).toHaveLength(1);
+    expect(result.nodes[0]?.dataJson).toMatchObject({
+      agentAction: {
+        jobId: "job_1",
+        actionKind: "create_storyboard_board",
+      },
+    });
+  });
+
   it("blocks agent canvas actions before job creation when deployment config is invalid", async () => {
     prisma.agentDeployment.findUnique.mockResolvedValue(
       agentDeployment({
@@ -476,6 +618,28 @@ describe("AgentsService", () => {
 
     expect(prisma.generationJob.create).not.toHaveBeenCalled();
     expect(canvasService.createNode).not.toHaveBeenCalled();
+  });
+
+  it("records failed production agent jobs when the controlled canvas tool fails", async () => {
+    canvasService.createStoryboardMediaBoard.mockRejectedValueOnce(
+      new BadRequestException("Storyboard board requires at least one item"),
+    );
+
+    await expect(
+      service.createProductionAction("project_1", {
+        action: "create_storyboard_board",
+        title: "Empty Board",
+      }),
+    ).rejects.toThrow("Storyboard board requires at least one item");
+
+    expect(prisma.generationJob.update).toHaveBeenCalledWith({
+      where: { id: "job_1" },
+      data: expect.objectContaining({
+        status: "failed",
+        errorMessage: "Storyboard board requires at least one item",
+      }),
+    });
+    expect(prisma.canvasNode.update).not.toHaveBeenCalled();
   });
 
   it("creates, recalls, disables, and clears visible project memories", async () => {

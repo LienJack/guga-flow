@@ -12,6 +12,7 @@ import {
   clearAgentMemories,
   createAgentCanvasAction,
   createAgentMemory,
+  createProductionAgentAction,
   disableAgentMemory,
   listAgentMemories,
   undoAgentCanvasAction,
@@ -36,6 +37,10 @@ export function AgentCanvasActionsPanel({
   selection,
 }: AgentCanvasActionsPanelProps) {
   const selectedNode = useMemo(() => selectedCanvasNode(nodes, selection), [nodes, selection]);
+  const storyboardItemIds = useMemo(() => selectedStoryboardItemIds(nodes, selection), [
+    nodes,
+    selection,
+  ]);
   const multiNodeIds = selection.kind === "multi" ? selection.nodeIds : [];
   const suggestedSourceNodeId = multiNodeIds[0] ?? "";
   const suggestedTargetNodeId = selectedNode?.id ?? multiNodeIds[1] ?? "";
@@ -126,6 +131,25 @@ export function AgentCanvasActionsPanel({
       await onUndoComplete(result);
     } catch (undoError) {
       setError(undoError instanceof Error ? undoError.message : "Undo failed");
+    } finally {
+      setStatus("idle");
+    }
+  }
+
+  async function createStoryboardBoard() {
+    setStatus("submitting");
+    setError(null);
+    try {
+      const result = await createProductionAgentAction(projectId, {
+        action: "create_storyboard_board",
+        title: selectedNode?.title ? `${selectedNode.title} Board` : "Agent Storyboard Board",
+        ...(storyboardItemIds.length > 0 ? { itemIds: storyboardItemIds } : {}),
+        columns: 3,
+      });
+      setLastResult(result);
+      await onActionComplete(result);
+    } catch (boardError) {
+      setError(boardError instanceof Error ? boardError.message : "Production agent action failed");
     } finally {
       setStatus("idle");
     }
@@ -223,10 +247,22 @@ export function AgentCanvasActionsPanel({
             />
           </label>
         </div>
-        <button className="primary-action compact" type="submit" disabled={isBusy}>
-          <Send size={14} aria-hidden="true" />
-          {status === "submitting" ? "Running" : "Run"}
-        </button>
+        <div className="agent-context-grid">
+          <button className="primary-action compact" type="submit" disabled={isBusy}>
+            <Send size={14} aria-hidden="true" />
+            {status === "submitting" ? "Running" : "Run"}
+          </button>
+          <button
+            className="ghost-action compact"
+            type="button"
+            title="Create storyboard board"
+            disabled={isBusy}
+            onClick={() => void createStoryboardBoard()}
+          >
+            <Plus size={14} aria-hidden="true" />
+            Board
+          </button>
+        </div>
       </form>
 
       {selectedNode ? (
@@ -336,6 +372,22 @@ function selectedCanvasNode(
   return selection.kind === "business-node"
     ? nodes.find((node) => node.id === selection.nodeId)
     : undefined;
+}
+
+function selectedStoryboardItemIds(
+  nodes: readonly CanvasNodeRecord[],
+  selection: CanvasSelectionState,
+): string[] {
+  const selectedIds =
+    selection.kind === "multi"
+      ? selection.nodeIds
+      : selection.kind === "business-node"
+        ? [selection.nodeId]
+        : [];
+  const selectedIdSet = new Set(selectedIds);
+  return nodes
+    .filter((node) => node.type === "shot" && selectedIdSet.has(node.id))
+    .map((node) => node.id);
 }
 
 function artifactSummary(output: AgentCanvasActionJobOutput): string {

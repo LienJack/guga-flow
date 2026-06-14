@@ -6,6 +6,7 @@ import {
   ClearAgentMemoriesDto,
   CreateAgentCanvasActionDto,
   CreateAgentMemoryDto,
+  CreateProductionAgentActionDto,
   RecallAgentMemoriesDto,
   ResolveAgentRoleDto,
   UpdateAgentDeploymentDto,
@@ -22,6 +23,14 @@ export class AgentsController {
     @Body() body: CreateAgentCanvasActionDto,
   ) {
     return this.agentsService.createCanvasAction(projectId, body);
+  }
+
+  @Post("production-actions")
+  createProductionAction(
+    @Param("projectId") projectId: string,
+    @Body() body: CreateProductionAgentActionDto,
+  ) {
+    return this.agentsService.createProductionAction(projectId, body);
   }
 
   @Post("canvas-actions/:jobId/undo")

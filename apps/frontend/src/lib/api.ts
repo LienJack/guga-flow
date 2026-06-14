@@ -19,6 +19,8 @@ import type {
   CreateBatchShotsToImagesJobResult,
   CreateAgentCanvasActionInput,
   CreateAgentCanvasActionResult,
+  CreateProductionAgentActionInput,
+  CreateProductionAgentActionResult,
   CreateAgentMemoryInput,
   CreateCreativeStoryboardInput,
   CreateCreativeStoryboardResult,
@@ -933,6 +935,19 @@ export function createStoryboardMediaBoard(
 ): Promise<CreateStoryboardMediaBoardResult> {
   return requestJson<CreateStoryboardMediaBoardResult>(
     `/projects/${projectId}/canvas/production-workspace/storyboard-board`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function createProductionAgentAction(
+  projectId: string,
+  input: CreateProductionAgentActionInput,
+): Promise<CreateProductionAgentActionResult> {
+  return requestJson<CreateProductionAgentActionResult>(
+    `/projects/${projectId}/agents/production-actions`,
     {
       method: "POST",
       body: JSON.stringify(input),

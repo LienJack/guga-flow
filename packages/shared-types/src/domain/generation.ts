@@ -11,6 +11,7 @@ import type { AgentDeploymentRole } from "./agent";
 import type { AssetDerivativeMetadata, AssetMediaInfo } from "./assets";
 import type { PromptDebugPart, PromptMissingContext, ShotPromptSourceNodeIds } from "./prompt-composer";
 import { PROJECT_ASPECT_RATIOS, type ProjectAspectRatio } from "./project";
+import type { ProductionWorkspaceProjection } from "./production-workspace";
 
 export const GENERATION_JOB_STATUSES = [
   "queued",
@@ -1431,8 +1432,12 @@ export const AGENT_CANVAS_ACTION_KINDS = [
   "create_node",
   "update_node",
   "create_edge",
+  "create_storyboard_board",
 ] as const;
 export type AgentCanvasActionKind = (typeof AGENT_CANVAS_ACTION_KINDS)[number];
+
+export const PRODUCTION_AGENT_ACTION_KINDS = ["create_storyboard_board"] as const;
+export type ProductionAgentActionKind = (typeof PRODUCTION_AGENT_ACTION_KINDS)[number];
 
 export interface CreateAgentCanvasActionInput {
   message: string;
@@ -1450,6 +1455,10 @@ export interface AgentCanvasActionJobInput extends CreateAgentCanvasActionInput 
   role: AgentDeploymentRole;
   provider: string;
   model: string;
+  productionAction?: ProductionAgentActionKind;
+  title?: string;
+  itemIds?: string[];
+  columns?: number;
   memoryIds?: string[];
   memorySummary?: string;
   skillTemplateIds?: string[];
@@ -1506,6 +1515,15 @@ export interface AgentCanvasActionJobOutput {
   createdEdges?: AgentCanvasActionCreatedEdge[];
   completedAt: string;
   undo?: AgentCanvasActionUndoMetadata;
+}
+
+export interface CreateProductionAgentActionInput {
+  action: ProductionAgentActionKind;
+  role?: AgentDeploymentRole;
+  message?: string;
+  title?: string;
+  itemIds?: string[];
+  columns?: number;
 }
 
 export interface AssetAnalysisJobInput {
@@ -1698,6 +1716,10 @@ export interface CreateAgentCanvasActionResult {
   nodes: CanvasNodeRecord[];
   edges: CanvasEdgeRecord[];
   focusNodeId?: string;
+}
+
+export interface CreateProductionAgentActionResult extends CreateAgentCanvasActionResult {
+  workspace: ProductionWorkspaceProjection;
 }
 
 export interface UndoAgentCanvasActionResult {

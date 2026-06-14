@@ -46,6 +46,7 @@ import {
   PHASE_8_GENERATION_OPERATIONS,
   PHASE_3_CANVAS_NODE_TYPES,
   PRODUCTION_WORKSPACE_ITEM_TYPES,
+  PRODUCTION_AGENT_ACTION_KINDS,
   PROVIDER_CREDENTIAL_UPDATE_ACTIONS,
   PROVIDER_ERROR_CATEGORIES,
   PROVIDER_KINDS,
@@ -125,6 +126,8 @@ import {
   type CreateEditorExportInput,
   type CreateEditorExportResult,
   type CreateGenerationJobInput,
+  type CreateProductionAgentActionInput,
+  type CreateProductionAgentActionResult,
   type CreateCanvasNodeInput,
   type CreateNovelDocumentInput,
   type DeleteCanvasEdgeResult,
@@ -410,7 +413,12 @@ describe("shared domain constants", () => {
     expect(GENERATION_OPERATIONS).toContain("novel_to_storyboard");
     expect(GENERATION_OPERATIONS).toContain("editor_export");
     expect(GENERATION_OPERATIONS).toContain("agent_canvas_action");
-    expect(AGENT_CANVAS_ACTION_KINDS).toEqual(["create_node", "update_node", "create_edge"]);
+    expect(AGENT_CANVAS_ACTION_KINDS).toEqual([
+      "create_node",
+      "update_node",
+      "create_edge",
+      "create_storyboard_board",
+    ]);
     expect(AGENT_DEPLOYMENT_MODES).toEqual(["simple", "advanced"]);
     expect(AGENT_DEPLOYMENT_ROLES).toEqual([
       "script",
@@ -1513,11 +1521,45 @@ describe("shared domain constants", () => {
       deletedNodeIds: [createdNode.id],
       deletedEdgeIds: [],
     };
+    const productionInput: CreateProductionAgentActionInput = {
+      action: "create_storyboard_board",
+      title: "Agent Storyboard Board",
+      itemIds: ["shot_agent_1"],
+      columns: 3,
+    };
+    const productionOutput: AgentCanvasActionJobOutput = {
+      ...jobOutput,
+      actionKind: "create_storyboard_board",
+      summary: "Created storyboard board Agent Storyboard Board",
+      createdNodes: [{ nodeId: "board_1", type: "scene_frame", title: productionInput.title }],
+    };
+    const productionResult: CreateProductionAgentActionResult = {
+      ...result,
+      job: {
+        ...result.job,
+        inputJson: {
+          ...jobInput,
+          role: "production",
+          message: "create storyboard board",
+          productionAction: productionInput.action,
+          title: productionInput.title,
+          itemIds: productionInput.itemIds,
+          columns: productionInput.columns,
+        },
+        outputJson: productionOutput,
+      },
+      workspace: {} as CreateProductionAgentActionResult["workspace"],
+    };
 
     expect(result.job.inputJson.role).toBe("universal");
     expect(result.job.inputJson.provider).toBe("mock-llm");
     expect(result.job.outputJson?.createdNodes?.[0]?.nodeId).toBe("shot_agent_1");
     expect(undoResult.job.outputJson?.undo?.restoredNodeIds).toEqual(["shot_previous"]);
+    expect(PRODUCTION_AGENT_ACTION_KINDS).toEqual(["create_storyboard_board"]);
+    expect(productionResult.job.inputJson.role).toBe("production");
+    expect(productionResult.job.inputJson.productionAction).toBe("create_storyboard_board");
+    expect(productionResult.job.inputJson.itemIds).toEqual(["shot_agent_1"]);
+    expect(productionResult.job.outputJson?.actionKind).toBe("create_storyboard_board");
   });
 
   it("exports TF-12 visible agent memory contracts", () => {
