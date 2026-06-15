@@ -117,6 +117,11 @@ export function SettingsCenter({
   const exportHref = exportJson
     ? `data:application/json;charset=utf-8,${encodeURIComponent(exportJson)}`
     : undefined;
+  const readyModuleCount = summary?.modules.filter((module) => module.status === "ready").length ?? 0;
+  const attentionModuleCount = summary ? summary.modules.length - readyModuleCount : 0;
+  const providerConfigCount =
+    (summary?.resourceCounts.providerConfigs ?? 0) + (summary?.resourceCounts.programmableProviders ?? 0);
+  const projectLabel = project?.title ?? summary?.project.title;
 
   async function handleExport() {
     setImportState({});
@@ -150,11 +155,21 @@ export function SettingsCenter({
   return (
     <div className="settings-center">
       <header className="settings-center-header">
-        <div>
+        <div className="settings-heading-block">
           <p className="panel-kicker">{t("settings.kicker")}</p>
           <h1>{t("settings.title")}</h1>
+          {projectLabel ? <p className="settings-center-subtitle">{projectLabel}</p> : null}
         </div>
-        <span>{projectId}</span>
+        <div className="settings-header-meta">
+          <span className="settings-project-chip">{projectId}</span>
+          {summary ? (
+            <span className={`settings-readiness ${attentionModuleCount ? "attention" : "ready"}`}>
+              {attentionModuleCount
+                ? `${attentionModuleCount} ${t("settings.status.partial")}`
+                : `${readyModuleCount} ${t("settings.status.ready")}`}
+            </span>
+          ) : null}
+        </div>
       </header>
 
       {loadError ? <p className="form-error">{loadError}</p> : null}
@@ -162,9 +177,40 @@ export function SettingsCenter({
 
       {summary ? (
         <>
+          <section className="settings-operations-strip" aria-label={t("settings.summary")}>
+            <div>
+              <span>{t("settings.providers")}</span>
+              <strong>{providerConfigCount}</strong>
+              <small>{t("settings.status.ready")}</small>
+            </div>
+            <div>
+              <span>{t("settings.prompts")}</span>
+              <strong>{summary.resourceCounts.skillTemplates}</strong>
+              <small>{t("settings.status.ready")}</small>
+            </div>
+            <div>
+              <span>{t("settings.canvasNodes")}</span>
+              <strong>{summary.resourceCounts.canvasNodes}</strong>
+              <small>{summary.project.defaultAspectRatio}</small>
+            </div>
+            <div>
+              <span>{t("settings.uploadStorage")}</span>
+              <strong>
+                {summary.fileSummary.uploadStorageConfigured
+                  ? t("settings.configured")
+                  : t("settings.missing")}
+              </strong>
+              <small>{summary.fileSummary.totalAssets}</small>
+            </div>
+          </section>
+
           <nav className="settings-module-nav" aria-label={t("settings.modules")}>
             {summary.modules.map((module) => (
-              <a href={`#settings-${module.module}`} key={module.module}>
+              <a
+                className={`settings-module-link ${module.status}`}
+                href={`#settings-${module.module}`}
+                key={module.module}
+              >
                 <strong>{settingsModuleLabel(module.module, t)}</strong>
                 <span>{settingsStatusLabel(module.status, t)}</span>
               </a>
@@ -173,7 +219,7 @@ export function SettingsCenter({
 
           <section className="settings-summary-grid" aria-label={t("settings.summary")}>
             {summary.modules.map((module) => (
-              <div className="settings-summary-card" key={module.module}>
+              <div className={`settings-summary-card ${module.status}`} key={module.module}>
                 <strong>{settingsModuleLabel(module.module, t)}</strong>
                 <span>{settingsModuleSummary(module, t)}</span>
                 {typeof module.itemCount === "number" ? <small>{module.itemCount}</small> : null}

@@ -36,7 +36,7 @@ export class AuthService {
     const existing = (await this.prisma.user.findUnique({
       where: { id: DEFAULT_ADMIN_USER_ID },
     })) as UserModel | null;
-    const passwordHash = existing?.passwordHash ?? hashPassword(config.defaultAdminPassword);
+    const passwordHash = hashPassword(config.defaultAdminPassword);
 
     if (existing) {
       return (await this.prisma.user.update({

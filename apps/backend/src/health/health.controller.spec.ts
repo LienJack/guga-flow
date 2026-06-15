@@ -1,3 +1,4 @@
+import os from "node:os";
 import { describe, expect, it } from "vitest";
 
 import { readAppConfig } from "../config/app-config";
@@ -71,6 +72,18 @@ describe("HealthController", () => {
 
   it("fails fast for invalid numeric configuration", () => {
     expect(() => readAppConfig({ PORT: "not-a-port" })).toThrow("PORT must be a positive integer");
+  });
+
+  it("allows local network frontend origins by default in development", () => {
+    const config = readAppConfig({});
+    const localIpv4 = Object.values(os.networkInterfaces())
+      .flatMap((entries) => entries ?? [])
+      .find((entry) => entry.family === "IPv4" && !entry.internal)?.address;
+
+    expect(config.corsAllowedOrigins).toContain("http://localhost:3001");
+    if (localIpv4) {
+      expect(config.corsAllowedOrigins).toContain(`http://${localIpv4}:3001`);
+    }
   });
 
   it("keeps AI debug disabled in production even when requested", () => {

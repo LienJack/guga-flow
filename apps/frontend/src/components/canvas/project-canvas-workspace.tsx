@@ -14,7 +14,7 @@ import type {
   TaskCenterResult,
   UndoAgentCanvasActionResult,
 } from "@guga-flow/shared-types";
-import { Plus } from "lucide-react";
+import { Bot, Boxes, Clapperboard, Plus } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -370,44 +370,26 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
       queueSummary={queueSummary}
       saveStateSlot={<CanvasSaveStatusBadge status={saveStatus} error={saveError} />}
       sidebarSlot={
-        <>
-          <AgentCanvasActionsPanel
-            nodes={canvasNodes}
-            projectId={projectId}
-            selection={selection}
-            onActionComplete={handleAgentActionComplete}
-            onUndoComplete={handleAgentUndoComplete}
-          />
-          <TaskCenterPanel
-            taskCenter={taskCenter}
-            onCancelTask={handleCancelTask}
-            onRetryTask={handleRetryTask}
-            onSelectNode={handleSelectCanvasNode}
-          />
-          <ProjectPackagePanel projectId={projectId} />
-          <CanvasProductivityPanel
-            nodes={canvasNodes}
-            selectedNodeId={selection.kind === "business-node" ? selection.nodeId : undefined}
-            searchFocusRequestKey={searchFocusRequestKey}
-            onFitToContent={handleFitToContent}
-            onSelectNode={handleSelectCanvasNode}
-          />
-          <ProductionWorkspacePanel
-            nodes={canvasNodes}
-            projectId={projectId}
-            selectedNodeId={selection.kind === "business-node" ? selection.nodeId : undefined}
-            onGenerationQueued={handleGenerationChanged}
-            onItemUpdated={handleNodeUpdated}
-            onWorkspaceMutation={handleProductionWorkspaceMutation}
-            onSelectNode={handleSelectCanvasNode}
-          />
-          <NovelStoryboardPanel
-            canvasNodes={canvasNodes}
-            projectId={projectId}
-            selectedNodeId={selection.kind === "business-node" ? selection.nodeId : undefined}
-            onStoryboardImported={handleStoryboardImported}
-          />
-        </>
+        <CanvasSidebarTabs
+          canvasNodes={canvasNodes}
+          generationQueue={{
+            taskCenter,
+            onCancelTask: handleCancelTask,
+            onRetryTask: handleRetryTask,
+          }}
+          projectId={projectId}
+          searchFocusRequestKey={searchFocusRequestKey}
+          selectedNodeId={selection.kind === "business-node" ? selection.nodeId : undefined}
+          selection={selection}
+          onActionComplete={handleAgentActionComplete}
+          onFitToContent={handleFitToContent}
+          onGenerationQueued={handleGenerationChanged}
+          onItemUpdated={handleNodeUpdated}
+          onProductionWorkspaceMutation={handleProductionWorkspaceMutation}
+          onSelectNode={handleSelectCanvasNode}
+          onStoryboardImported={handleStoryboardImported}
+          onUndoComplete={handleAgentUndoComplete}
+        />
       }
       canvasSlot={
         <>
@@ -451,6 +433,130 @@ export function ProjectCanvasWorkspace({ projectId }: ProjectCanvasWorkspaceProp
   );
 }
 
+type CanvasSidebarTab = "agent" | "production" | "library";
+
+function CanvasSidebarTabs({
+  canvasNodes,
+  generationQueue,
+  onActionComplete,
+  onFitToContent,
+  onGenerationQueued,
+  onItemUpdated,
+  onProductionWorkspaceMutation,
+  onSelectNode,
+  onStoryboardImported,
+  onUndoComplete,
+  projectId,
+  searchFocusRequestKey,
+  selectedNodeId,
+  selection,
+}: {
+  canvasNodes: CanvasNodeRecord[];
+  generationQueue: {
+    taskCenter: TaskCenterResult | null;
+    onCancelTask(taskId: string): Promise<void> | void;
+    onRetryTask(taskId: string): Promise<void> | void;
+  };
+  projectId: string;
+  searchFocusRequestKey?: number;
+  selectedNodeId?: string;
+  selection: CanvasSelectionState;
+  onActionComplete(result: CreateAgentCanvasActionResult): Promise<void> | void;
+  onFitToContent(): void;
+  onGenerationQueued(summary?: GenerationQueueSummary): void;
+  onItemUpdated(node: CanvasNodeRecord): void;
+  onProductionWorkspaceMutation(result: ProductionWorkspaceMutationResult): void;
+  onSelectNode(nodeId: string): void;
+  onStoryboardImported(result: ImportStoryboardToCanvasResult): void;
+  onUndoComplete(result: UndoAgentCanvasActionResult): Promise<void> | void;
+}) {
+  const [activeTab, setActiveTab] = useState<CanvasSidebarTab>("agent");
+
+  return (
+    <section className="canvas-sidebar-tabs" aria-label="Workspace panels">
+      <div className="sidebar-tab-list" role="tablist" aria-label="Workspace panel groups">
+        {SIDEBAR_TABS.map((tab) => {
+          const Icon = tab.icon;
+
+          return (
+            <button
+              className={activeTab === tab.id ? "active" : ""}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <span className="sidebar-tab-mark" aria-hidden="true">
+                <Icon size={14} />
+              </span>
+              <span className="sidebar-tab-copy">
+                <strong>{tab.label}</strong>
+                <small>{tab.detail}</small>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="sidebar-tab-panel">
+        {activeTab === "agent" ? (
+          <AgentCanvasActionsPanel
+            nodes={canvasNodes}
+            projectId={projectId}
+            selection={selection}
+            onActionComplete={onActionComplete}
+            onUndoComplete={onUndoComplete}
+          />
+        ) : null}
+        {activeTab === "production" ? (
+          <>
+            <ProductionWorkspacePanel
+              nodes={canvasNodes}
+              projectId={projectId}
+              selectedNodeId={selectedNodeId}
+              onGenerationQueued={onGenerationQueued}
+              onItemUpdated={onItemUpdated}
+              onWorkspaceMutation={onProductionWorkspaceMutation}
+              onSelectNode={onSelectNode}
+            />
+            <NovelStoryboardPanel
+              canvasNodes={canvasNodes}
+              projectId={projectId}
+              selectedNodeId={selectedNodeId}
+              onStoryboardImported={onStoryboardImported}
+            />
+          </>
+        ) : null}
+        {activeTab === "library" ? (
+          <>
+            <TaskCenterPanel
+              taskCenter={generationQueue.taskCenter}
+              onCancelTask={generationQueue.onCancelTask}
+              onRetryTask={generationQueue.onRetryTask}
+              onSelectNode={onSelectNode}
+            />
+            <ProjectPackagePanel projectId={projectId} />
+            <CanvasProductivityPanel
+              nodes={canvasNodes}
+              selectedNodeId={selectedNodeId}
+              searchFocusRequestKey={searchFocusRequestKey}
+              onFitToContent={onFitToContent}
+              onSelectNode={onSelectNode}
+            />
+          </>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+const SIDEBAR_TABS: Array<{ id: CanvasSidebarTab; label: string; detail: string; icon: typeof Bot }> = [
+  { id: "agent", label: "Agent", detail: "Command", icon: Bot },
+  { id: "production", label: "Production", detail: "Build", icon: Clapperboard },
+  { id: "library", label: "Library", detail: "Assets", icon: Boxes },
+];
+
 function CanvasPageTabs({
   activeCanvasDocumentId,
   pages,
@@ -463,19 +569,7 @@ function CanvasPageTabs({
   onSelectPage(canvasDocumentId: string): void;
 }) {
   return (
-    <nav
-      aria-label="Canvas pages"
-      style={{
-        position: "absolute",
-        top: 12,
-        left: 12,
-        zIndex: 25,
-        display: "flex",
-        maxWidth: "min(72vw, 760px)",
-        gap: 8,
-        overflowX: "auto",
-      }}
-    >
+    <nav className="canvas-page-tabs" aria-label="Canvas pages">
       {pages.map((page, index) => (
         <button
           className={`tool-button ${page.id === activeCanvasDocumentId ? "active" : ""}`}

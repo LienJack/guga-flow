@@ -75,6 +75,12 @@ type CanvasFocusScheduler = (callback: () => void) => void;
 type CanvasSelectionFocusEditor = Pick<Editor, "getContainer" | "zoomToSelectionIfOffscreen">;
 type CanvasContentFocusEditor = Pick<Editor, "getCurrentPageShapeIds" | "zoomToFit">;
 type CanvasFocusRestoreScheduler = (callback: () => void) => void;
+type CreateMenuState = {
+  x: number;
+  y: number;
+  pageX: number;
+  pageY: number;
+};
 
 interface CanvasEditorProps {
   projectId: string;
@@ -254,6 +260,7 @@ export function CanvasEditor({
   const [nodeActionError, setNodeActionError] = useState<string | null>(null);
   const [creatingNodeType, setCreatingNodeType] = useState<Phase3CanvasNodeType | null>(null);
   const [sourceDropBusy, setSourceDropBusy] = useState(false);
+  const [createMenu, setCreateMenu] = useState<CreateMenuState | null>(null);
   const [canvasPreferences] = useState(() => loadCanvasPreferences());
   const [selectionState, setSelectionState] =
     useState<CanvasSelectionState>(EMPTY_CANVAS_SELECTION);
@@ -825,7 +832,7 @@ export function CanvasEditor({
   }, []);
 
   const handleCreateBusinessNode = useCallback(
-    async (type: Phase3CanvasNodeType) => {
+    async (type: Phase3CanvasNodeType, position?: Pick<CreateMenuState, "pageX" | "pageY">) => {
       const editor = editorRef.current;
       if (!editor) {
         return;
@@ -838,19 +845,22 @@ export function CanvasEditor({
           type,
           Date.now().toString(36),
           createNodeSequenceRef.current.toString(36),
-          Math.random().toString(36).slice(2, 8),
-        ].join("-"),
+        Math.random().toString(36).slice(2, 8),
+      ].join("-"),
       );
       const offset = Math.min(nodesRef.current.length, 12) * 28;
+      const x = position?.pageX ?? 96 + offset;
+      const y = position?.pageY ?? 96 + offset;
       const input = createBusinessCanvasNodeInput(type, {
         tldrawShapeId: shapeId,
-        x: 96 + offset,
-        y: 96 + offset,
+        x,
+        y,
         width: canvasPreferences.defaultNodeWidth,
         height: canvasPreferences.defaultNodeHeight,
         zIndex: nodesRef.current.length,
       });
 
+      setCreateMenu(null);
       setCreatingNodeType(type);
       setNodeActionError(null);
       try {
@@ -874,6 +884,49 @@ export function CanvasEditor({
     },
     [canvasDocumentId, canvasPreferences, emitSelection, projectId, publishCanvasNodes],
   );
+
+  const handleCanvasContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const editor = editorRef.current;
+    if (!editor) {
+      return;
+    }
+
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const menuWidth = 240;
+    const menuHeight = 420;
+    const x = Math.max(10, Math.min(event.clientX - rect.left, rect.width - menuWidth - 10));
+    const y = Math.max(10, Math.min(event.clientY - rect.top, rect.height - menuHeight - 10));
+    const pagePoint = editor.screenToPage({ x: event.clientX, y: event.clientY });
+    setCreateMenu({ x, y, pageX: pagePoint.x, pageY: pagePoint.y });
+  }, []);
+
+  useEffect(() => {
+    if (!createMenu) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".business-node-toolbar")) {
+        return;
+      }
+      setCreateMenu(null);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setCreateMenu(null);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [createMenu]);
 
   const handleSourceMediaDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
@@ -1034,14 +1087,28 @@ export function CanvasEditor({
   return (
     <div
       className="canvas-editor-shell"
+      onContextMenuCapture={handleCanvasContextMenu}
       onDragOver={handleSourceMediaDragOver}
       onDrop={(event) => void handleSourceMediaDrop(event)}
     >
       <Tldraw onMount={handleMount} shapeUtils={businessNodeShapeUtils} autoFocus />
-      <BusinessNodeToolbar
-        busy={creatingNodeType !== null || sourceDropBusy}
-        onCreate={(type) => void handleCreateBusinessNode(type)}
-      />
+      {createMenu ? (
+        <BusinessNodeToolbar
+          busy={creatingNodeType !== null || sourceDropBusy}
+          style={
+            {
+              "--create-menu-x": `${createMenu.x}px`,
+              "--create-menu-y": `${createMenu.y}px`,
+            } as React.CSSProperties
+          }
+          onCreate={(type) =>
+            void handleCreateBusinessNode(type, {
+              pageX: createMenu.pageX,
+              pageY: createMenu.pageY,
+            })
+          }
+        />
+      ) : null}
       <SemanticBindToolbar
         active={semanticBindSourceId !== null}
         busy={bindingBusy}

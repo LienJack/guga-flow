@@ -29,15 +29,24 @@ import {
 const defaultProjects: ProjectListItem[] = [];
 
 interface ProjectDashboardProps {
+  initialDraft?: ProjectDashboardDraft;
   initialProjects?: ProjectListItem[];
 }
 
-export function ProjectDashboard({ initialProjects = defaultProjects }: ProjectDashboardProps) {
+interface ProjectDashboardDraft {
+  title?: string;
+  description?: string;
+  defaultAspectRatio?: ProjectAspectRatio;
+}
+
+export function ProjectDashboard({ initialDraft, initialProjects = defaultProjects }: ProjectDashboardProps) {
   const router = useRouter();
   const [projects, setProjects] = useState<ProjectListItem[]>(initialProjects);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [defaultAspectRatio, setDefaultAspectRatio] = useState<ProjectAspectRatio>("9:16");
+  const [title, setTitle] = useState(initialDraft?.title ?? "");
+  const [description, setDescription] = useState(initialDraft?.description ?? "");
+  const [defaultAspectRatio, setDefaultAspectRatio] = useState<ProjectAspectRatio>(
+    initialDraft?.defaultAspectRatio ?? "9:16",
+  );
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [pendingDeleteProjectId, setPendingDeleteProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

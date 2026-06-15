@@ -108,6 +108,61 @@ export function CanvasInspector({
       ? (selectedNode as CanvasNodeRecord<ShotNodeData>)
       : undefined;
   const hasActiveSelection = selection.kind !== "empty";
+  const selectedNodeAdvancedPanels = selectedNode ? (
+    <details className="inspector-details">
+      <summary>More actions</summary>
+      <div className="inspector-details-body">
+        <NodeTracePanel node={selectedNode} nodes={nodes} />
+        <CanvasProductivityActions
+          edges={edges}
+          node={selectedNode}
+          nodes={nodes}
+          projectId={projectId}
+          onGraphUpdated={onGraphUpdated}
+          onNodeUpdated={onNodeUpdated}
+          onSelectionChange={onSelectionChange}
+        />
+        {selectedShotNode ? (
+          <ShotGenerationSettingsPanel
+            node={selectedShotNode}
+            projectGenerationSettings={project?.generationSettings}
+            projectId={projectId}
+            onNodeUpdated={onNodeUpdated}
+          />
+        ) : null}
+        <NodeReferenceAssets projectId={projectId} node={selectedNode} onNodeUpdated={onNodeUpdated} />
+        <NodeAudioAssets projectId={projectId} node={selectedNode} onNodeUpdated={onNodeUpdated} />
+        <GenerationActions
+          generationJobs={generationJobs}
+          projectId={projectId}
+          node={selectedNode}
+          onGenerationChanged={onGenerationChanged}
+        />
+        <ShotPromptPreview projectId={projectId} node={selectedNode} refreshKey={promptRefreshKey} />
+      </div>
+    </details>
+  ) : null;
+  const multiSelectionActions =
+    selection.kind === "multi" ? (
+      <details className="inspector-details">
+        <summary>Batch actions</summary>
+        <div className="inspector-details-body">
+          <GenerationBatchActions
+            generationJobs={generationJobs}
+            imageNodes={selectedBatchImageNodes}
+            projectId={projectId}
+            shotNodes={selectedBatchShotNodes}
+            onGenerationChanged={onGenerationChanged}
+          />
+          <EditorExportActions
+            generationJobs={generationJobs}
+            projectId={projectId}
+            videoNodes={selectedExportVideoNodes}
+            onGenerationChanged={onGenerationChanged}
+          />
+        </div>
+      </details>
+    ) : null;
   const selectionDetails = (
     <section className="inspector-section" aria-label="Selection details">
       {selection.kind === "empty" ? (
@@ -157,74 +212,22 @@ export function CanvasInspector({
           onNodeUpdated={onNodeUpdated}
         />
       ) : null}
-      {selectedNode ? <NodeTracePanel node={selectedNode} nodes={nodes} /> : null}
-      {selectedNode ? (
-        <CanvasProductivityActions
-          edges={edges}
-          node={selectedNode}
-          nodes={nodes}
-          projectId={projectId}
-          onGraphUpdated={onGraphUpdated}
-          onNodeUpdated={onNodeUpdated}
-          onSelectionChange={onSelectionChange}
-        />
-      ) : null}
-      {selectedShotNode ? (
-        <ShotGenerationSettingsPanel
-          node={selectedShotNode}
-          projectGenerationSettings={project?.generationSettings}
-          projectId={projectId}
-          onNodeUpdated={onNodeUpdated}
-        />
-      ) : null}
-      {selectedNode ? (
-        <NodeReferenceAssets
-          projectId={projectId}
-          node={selectedNode}
-          onNodeUpdated={onNodeUpdated}
-        />
-      ) : null}
-      {selectedNode ? (
-        <NodeAudioAssets projectId={projectId} node={selectedNode} onNodeUpdated={onNodeUpdated} />
-      ) : null}
-      {selectedNode ? (
-        <GenerationActions
-          generationJobs={generationJobs}
-          projectId={projectId}
-          node={selectedNode}
-          onGenerationChanged={onGenerationChanged}
-        />
-      ) : null}
-      {selection.kind === "multi" ? (
-        <GenerationBatchActions
-          generationJobs={generationJobs}
-          imageNodes={selectedBatchImageNodes}
-          projectId={projectId}
-          shotNodes={selectedBatchShotNodes}
-          onGenerationChanged={onGenerationChanged}
-        />
-      ) : null}
-      {selection.kind === "multi" ? (
-        <EditorExportActions
-          generationJobs={generationJobs}
-          projectId={projectId}
-          videoNodes={selectedExportVideoNodes}
-          onGenerationChanged={onGenerationChanged}
-        />
-      ) : null}
-      {selectedNode ? (
-        <ShotPromptPreview projectId={projectId} node={selectedNode} refreshKey={promptRefreshKey} />
-      ) : null}
+      {selectedNodeAdvancedPanels}
+      {multiSelectionActions}
     </section>
   );
 
   return (
     <div className="canvas-inspector">
-      {hasActiveSelection ? selectionDetails : null}
-      <ProjectGenerationSettingsPanel project={project} onProjectUpdated={onProjectUpdated} />
-      <GenerationQueueInspectorPanel generationJobs={generationJobs} />
-      {hasActiveSelection ? null : selectionDetails}
-      <AssetLibrary projectId={projectId} />
+      {selectionDetails}
+      <details className="inspector-details" open={!hasActiveSelection}>
+        <summary>Project context</summary>
+        <div className="inspector-details-body">
+          <ProjectGenerationSettingsPanel project={project} onProjectUpdated={onProjectUpdated} />
+          <GenerationQueueInspectorPanel generationJobs={generationJobs} />
+          <AssetLibrary projectId={projectId} />
+        </div>
+      </details>
     </div>
   );
 }

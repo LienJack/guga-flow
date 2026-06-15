@@ -9,7 +9,7 @@ import { clearAuthToken } from "../../lib/session";
 
 export function LoginPanel() {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@guga-flow.local");
+  const [email, setEmail] = useState("admin");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -70,10 +70,10 @@ export function LoginPanel() {
             <h1>Sign in</h1>
           </div>
           <label>
-            <span>Email</span>
+            <span>Account</span>
             <input
               name="email"
-              type="email"
+              type="text"
               autoComplete="username"
               value={email}
               onChange={(event) => setEmail(event.target.value)}

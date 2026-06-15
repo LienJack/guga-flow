@@ -8,7 +8,10 @@ import { NODE_STATUSES } from "@guga-flow/shared-types";
 import React, { FormEvent, useEffect, useState } from "react";
 
 import { getBusinessNodeDefinition, isPhase3CanvasNodeType } from "./business-node-data";
-import { getBusinessNodeFields } from "./business-node-inspector-sections";
+import {
+  type BusinessNodeFieldDefinition,
+  getBusinessNodeFields,
+} from "./business-node-inspector-sections";
 
 interface BusinessNodeFormProps {
   node: CanvasNodeRecord;
@@ -56,6 +59,8 @@ export function BusinessNodeForm({ node, onSave }: BusinessNodeFormProps) {
 
   const definition = getBusinessNodeDefinition(node.type);
   const fields = getBusinessNodeFields(node.type);
+  const primaryFields = fields.slice(0, 4);
+  const advancedFields = fields.slice(4);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -101,33 +106,17 @@ export function BusinessNodeForm({ node, onSave }: BusinessNodeFormProps) {
       </label>
 
       <div className="business-node-field-grid">
-        {fields.map((field) => {
-          const value = fieldValues[field.key] ?? "";
-          const commonProps = {
-            value: String(value),
-            onChange: (
-              event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-            ) => {
-              const nextValue =
-                field.inputType === "number" && event.target.value !== ""
-                  ? Number(event.target.value)
-                  : event.target.value;
-              setFieldValues((current) => ({ ...current, [field.key]: nextValue }));
-            },
-          };
-
-          return (
-            <label className="field-label" key={field.key}>
-              <span>{field.label}</span>
-              {field.multiline ? (
-                <textarea rows={field.key === "sourceText" ? 7 : 4} {...commonProps} />
-              ) : (
-                <input type={field.inputType ?? "text"} {...commonProps} />
-              )}
-            </label>
-          );
-        })}
+        {primaryFields.map((field) => renderField(field, fieldValues, setFieldValues))}
       </div>
+
+      {advancedFields.length ? (
+        <details className="business-node-more-fields">
+          <summary>More fields</summary>
+          <div className="business-node-field-grid">
+            {advancedFields.map((field) => renderField(field, fieldValues, setFieldValues))}
+          </div>
+        </details>
+      ) : null}
 
       {error ? <p className="form-error">{error}</p> : null}
       {saved ? <p className="form-success">Saved</p> : null}
@@ -136,6 +125,35 @@ export function BusinessNodeForm({ node, onSave }: BusinessNodeFormProps) {
         Save
       </button>
     </form>
+  );
+}
+
+function renderField(
+  field: BusinessNodeFieldDefinition,
+  fieldValues: Record<string, FieldValue>,
+  setFieldValues: React.Dispatch<React.SetStateAction<Record<string, FieldValue>>>,
+) {
+  const value = fieldValues[field.key] ?? "";
+  const commonProps = {
+    value: String(value),
+    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const nextValue =
+        field.inputType === "number" && event.target.value !== ""
+          ? Number(event.target.value)
+          : event.target.value;
+      setFieldValues((current) => ({ ...current, [field.key]: nextValue }));
+    },
+  };
+
+  return (
+    <label className="field-label" key={field.key}>
+      <span>{field.label}</span>
+      {field.multiline ? (
+        <textarea rows={field.key === "sourceText" ? 7 : 4} {...commonProps} />
+      ) : (
+        <input type={field.inputType ?? "text"} {...commonProps} />
+      )}
+    </label>
   );
 }
 

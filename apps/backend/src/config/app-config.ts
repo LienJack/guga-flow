@@ -1,3 +1,5 @@
+import os from "node:os";
+
 export interface AppConfig {
   nodeEnv: string;
   appVersion: string;
@@ -72,6 +74,16 @@ function readList(value: string | undefined, fallback: string[]): string[] {
     .filter(Boolean);
 }
 
+function defaultCorsAllowedOrigins(): string[] {
+  const localhostOrigins = ["http://localhost:3000", "http://localhost:3001"];
+  const networkOrigins = Object.values(os.networkInterfaces())
+    .flatMap((entries) => entries ?? [])
+    .filter((entry) => entry.family === "IPv4" && !entry.internal)
+    .flatMap((entry) => [`http://${entry.address}:3000`, `http://${entry.address}:3001`]);
+
+  return Array.from(new Set([...localhostOrigins, ...networkOrigins]));
+}
+
 export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const nodeEnv = env.NODE_ENV || "development";
   const aiDebugAvailable = nodeEnv !== "production";
@@ -95,10 +107,7 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     buildTime: env.BUILD_TIME || env.VERCEL_GIT_COMMIT_SHA_CREATED_AT || undefined,
     releaseFeedUrl: env.RELEASE_FEED_URL || undefined,
     port: readNumber("PORT", env.PORT, 3002),
-    corsAllowedOrigins: readList(env.CORS_ALLOWED_ORIGINS, [
-      "http://localhost:3000",
-      "http://localhost:3001",
-    ]),
+    corsAllowedOrigins: readList(env.CORS_ALLOWED_ORIGINS, defaultCorsAllowedOrigins()),
     databaseUrl: env.DATABASE_URL || DEFAULT_DATABASE_URL,
     redisUrl: env.REDIS_URL || "redis://localhost:6379",
     assetStorageDir: env.ASSET_STORAGE_DIR || "data/assets",
@@ -114,8 +123,8 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     workerApiToken: env.WORKER_API_TOKEN || undefined,
     sessionSecret: env.AUTH_SESSION_SECRET || env.SESSION_SECRET || "guga-flow-dev-session-secret",
     sessionTtlSeconds: readNumber("AUTH_SESSION_TTL_SECONDS", env.AUTH_SESSION_TTL_SECONDS, 60 * 60 * 24 * 7),
-    defaultAdminEmail: env.DEFAULT_ADMIN_EMAIL || "admin@guga-flow.local",
-    defaultAdminPassword: env.DEFAULT_ADMIN_PASSWORD || "guga-flow-dev",
+    defaultAdminEmail: env.DEFAULT_ADMIN_EMAIL || "admin",
+    defaultAdminPassword: env.DEFAULT_ADMIN_PASSWORD || "admin",
     aiDebugAvailable,
     aiDebugEnabled: aiDebugAvailable && env.AI_DEBUG_ENABLED === "true",
     realProviderKeysConfigured: {

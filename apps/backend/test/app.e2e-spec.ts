@@ -1111,7 +1111,7 @@ describe("project api e2e", () => {
 
     const loginResponse = await request(app.getHttpServer())
       .post("/api/v1/auth/login")
-      .send({ email: "admin@guga-flow.local", password: "guga-flow-dev" })
+      .send({ email: "admin", password: "admin" })
       .expect(201);
     authToken = loginResponse.body.token;
   });
@@ -1158,7 +1158,7 @@ describe("project api e2e", () => {
 
     expect(response.body).toMatchObject({
       authenticated: true,
-      user: { id: "default-user", email: "admin@guga-flow.local" },
+      user: { id: "default-user", email: "admin" },
     });
     expect(response.body.expiresAt).toEqual(expect.any(String));
   });

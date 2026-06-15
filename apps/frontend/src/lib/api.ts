@@ -179,13 +179,28 @@ export type ComposeShotPromptRequest = Pick<
   "globalStylePrompt" | "modelPromptSuffix"
 >;
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3002/api/v1").replace(
-  /\/$/,
-  "",
-);
+const CONFIGURED_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
+const DEFAULT_API_PORT = process.env.NEXT_PUBLIC_API_PORT ?? "3002";
+
+function defaultApiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    if (hostname && hostname !== "localhost" && hostname !== "127.0.0.1" && hostname !== "::1") {
+      const protocol = window.location.protocol || "http:";
+      return `${protocol}//${hostForUrl(hostname)}:${DEFAULT_API_PORT}/api/v1`;
+    }
+  }
+
+  return `http://localhost:${DEFAULT_API_PORT}/api/v1`;
+}
+
+function hostForUrl(hostname: string): string {
+  return hostname.includes(":") && !hostname.startsWith("[") ? `[${hostname}]` : hostname;
+}
 
 export function apiUrl(path: string): string {
-  return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+  const baseUrl = CONFIGURED_API_BASE_URL ?? defaultApiBaseUrl();
+  return `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
 export class ApiRequestError extends Error {

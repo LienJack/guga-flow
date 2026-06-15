@@ -59,4 +59,22 @@ describe("ProjectDashboard", () => {
     expect(html).toContain("No projects yet");
     expect(html).toContain("Create one to open the canvas workspace.");
   });
+
+  it("prefills the new project form from an initial draft", () => {
+    const html = renderToStaticMarkup(
+      <ProjectDashboard
+        initialProjects={[]}
+        initialDraft={{
+          title: "222",
+          description: "2222",
+          defaultAspectRatio: "9:16",
+        }}
+      />,
+    );
+
+    expect(html).toContain('name="title"');
+    expect(html).toContain('value="222"');
+    expect(html).toContain("2222");
+    expect(html).toContain('<option value="9:16" selected="">9:16</option>');
+  });
 });

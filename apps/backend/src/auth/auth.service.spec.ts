@@ -9,9 +9,9 @@ const now = new Date("2026-06-14T00:00:00.000Z");
 function user(overrides: Record<string, unknown> = {}) {
   return {
     id: DEFAULT_ADMIN_USER_ID,
-    email: "admin@guga-flow.local",
+    email: "admin",
     name: "Admin",
-    passwordHash: hashPassword("guga-flow-dev"),
+    passwordHash: hashPassword("admin"),
     lastLoginAt: null,
     createdAt: now,
     updatedAt: now,
@@ -50,8 +50,8 @@ describe("AuthService", () => {
 
   beforeEach(() => {
     vi.stubEnv("AUTH_SESSION_SECRET", "test-session-secret");
-    vi.stubEnv("DEFAULT_ADMIN_EMAIL", "admin@guga-flow.local");
-    vi.stubEnv("DEFAULT_ADMIN_PASSWORD", "guga-flow-dev");
+    vi.stubEnv("DEFAULT_ADMIN_EMAIL", "admin");
+    vi.stubEnv("DEFAULT_ADMIN_PASSWORD", "admin");
     prisma = createPrismaMock();
     service = new AuthService(prisma as unknown as PrismaService);
   });
@@ -71,13 +71,13 @@ describe("AuthService", () => {
 
   it("seeds the default admin and returns a signed session on login", async () => {
     const result = await service.login({
-      email: "ADMIN@guga-flow.local ",
-      password: "guga-flow-dev",
+      email: "ADMIN ",
+      password: "admin",
     });
 
     expect(result.user).toMatchObject({
       id: DEFAULT_ADMIN_USER_ID,
-      email: "admin@guga-flow.local",
+      email: "admin",
     });
     expect(result.token.split(".")).toHaveLength(3);
     expect(prisma.user.create).toHaveBeenCalled();
@@ -89,8 +89,8 @@ describe("AuthService", () => {
 
   it("reads the current session from a valid bearer token", async () => {
     const login = await service.login({
-      email: "admin@guga-flow.local",
-      password: "guga-flow-dev",
+      email: "admin",
+      password: "admin",
     });
 
     const session = await service.currentSession(`Bearer ${login.token}`);
@@ -104,7 +104,7 @@ describe("AuthService", () => {
     await service.ensureDefaultAdmin();
 
     await expect(
-      service.login({ email: "admin@guga-flow.local", password: "wrong" }),
+      service.login({ email: "admin", password: "wrong" }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     await expect(service.requireAuthorization("Bearer broken")).rejects.toBeInstanceOf(
       UnauthorizedException,

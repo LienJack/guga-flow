@@ -112,6 +112,7 @@ import {
   createWorkflowDefinition,
   createWorkflowVersion,
   activateWorkflowVersion,
+  apiUrl,
   login,
   logout,
 } from "./api";
@@ -123,20 +124,36 @@ describe("frontend api client", () => {
     vi.unstubAllGlobals();
   });
 
+  it("uses the current browser host for the default API base on LAN dev URLs", () => {
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: vi.fn(() => null),
+        removeItem: vi.fn(),
+        setItem: vi.fn(),
+      },
+      location: {
+        hostname: "192.168.5.11",
+        protocol: "http:",
+      },
+    });
+
+    expect(apiUrl("/projects")).toBe("http://192.168.5.11:3002/api/v1/projects");
+  });
+
   it("persists bearer sessions and attaches them to protected API calls", async () => {
     const fetchMock = vi.fn<typeof fetch>(async (input) => {
       const url = String(input);
       if (url.endsWith("/auth/login")) {
         return Response.json({
           token: "session_token",
-          user: { id: "default-user", email: "admin@guga-flow.local" },
+          user: { id: "default-user", email: "admin" },
           expiresAt: "2026-06-21T00:00:00.000Z",
         });
       }
       if (url.endsWith("/auth/session")) {
         return Response.json({
           authenticated: true,
-          user: { id: "default-user", email: "admin@guga-flow.local" },
+          user: { id: "default-user", email: "admin" },
           expiresAt: "2026-06-21T00:00:00.000Z",
         });
       }
@@ -147,7 +164,7 @@ describe("frontend api client", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await login({ email: "admin@guga-flow.local", password: "guga-flow-dev" });
+    await login({ email: "admin", password: "admin" });
     await getCurrentSession();
     await listProjects();
     await logout();

@@ -138,7 +138,7 @@ function createAuthMock() {
   return {
     ensureDefaultAdmin: vi.fn(async () => ({
       id: "default-user",
-      email: "admin@guga-flow.local",
+      email: "admin",
       name: "Admin",
       passwordHash: "hash",
     })),

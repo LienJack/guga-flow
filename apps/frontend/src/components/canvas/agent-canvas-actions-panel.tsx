@@ -95,6 +95,8 @@ export function AgentCanvasActionsPanel({
         (latestOutput.createdEdges?.length ?? 0) > 0 ||
         (latestOutput.updatedNodes?.length ?? 0) > 0),
   );
+  const agentActivityLabel = isBusy ? "Working" : canStopSession ? "Live" : "Ready";
+  const agentActivityClassName = `agent-live-pill${isBusy ? " busy" : canStopSession ? " live" : ""}`;
 
   useEffect(() => {
     setSourceNodeId(suggestedSourceNodeId);
@@ -346,11 +348,18 @@ export function AgentCanvasActionsPanel({
 
   return (
     <section className="agent-canvas-panel" aria-label="Agent canvas actions">
-      <div className="section-heading-row">
-        <h2 className="panel-title small">
-          <Bot size={15} aria-hidden="true" />
-          Agent
-        </h2>
+      <div className="section-heading-row agent-panel-heading">
+        <div>
+          <span className="agent-panel-kicker">Canvas operator</span>
+          <h2 className="panel-title small">
+            <Bot size={15} aria-hidden="true" />
+            Agent
+          </h2>
+        </div>
+        <span className={agentActivityClassName}>
+          <span className="agent-live-dot" aria-hidden="true" />
+          {agentActivityLabel}
+        </span>
         {canUndo ? (
           <button
             className="icon-action"
@@ -366,7 +375,8 @@ export function AgentCanvasActionsPanel({
 
       <form className="agent-canvas-form" onSubmit={submitAction}>
         <label className="field-label">
-          Message
+          <span className="field-label-text">Message</span>
+          <span className="field-hint">Describe the canvas operation in one direct command.</span>
           <textarea
             rows={3}
             value={message}
@@ -376,7 +386,7 @@ export function AgentCanvasActionsPanel({
         </label>
         <div className="agent-context-grid">
           <label className="field-label">
-            Source
+            <span className="field-label-text">Source</span>
             <input
               type="text"
               value={sourceNodeId}
@@ -385,7 +395,7 @@ export function AgentCanvasActionsPanel({
             />
           </label>
           <label className="field-label">
-            Target
+            <span className="field-label-text">Target</span>
             <input
               type="text"
               value={targetNodeId}
@@ -410,7 +420,7 @@ export function AgentCanvasActionsPanel({
             Board
           </button>
         </div>
-        <div className="agent-context-grid" role="group" aria-label="Agent stream role">
+        <div className="agent-context-grid agent-role-switch" role="group" aria-label="Agent stream role">
           <button
             className={streamRole === "script" ? "primary-action compact" : "ghost-action compact"}
             type="button"
@@ -479,7 +489,10 @@ export function AgentCanvasActionsPanel({
 
       <details className="agent-memory-panel" aria-label="Agent memory">
         <summary className="section-heading-row">
-          <span className="panel-title small">Memory</span>
+          <span className="agent-memory-summary-copy">
+            <span className="panel-title small">Memory</span>
+            <small>{memories.length ? "Project context loaded" : "No saved context"}</small>
+          </span>
           <span className="status-chip">{memories.length}</span>
         </summary>
         <div className="agent-memory-tools">

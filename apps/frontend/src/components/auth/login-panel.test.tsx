@@ -24,6 +24,8 @@ describe("LoginPanel", () => {
     expect(html).toContain("Sign in");
     expect(html).toContain('name="email"');
     expect(html).toContain('name="password"');
-    expect(html).toContain("admin@guga-flow.local");
+    expect(html).toContain("Account");
+    expect(html).toContain('type="text"');
+    expect(html).toContain("admin");
   });
 });

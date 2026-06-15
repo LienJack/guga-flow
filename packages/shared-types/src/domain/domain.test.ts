@@ -215,8 +215,8 @@ import {
 describe("shared domain constants", () => {
   it("exports auth session contracts for browser login", () => {
     const loginInput: LoginInput = {
-      email: "admin@guga-flow.local",
-      password: "guga-flow-dev",
+      email: "admin",
+      password: "admin",
     };
     const session: AuthSessionRecord = {
       token: "session-token",

@@ -27,6 +27,7 @@ import { getBusinessNodeDefinition } from "./business-node-data";
 
 interface BusinessNodeToolbarProps {
   busy?: boolean;
+  style?: React.CSSProperties;
   onCreate(type: Phase3CanvasNodeType): void;
 }
 
@@ -89,9 +90,9 @@ const TOOLBAR_NODE_GROUPS = TOOLBAR_FAMILY_ORDER.map((family) => ({
   ),
 })).filter((group) => group.types.length > 0);
 
-export function BusinessNodeToolbar({ busy = false, onCreate }: BusinessNodeToolbarProps) {
+export function BusinessNodeToolbar({ busy = false, onCreate, style }: BusinessNodeToolbarProps) {
   return (
-    <div className="business-node-toolbar" aria-label="Create canvas node">
+    <div className="business-node-toolbar" aria-label="Create canvas node" style={style}>
       {TOOLBAR_NODE_GROUPS.map((group) => (
         <section
           className="business-node-toolbar-group"
